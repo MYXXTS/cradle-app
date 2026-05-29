@@ -87,13 +87,6 @@ jobs:
             packDir: release/mac-arm64/Cradle.app
             mainExe: Cradle
             icon: ../../build/icon.icns
-          - os: macos-13
-            platform: mac-x64
-            builderTarget: mac
-            builderArch: x64
-            packDir: release/mac/Cradle.app
-            mainExe: Cradle
-            icon: ../../build/icon.icns
 
     steps:
       - name: Checkout cradle-app
