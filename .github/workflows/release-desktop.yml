@@ -1,0 +1,228 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'  # release
+      - 'dev-*'                    # dev
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel'
+        required: true
+        type: choice
+        options:
+          - dev
+          - release
+      version:
+        description: 'Version (e.g. 1.2.3 for release, or auto-generated for dev)'
+        required: true
+      source_ref:
+        description: 'Git ref from wibus-wee/Cradle to checkout'
+        required: true
+        default: 'main'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve release params
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.params.outputs.channel }}
+      version: ${{ steps.params.outputs.version }}
+      feed_tag: ${{ steps.params.outputs.feed_tag }}
+      source_ref: ${{ steps.params.outputs.source_ref }}
+    steps:
+      - name: Resolve parameters
+        id: params
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CHANNEL="${{ inputs.channel }}"
+            VERSION="${{ inputs.version }}"
+            SOURCE_REF="${{ inputs.source_ref }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+            if [[ "$TAG" == dev-* ]]; then
+              CHANNEL="dev"
+              VERSION="${TAG#dev-}"
+            else
+              CHANNEL="release"
+              VERSION="${TAG#v}"
+            fi
+            SOURCE_REF="$TAG"
+          fi
+
+          FEED_TAG="feed-${CHANNEL}"
+
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "feed_tag=$FEED_TAG" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+
+          echo "Channel: $CHANNEL"
+          echo "Version: $VERSION"
+          echo "Feed tag: $FEED_TAG"
+          echo "Source ref: $SOURCE_REF"
+
+  build:
+    name: Build Desktop (${{ matrix.platform }})
+    needs: [resolve]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            builderTarget: mac
+            builderArch: arm64
+            packDir: release/mac-arm64/Cradle.app
+            mainExe: Cradle
+            icon: ../../build/icon.icns
+          - os: macos-13
+            platform: mac-x64
+            builderTarget: mac
+            builderArch: x64
+            packDir: release/mac/Cradle.app
+            mainExe: Cradle
+            icon: ../../build/icon.icns
+
+    steps:
+      - name: Checkout cradle-app
+        uses: actions/checkout@v4
+
+      - name: Checkout Cradle source
+        uses: actions/checkout@v4
+        with:
+          repository: wibus-wee/Cradle
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+          ref: ${{ needs.resolve.outputs.source_ref }}
+          path: .cradle-source
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        working-directory: .cradle-source
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+
+      - name: Install Velopack CLI
+        shell: bash
+        run: dotnet tool install --global vpk --version 0.0.1589-ga2c5a97
+
+      - name: Resolve feed URL
+        id: feed
+        shell: bash
+        run: |
+          FEED_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.resolve.outputs.feed_tag }}/"
+          echo "feed_url=$FEED_URL" >> "$GITHUB_OUTPUT"
+          echo "Feed URL: $FEED_URL"
+
+      - name: Build Desktop
+        working-directory: .cradle-source
+        env:
+          CRADLE_DESKTOP_UPDATE_URL: ${{ steps.feed.outputs.feed_url }}
+          CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
+        run: pnpm build:desktop
+
+      - name: Package unpacked app
+        working-directory: .cradle-source/apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        shell: bash
+        run: pnpm exec electron-builder --${{ matrix.builderTarget }} dir --${{ matrix.builderArch }} --publish never
+
+      - name: Create Velopack release
+        working-directory: .cradle-source/apps/desktop
+        shell: bash
+        run: |
+          mkdir -p out/Releases
+          vpk pack \
+            --packId com.cradle.app \
+            --packVersion "${{ needs.resolve.outputs.version }}" \
+            --packDir "${{ matrix.packDir }}" \
+            --mainExe "${{ matrix.mainExe }}" \
+            --packAuthors "Cradle" \
+            --packTitle "Cradle" \
+            --icon "${{ matrix.icon }}" \
+            --outputDir out/Releases
+
+      - name: Upload Velopack feed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack-${{ matrix.platform }}-${{ needs.resolve.outputs.version }}
+          path: .cradle-source/apps/desktop/out/Releases/**
+          retention-days: 7
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}-${{ needs.resolve.outputs.version }}
+          path: |
+            .cradle-source/apps/desktop/release/*.dmg
+            .cradle-source/apps/desktop/release/*.zip
+          if-no-files-found: ignore
+          retention-days: 30
+
+  publish:
+    name: Publish to feed-${{ needs.resolve.outputs.channel }}
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect feed files
+        shell: bash
+        run: |
+          mkdir -p feed
+          find artifacts -name "velopack-*" -type d -exec cp -r {}/* feed/ \;
+          echo "Feed files:"
+          ls -la feed/
+
+      - name: Update feed release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.feed_tag }}
+          name: "Feed ${{ needs.resolve.outputs.channel }}"
+          prerelease: ${{ needs.resolve.outputs.channel == 'dev' }}
+          files: feed/*
+          make_latest: ${{ needs.resolve.outputs.channel == 'release' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create version release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.channel }}-v${{ needs.resolve.outputs.version }}
+          name: "v${{ needs.resolve.outputs.version }} (${{ needs.resolve.outputs.channel }})"
+          prerelease: ${{ needs.resolve.outputs.channel == 'dev' }}
+          generate_release_notes: true
+          files: |
+            artifacts/desktop-*/*.dmg
+            artifacts/desktop-*/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
