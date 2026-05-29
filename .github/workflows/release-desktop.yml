@@ -56,7 +56,7 @@ jobs:
               CHANNEL="release"
               VERSION="${TAG#v}"
             fi
-            SOURCE_REF="$TAG"
+            SOURCE_REF="main"
           fi
 
           FEED_TAG="feed-${CHANNEL}"
