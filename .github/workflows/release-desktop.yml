@@ -114,7 +114,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: .cradle-source
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.onlyBuiltDependencies='["@google/genai","protobufjs"]'
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
