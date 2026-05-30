@@ -127,19 +127,24 @@ jobs:
           CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
         shell: bash
         run: |
-          # Patch install-runtime-deps.mjs to not use --config.node-linker=hoisted
-          # which causes pnpm to restructure the workspace's node_modules and breaks
-          # electron-builder's ability to find electron during postinstall.
-          node -e "
-            const fs = require('fs');
-            const scriptPath = 'apps/server/scripts/install-runtime-deps.mjs';
-            let content = fs.readFileSync(scriptPath, 'utf8');
-            content = content.replace(
-              \"'--config.node-linker=hoisted',\",
-              \"'--config.node-linker=isolated',\"
-            );
-            fs.writeFileSync(scriptPath, content);
-          "
+          # The build scripts trigger a second pnpm install (--config.node-linker=hoisted)
+          # via install-runtime-deps.mjs, which restructures node_modules and causes
+          # electron-builder install-app-deps to fail. Create a no-op wrapper on PATH
+          # that intercepts install-app-deps calls. pnpm exec falls back to PATH when
+          # the local .bin doesn't have the command.
+          WRAPPER_DIR=$(mktemp -d)
+          REAL_EB=$(command -v electron-builder)
+          cat > "$WRAPPER_DIR/electron-builder" <<'WRAPEOF'
+          #!/bin/bash
+          if [[ "$1" == "install-app-deps" ]]; then
+            echo "CI: skipping electron-builder install-app-deps"
+            exit 0
+          fi
+          WRAPEOF
+          # Append the real exec line with the actual path
+          echo "exec \"$REAL_EB\" \"\$@\"" >> "$WRAPPER_DIR/electron-builder"
+          chmod +x "$WRAPPER_DIR/electron-builder"
+          export PATH="$WRAPPER_DIR:$PATH"
           pnpm build:desktop
 
       - name: Setup .NET SDK
