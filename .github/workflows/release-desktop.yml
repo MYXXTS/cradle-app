@@ -3,8 +3,8 @@ name: Release Desktop
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'  # release
-      - 'dev-*'                    # dev
+      - 'v*.*.*'  # release; SemVer is validated in the resolve job
+      - 'dev-*'   # dev
   workflow_dispatch:
     inputs:
       channel:
@@ -30,49 +30,89 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Resolve release parameters.
   resolve:
     name: Resolve release params
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.params.outputs.channel }}
-      version: ${{ steps.params.outputs.version }}
-      feed_tag: ${{ steps.params.outputs.feed_tag }}
+      desktop_version: ${{ steps.params.outputs.desktop_version }}
+      display_version: ${{ steps.params.outputs.display_version }}
+      release_tag: ${{ steps.params.outputs.release_tag }}
+      dev_feed_tag: ${{ steps.params.outputs.dev_feed_tag }}
       source_ref: ${{ steps.params.outputs.source_ref }}
+      update_url: ${{ steps.params.outputs.update_url }}
     steps:
       - name: Resolve parameters
         id: params
         shell: bash
         run: |
+          semver_regex='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          DEV_FEED_TAG="feed-dev"
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             CHANNEL="${{ inputs.channel }}"
-            VERSION="${{ inputs.version }}"
+            INPUT_VERSION="${{ inputs.version }}"
             SOURCE_REF="${{ inputs.source_ref }}"
+
+            if [ "$CHANNEL" = "dev" ]; then
+              DISPLAY_VERSION="$INPUT_VERSION"
+              if [[ "$INPUT_VERSION" =~ $semver_regex ]]; then
+                DESKTOP_VERSION="$INPUT_VERSION"
+              else
+                DESKTOP_VERSION="0.0.0-dev.${INPUT_VERSION}"
+              fi
+              RELEASE_TAG="dev-${DISPLAY_VERSION}"
+            else
+              DISPLAY_VERSION="${INPUT_VERSION#v}"
+              DESKTOP_VERSION="$DISPLAY_VERSION"
+              RELEASE_TAG="v${DISPLAY_VERSION}"
+            fi
           else
             TAG="${GITHUB_REF_NAME}"
             if [[ "$TAG" == dev-* ]]; then
               CHANNEL="dev"
-              VERSION="${TAG#dev-}"
+              DISPLAY_VERSION="${TAG#dev-}"
+              DESKTOP_VERSION="0.0.0-dev.${DISPLAY_VERSION}"
             else
               CHANNEL="release"
-              VERSION="${TAG#v}"
+              DISPLAY_VERSION="${TAG#v}"
+              DESKTOP_VERSION="$DISPLAY_VERSION"
             fi
             SOURCE_REF="main"
+            RELEASE_TAG="$TAG"
           fi
 
-          FEED_TAG="feed-${CHANNEL}"
+          if [[ ! "$DESKTOP_VERSION" =~ $semver_regex ]]; then
+            echo "Desktop version must be SemVer-compatible: $DESKTOP_VERSION" >&2
+            exit 1
+          fi
+
+          if [ "$CHANNEL" = "release" ]; then
+            UPDATE_URL="https://github.com/${{ github.repository }}/releases/latest/download/"
+          else
+            UPDATE_URL="https://github.com/${{ github.repository }}/releases/download/${DEV_FEED_TAG}/"
+          fi
 
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "feed_tag=$FEED_TAG" >> "$GITHUB_OUTPUT"
+          echo "desktop_version=$DESKTOP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "display_version=$DISPLAY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "dev_feed_tag=$DEV_FEED_TAG" >> "$GITHUB_OUTPUT"
           echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+          echo "update_url=$UPDATE_URL" >> "$GITHUB_OUTPUT"
 
           echo "Channel: $CHANNEL"
-          echo "Version: $VERSION"
-          echo "Feed tag: $FEED_TAG"
+          echo "Desktop version: $DESKTOP_VERSION"
+          echo "Display version: $DISPLAY_VERSION"
+          echo "Release tag: $RELEASE_TAG"
+          echo "Dev feed tag: $DEV_FEED_TAG"
           echo "Source ref: $SOURCE_REF"
+          echo "Update URL: $UPDATE_URL"
 
+  # Build desktop for macOS.
   build:
-    name: Build Desktop (${{ matrix.platform }})
+    name: Build Desktop (${{ matrix.platform }} ${{ matrix.arch }})
     needs: [resolve]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -82,186 +122,216 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            builderTarget: mac
-            builderArch: arm64
-            packDir: release/mac-arm64/Cradle.app
-            mainExe: Cradle
-            icon: ../../build/icon.icns
+            arch: arm64
+          - os: macos-13
+            platform: mac
+            arch: x64
 
     steps:
-      - name: Checkout cradle-app
-        uses: actions/checkout@v4
-
       - name: Checkout Cradle source
         uses: actions/checkout@v4
         with:
           repository: wibus-wee/Cradle
           token: ${{ secrets.PRIVATE_REPO_PAT }}
           ref: ${{ needs.resolve.outputs.source_ref }}
-          path: .cradle-source
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup pnpm & Node.js
+        uses: ./.github/actions/setup
         with:
           node-version: 24
-          cache: pnpm
-          cache-dependency-path: .cradle-source/pnpm-lock.yaml
 
-      - name: Install dependencies
-        working-directory: .cradle-source
-        run: |
-          pnpm add -g electron-builder @electron/rebuild
-          echo "$(pnpm bin -g)" >> "$GITHUB_PATH"
-          export PATH="$(pnpm bin -g):$PATH"
-          pnpm install --frozen-lockfile
-
-      - name: Patch install-runtime-deps.mjs to skip pnpm install
-        working-directory: .cradle-source
+      - name: Clean macOS build leftovers
+        if: runner.os == 'macOS'
         shell: bash
         run: |
-          # The install-runtime-deps.mjs script runs pnpm install with
-          # --config.node-linker=hoisted which restructures the workspace's
-          # node_modules and breaks electron-builder, electron-vite, etc.
-          # Patch it to skip the pnpm install call. We'll install dist deps separately.
-          node -e "
-            const fs = require('fs');
-            const scriptPath = 'apps/server/scripts/install-runtime-deps.mjs';
-            let content = fs.readFileSync(scriptPath, 'utf8');
-            // Replace the pnpm install spawnSync call with a no-op that logs a message
-            content = content.replace(
-              'const command = process.platform',
-              'console.log(\"CI: skipping pnpm install for dist (handled separately)\");\nprocess.exit(0);\nconst command = process.platform'
-            );
-            fs.writeFileSync(scriptPath, content);
-          "
+          sudo rm -rf apps/desktop/release || true
+          sudo rm -rf apps/desktop/dist || true
+          sudo rm -rf /tmp/electron-builder* || true
 
-      - name: Build Desktop
-        working-directory: .cradle-source
-        env:
-          CRADLE_DESKTOP_UPDATE_URL: ${{ steps.feed.outputs.feed_url }}
-          CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
-        run: pnpm build:desktop
+      - name: Set version
+        run: pnpm --filter @cradle/desktop run set-version ${{ needs.resolve.outputs.desktop_version }}
 
-      - name: Install server runtime deps for packaging
-        working-directory: .cradle-source
-        shell: bash
-        run: |
-          # Install server runtime deps into dist, outside the workspace context.
-          # Move dist to temp dir to prevent pnpm from detecting the workspace.
-          DIST_DIR="apps/server/dist"
-          TMP_DIST=$(mktemp -d)
-          cp -r "$DIST_DIR"/* "$TMP_DIST/"
-          cd "$TMP_DIST"
-          pnpm install --prod --no-lockfile --package-import-method copy
-          cd -
-          cp -r "$TMP_DIST"/node_modules "$DIST_DIR/"
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.x
-
-      - name: Install Velopack CLI
-        shell: bash
-        run: dotnet tool install --global vpk --version 0.0.1589-ga2c5a97
-
-      - name: Resolve feed URL
-        id: feed
-        shell: bash
-        run: |
-          FEED_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.resolve.outputs.feed_tag }}/"
-          echo "feed_url=$FEED_URL" >> "$GITHUB_OUTPUT"
-          echo "Feed URL: $FEED_URL"
-
-      - name: Build Desktop
-        working-directory: .cradle-source
-        env:
-          CRADLE_DESKTOP_UPDATE_URL: ${{ steps.feed.outputs.feed_url }}
-          CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.builderArch }}
-        run: pnpm build:desktop
-
-      - name: Package unpacked app
-        working-directory: .cradle-source/apps/desktop
+      - name: Build & package desktop
+        working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        shell: bash
-        run: pnpm exec electron-builder --${{ matrix.builderTarget }} dir --${{ matrix.builderArch }} --publish never
-
-      - name: Create Velopack release
-        working-directory: .cradle-source/apps/desktop
+          CRADLE_DESKTOP_UPDATE_URL: ${{ needs.resolve.outputs.update_url }}
+          CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.arch }}
         shell: bash
         run: |
-          mkdir -p out/Releases
-          vpk pack \
-            --packId com.cradle.app \
-            --packVersion "${{ needs.resolve.outputs.version }}" \
-            --packDir "${{ matrix.packDir }}" \
-            --mainExe "${{ matrix.mainExe }}" \
-            --packAuthors "Cradle" \
-            --packTitle "Cradle" \
-            --icon "${{ matrix.icon }}" \
-            --outputDir out/Releases
+          pnpm dist:${{ matrix.platform }} --${{ matrix.arch }}
 
-      - name: Upload Velopack feed artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload artifacts
+        uses: ./.github/actions/desktop-upload-artifacts
         with:
-          name: velopack-${{ matrix.platform }}-${{ needs.resolve.outputs.version }}
-          path: .cradle-source/apps/desktop/out/Releases/**
+          artifact-name: desktop-${{ matrix.platform }}-${{ matrix.arch }}-${{ needs.resolve.outputs.desktop_version }}
           retention-days: 7
 
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.platform }}-${{ needs.resolve.outputs.version }}
-          path: |
-            .cradle-source/apps/desktop/release/*.dmg
-            .cradle-source/apps/desktop/release/*.zip
-          if-no-files-found: ignore
-          retention-days: 30
-
+  # Publish GitHub Release.
   publish:
-    name: Publish to feed-${{ needs.resolve.outputs.channel }}
+    name: Publish GitHub Release
     needs: [resolve, build]
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Collect feed files
+      - name: Prepare release assets
         shell: bash
         run: |
-          mkdir -p feed
-          find artifacts -name "velopack-*" -type d -exec cp -r {}/* feed/ \;
-          echo "Feed files:"
-          ls -la feed/
+          set -euo pipefail
+          mkdir -p release-assets
 
-      - name: Update feed release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.resolve.outputs.feed_tag }}
-          name: "Feed ${{ needs.resolve.outputs.channel }}"
-          prerelease: ${{ needs.resolve.outputs.channel == 'dev' }}
-          files: feed/*
-          make_latest: ${{ needs.resolve.outputs.channel == 'release' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          shopt -s globstar nullglob
+          for file in artifacts/**/*.{dmg,zip,exe,AppImage,deb,blockmap}; do
+            target="release-assets/$(basename "$file")"
+            if [ -e "$target" ]; then
+              echo "Duplicate release asset name: $(basename "$file")" >&2
+              exit 1
+            fi
+            cp "$file" "$target"
+          done
+
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+
+          const artifactsRoot = 'artifacts'
+          const outputRoot = 'release-assets'
+
+          function walk(dir, files = []) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const entryPath = path.join(dir, entry.name)
+              if (entry.isDirectory()) {
+                walk(entryPath, files)
+              }
+              else if (entry.isFile() && entry.name.endsWith('.yml')) {
+                files.push(entryPath)
+              }
+            }
+            return files
+          }
+
+          function readScalar(value) {
+            return value.replace(/^['"]|['"]$/g, '')
+          }
+
+          function parseManifest(file) {
+            const manifest = { files: [] }
+            let currentFile = null
+
+            for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+              if (!line.trim()) {
+                continue
+              }
+
+              const topLevel = line.match(/^([A-Za-z0-9_-]+):(?:\s*(.*))?$/)
+              if (topLevel) {
+                const [, key, value = ''] = topLevel
+                if (key !== 'files') {
+                  manifest[key] = readScalar(value)
+                }
+                currentFile = null
+                continue
+              }
+
+              const fileStart = line.match(/^\s*-\s+([A-Za-z0-9_-]+):\s*(.*)$/)
+              if (fileStart) {
+                currentFile = {}
+                manifest.files.push(currentFile)
+                currentFile[fileStart[1]] = readScalar(fileStart[2])
+                continue
+              }
+
+              const fileProperty = line.match(/^\s+([A-Za-z0-9_-]+):\s*(.*)$/)
+              if (fileProperty && currentFile) {
+                currentFile[fileProperty[1]] = readScalar(fileProperty[2])
+              }
+            }
+
+            return manifest
+          }
+
+          function writeManifest(file, manifest) {
+            const lines = []
+            if (manifest.version) {
+              lines.push(`version: ${manifest.version}`)
+            }
+            lines.push('files:')
+            for (const artifact of manifest.files) {
+              lines.push(`  - url: ${artifact.url}`)
+              for (const [key, value] of Object.entries(artifact)) {
+                if (key !== 'url') {
+                  lines.push(`    ${key}: ${value}`)
+                }
+              }
+            }
+            for (const key of ['path', 'sha512', 'releaseName', 'releaseNotes', 'releaseDate']) {
+              if (manifest[key]) {
+                lines.push(`${key}: ${manifest[key]}`)
+              }
+            }
+            fs.writeFileSync(file, `${lines.join('\n')}\n`, 'utf8')
+          }
+
+          const manifestsByName = new Map()
+          for (const file of walk(artifactsRoot)) {
+            const name = path.basename(file)
+            if (!manifestsByName.has(name)) {
+              manifestsByName.set(name, [])
+            }
+            manifestsByName.get(name).push(file)
+          }
+
+          for (const [name, files] of manifestsByName) {
+            const manifests = files.map(parseManifest)
+            const merged = { ...manifests[0], files: [] }
+            const seenUrls = new Set()
+            for (const manifest of manifests) {
+              for (const artifact of manifest.files) {
+                if (artifact.url && !seenUrls.has(artifact.url)) {
+                  seenUrls.add(artifact.url)
+                  merged.files.push(artifact)
+                }
+              }
+            }
+            writeManifest(path.join(outputRoot, name), merged)
+          }
+          NODE
+
+          find release-assets -maxdepth 1 -type f -print | sort
 
       - name: Create version release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.resolve.outputs.channel }}-v${{ needs.resolve.outputs.version }}
-          name: "v${{ needs.resolve.outputs.version }} (${{ needs.resolve.outputs.channel }})"
+          tag_name: ${{ needs.resolve.outputs.release_tag }}
+          name: "${{ needs.resolve.outputs.release_tag }} (${{ needs.resolve.outputs.channel }})"
           prerelease: ${{ needs.resolve.outputs.channel == 'dev' }}
+          make_latest: ${{ needs.resolve.outputs.channel == 'release' }}
           generate_release_notes: true
           files: |
-            artifacts/desktop-*/*.dmg
-            artifacts/desktop-*/*.zip
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update dev feed release
+        if: needs.resolve.outputs.channel == 'dev'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.dev_feed_tag }}
+          target_commitish: ${{ github.sha }}
+          name: "Feed dev"
+          body: "Rolling desktop dev update feed for ${{ needs.resolve.outputs.release_tag }}."
+          prerelease: true
+          make_latest: false
+          files: |
+            release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

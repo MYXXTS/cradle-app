@@ -5,7 +5,7 @@ description: Trigger desktop release workflow and monitor until completion
 
 # Release Desktop
 
-Trigger the desktop release workflow for `wibus-wee/Cradle` and monitor until completion.
+Trigger the desktop release workflow for `wibus-wee/cradle-app` and monitor until completion.
 
 ## Usage
 
@@ -103,9 +103,12 @@ User: /release dev
 
 ## Notes
 
-- The workflow builds for both mac-arm64 and mac-x64
-- Feed URLs:
-  - dev: `https://github.com/wibus-wee/cradle-app/releases/download/feed-dev/`
-  - release: `https://github.com/wibus-wee/cradle-app/releases/download/feed-release/`
+- The workflow builds desktop artifacts for mac-arm64 and mac-x64.
+- Release assets are uploaded directly to the tag release in `wibus-wee/cradle-app`.
+- Release builds use `electron-updater` with a generic provider URL:
+  `https://github.com/wibus-wee/cradle-app/releases/latest/download/`
+- Dev builds use a rolling generic provider URL:
+  `https://github.com/wibus-wee/cradle-app/releases/download/feed-dev/`
+- Each dev run publishes both its own `dev-*` release and the `feed-dev` update feed.
 - Dev releases are marked as prerelease
 - Release workflow timeout: 60 minutes
