@@ -41,7 +41,8 @@ jobs:
           node-version: 24
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       - name: Run P0 smoke scenarios
         id: smoke

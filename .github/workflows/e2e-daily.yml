@@ -41,7 +41,8 @@ jobs:
 
       # ── Install Playwright ────────────────────────────────────────────────
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        timeout-minutes: 10
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       # ── Run E2E (server auto-starts via BeforeAll hook) ───────────────────
       - name: Run E2E tests
