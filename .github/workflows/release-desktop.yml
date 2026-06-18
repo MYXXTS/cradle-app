@@ -24,6 +24,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: release-desktop-${{ github.ref }}
@@ -319,6 +321,39 @@ jobs:
             }
 
             fs.rmSync(devMacManifest, { force: true })
+
+            // Strip version numbers from asset filenames so the rolling
+            // feed-dev release always contains stable names that get
+            // overwritten instead of accumulating stale assets.
+            const versionInName = /-(\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?)((?=-)|(?=\.\w+$))/
+            for (const entry of fs.readdirSync(outputRoot)) {
+              if (!entry.startsWith('latest-') && !entry.endsWith('.yml')) {
+                const stable = entry.replace(versionInName, '')
+                if (stable !== entry) {
+                  fs.renameSync(
+                    path.join(outputRoot, entry),
+                    path.join(outputRoot, stable),
+                  )
+                }
+              }
+            }
+
+            // Update manifest URLs / path to reference the renamed assets.
+            for (const entry of fs.readdirSync(outputRoot)) {
+              if (entry.startsWith('latest-') && entry.endsWith('.yml')) {
+                const manifestPath = path.join(outputRoot, entry)
+                const manifest = parseManifest(manifestPath)
+                for (const file of manifest.files) {
+                  if (file.url) {
+                    file.url = file.url.replace(versionInName, '')
+                  }
+                }
+                if (manifest.path) {
+                  manifest.path = manifest.path.replace(versionInName, '')
+                }
+                writeManifest(manifestPath, manifest)
+              }
+            }
           }
           NODE
 
@@ -337,25 +372,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Remove stale dev feed manifests
-        if: needs.resolve.outputs.channel == 'dev'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          release_json=$(gh api "repos/${{ github.repository }}/releases/tags/${{ needs.resolve.outputs.dev_feed_tag }}" 2>/dev/null || true)
-          if [ -z "$release_json" ]; then
-            exit 0
-          fi
-
-          release_id=$(node -e 'const fs = require("node:fs"); const input = fs.readFileSync(0, "utf8"); console.log(JSON.parse(input).id)' <<< "$release_json")
-          gh api "repos/${{ github.repository }}/releases/${release_id}/assets" --paginate --jq '.[] | select(.name == "dev-mac.yml") | .id' |
-            while read -r asset_id; do
-              [ -n "$asset_id" ] && gh api -X DELETE "repos/${{ github.repository }}/releases/assets/${asset_id}" >/dev/null
-            done
-
       - name: Update dev feed release
         if: needs.resolve.outputs.channel == 'dev'
         uses: softprops/action-gh-release@v2
@@ -370,3 +386,43 @@ jobs:
             release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-web:
+    name: Deploy Web
+    needs: [resolve, publish]
+    if: needs.resolve.outputs.channel == 'release'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://app.cradle.wibus.ren
+    steps:
+      - name: Checkout Cradle source
+        uses: actions/checkout@v4
+        with:
+          repository: wibus-wee/Cradle
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+          ref: ${{ needs.resolve.outputs.source_ref }}
+
+      - name: Setup pnpm & Node.js
+        uses: ./.github/actions/setup
+        with:
+          node-version: 24
+
+      - name: Build Web App
+        run: pnpm build:web
+
+      - name: Prepare Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "app.cradle.wibus.ren" > apps/web/dist/CNAME
+          cp apps/web/dist/index.html apps/web/dist/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
