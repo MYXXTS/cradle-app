@@ -21,6 +21,7 @@ Cradle is a desktop-first platform for managing AI agents and their workflows. I
 |---|---|---|
 | `@cradleapp/browser-use` | MCP plugin that controls Cradle's built-in browser, supporting navigation, clicking, input, screenshots, page text reading, and DOM structure inspection. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 | `@cradleapp/cc-switch` | Maps CC Switch provider data into Cradle as a read-only external provider source. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
+| `@cradleapp/nowledge-mem` | Official Nowledge Mem adapter for guided memory, Working Memory, thread, and context operations. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 | `@cradleapp/system-info` | Exposes system information capabilities through the plugin API and Web commands. | ![Beta](https://img.shields.io/badge/status-Beta-yellow) |
 
 ## Feedback
