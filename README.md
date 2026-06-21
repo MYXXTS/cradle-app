@@ -15,6 +15,19 @@
 
 Cradle is a desktop-first platform for managing AI agents and their workflows. It provides a unified environment where you can run agents, track issues, manage sessions, and integrate multiple LLM providers — all from a single native application.
 
+## Features
+
+- **Agent Management** — Create and configure agent profiles with custom identities, provider bindings, and skill sets
+- **Chat Runtime** — Real-time chat with multi-provider support: Claude, OpenAI-compatible, Codex, and more
+- **Issue Tracking** — Built-in Kanban board with workflow statuses, milestones, comments, and agent delegation
+- **Session Management** — Persistent sessions with await support for external events like CI or human approval
+- **Long-term Memory** — Persistent agent knowledge that carries across sessions
+- **Git Integration** — Repository status, branch management, and commits from within the app
+- **Terminal** — Shell interaction inside the desktop app
+- **Plugin System** — Extend Cradle with official and community plugins
+- **Multi-provider Support** — Anthropic, OpenAI, and any OpenAI-compatible endpoint
+
+
 ## Builtin Plugins
 
 | Plugin | Description | Status |
@@ -36,6 +49,7 @@ I have been deeply inspired by the following projects and communities:
 - Thanks to [LobeHub](https://lobehub.com/) for its streamdown implementation.
 - Thanks to [Yansu](https://yansu.app/) for its chronicle ideas.
 - Thanks to [Linear](https://linear.com/) for its feature ideas and design ideas.
+- Thanks to [agentation](https://github.com/benjitaylor/agentation) & [Cursor](https://cursor.com/) for its visual feedback ideas
 - Thanks to [CC Switch](https://ccswitch.io) for our provider management plugin integration.
 - Thanks to [Nowledge Mem](https://mem.nowledge.co/) for our plugin integration.
 
