@@ -112,19 +112,11 @@ jobs:
           echo "Source ref: $SOURCE_REF"
           echo "Update URL: $UPDATE_URL"
 
-  # Build desktop for macOS.
-  build:
-    name: Build Desktop (${{ matrix.platform }} ${{ matrix.arch }})
+  build-macos:
+    name: Build Desktop (mac arm64)
     needs: [resolve]
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            platform: mac
-            arch: arm64
 
     steps:
       - name: Checkout Cradle source
@@ -140,33 +132,42 @@ jobs:
           node-version: 24
 
       - name: Clean macOS build leftovers
-        if: runner.os == 'macOS'
         shell: bash
         run: |
           sudo rm -rf apps/desktop/release || true
           sudo rm -rf apps/desktop/dist || true
           sudo rm -rf /tmp/electron-builder* || true
 
-      - name: Set version
+      - name: Set desktop version
         run: pnpm --filter @cradle/desktop run set-version ${{ needs.resolve.outputs.desktop_version }}
 
-      - name: Build & package desktop
+      - name: Build & package macOS desktop
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           CRADLE_DESKTOP_UPDATE_URL: ${{ needs.resolve.outputs.update_url }}
-          CRADLE_ELECTRON_REBUILD_ARCH: ${{ matrix.arch }}
+          CRADLE_ELECTRON_REBUILD_ARCH: arm64
           GITHUB_TOKEN: ${{ secrets.PRIVATE_REPO_PAT }}
         shell: bash
         run: |
-          pnpm dist:${{ matrix.platform }} --${{ matrix.arch }}
+          pnpm dist:mac --arm64
+
+      - name: Build installer DMG
+        env:
+          DESKTOP_VERSION: ${{ needs.resolve.outputs.desktop_version }}
+          RELEASE_ARCH: arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          node installer/build-dmg.mjs \
+            --app apps/desktop/release/mac-${RELEASE_ARCH}/Cradle.app \
+            --output apps/desktop/release/Cradle-${DESKTOP_VERSION}-${RELEASE_ARCH}.dmg
 
       - name: Create macOS updater zip
-        if: matrix.platform == 'mac'
         working-directory: apps/desktop
         env:
           DESKTOP_VERSION: ${{ needs.resolve.outputs.desktop_version }}
-          RELEASE_ARCH: ${{ matrix.arch }}
+          RELEASE_ARCH: arm64
         shell: bash
         run: |
           set -euo pipefail
@@ -185,13 +186,148 @@ jobs:
       - name: Upload artifacts
         uses: ./.github/actions/desktop-upload-artifacts
         with:
-          artifact-name: desktop-${{ matrix.platform }}-${{ matrix.arch }}-${{ needs.resolve.outputs.desktop_version }}
+          artifact-name: desktop-mac-arm64-${{ needs.resolve.outputs.desktop_version }}
+          retention-days: 7
+
+  build-windows:
+    name: Build Desktop (windows x64)
+    needs: [resolve]
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Cradle source
+        uses: actions/checkout@v4
+        with:
+          repository: wibus-wee/Cradle
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+          ref: ${{ needs.resolve.outputs.source_ref }}
+
+      - name: Setup pnpm & Node.js
+        uses: ./.github/actions/setup
+        with:
+          node-version: 24
+
+      - name: Set desktop version
+        run: pnpm --filter @cradle/desktop run set-version ${{ needs.resolve.outputs.desktop_version }}
+
+      - name: Build Windows desktop runtime and app bundles
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CRADLE_DESKTOP_UPDATE_URL: ${{ needs.resolve.outputs.update_url }}
+          CRADLE_ELECTRON_REBUILD_ARCH: x64
+          GITHUB_TOKEN: ${{ secrets.PRIVATE_REPO_PAT }}
+        run: pnpm --filter @cradle/desktop build
+
+      - name: Verify Windows desktop runtime manifest
+        shell: pwsh
+        run: |
+          $manifestPath = "apps/server/dist/desktop-runtime/desktop-runtime.json"
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $manifest | ConvertTo-Json -Depth 10
+          if ($manifest.electron.platform -ne "win32") {
+            throw "Expected desktop runtime platform win32, got $($manifest.electron.platform)"
+          }
+          if ($manifest.electron.arch -ne "x64") {
+            throw "Expected desktop runtime arch x64, got $($manifest.electron.arch)"
+          }
+
+      - name: Package unpacked Windows app
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder --config electron-builder.mjs --win --x64 --dir --publish never
+
+      - name: Verify native resources are Windows binaries
+        shell: pwsh
+        run: |
+          $serverNodeModules = "apps/desktop/release/win-unpacked/resources/server/node_modules"
+          $nativeFiles = Get-ChildItem $serverNodeModules -Recurse -File -Include *.node,*.dll,*.dylib,*.so
+          if ($nativeFiles.Count -eq 0) {
+            throw "No native .node/.dll files found in packaged server runtime."
+          }
+          $nativeFiles | Select-Object FullName, Length | Sort-Object FullName | Format-Table -AutoSize | Out-String -Width 4096 | Tee-Object -FilePath native-files.txt
+
+          $wrongPlatformNames = $nativeFiles | Where-Object {
+            $_.FullName -match "darwin|linux|macos" -or $_.Extension -in ".dylib", ".so"
+          }
+          if ($wrongPlatformNames.Count -gt 0) {
+            $wrongPlatformNames | Select-Object FullName | Format-Table -AutoSize
+            throw "Packaged runtime contains non-Windows native files."
+          }
+
+          foreach ($file in $nativeFiles) {
+            $stream = [System.IO.File]::OpenRead($file.FullName)
+            try {
+              $header = New-Object byte[] 2
+              [void]$stream.Read($header, 0, 2)
+              if ($header[0] -ne 0x4D -or $header[1] -ne 0x5A) {
+                throw "$($file.FullName) does not start with MZ PE magic."
+              }
+            }
+            finally {
+              $stream.Dispose()
+            }
+          }
+
+      - name: Smoke load native modules through packaged Electron
+        shell: pwsh
+        run: |
+          $script = @'
+          const { createRequire } = require('node:module')
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const { pathToFileURL } = require('node:url')
+
+          async function main() {
+            const root = path.resolve(process.cwd(), 'apps/desktop/release/win-unpacked/resources/server')
+            const req = createRequire(path.join(root, 'package.json'))
+            for (const specifier of ['better-sqlite3', 'sharp', 'node-pty', '@node-rs/jieba']) {
+              console.log(`loading ${specifier}`)
+              const loaded = req(specifier)
+              console.log(`loaded ${specifier}: ${typeof loaded}`)
+            }
+
+            const fffEntry = path.join(root, 'node_modules/@ff-labs/fff-node/dist/src/index.js')
+            console.log(`loading ${fffEntry}`)
+            const fff = await import(pathToFileURL(fffEntry).href)
+            console.log(`loaded @ff-labs/fff-node: ${Object.keys(fff).join(',')}`)
+            const markerPath = process.argv[2] ?? path.resolve(process.cwd(), 'native-smoke-success.txt')
+            fs.writeFileSync(markerPath, 'ok\n')
+            console.log(`wrote native smoke marker: ${markerPath}`)
+          }
+
+          main().catch((error) => {
+            console.error(error)
+            process.exit(1)
+          })
+          '@
+
+          Set-Content -Path native-smoke.cjs -Value $script -Encoding UTF8
+          $markerPath = Join-Path (Get-Location) "native-smoke-success.txt"
+          Remove-Item $markerPath -Force -ErrorAction SilentlyContinue
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          & "apps/desktop/release/win-unpacked/Cradle.exe" native-smoke.cjs $markerPath
+          $deadline = (Get-Date).AddSeconds(30)
+          while (!(Test-Path $markerPath) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 250
+          }
+          if (!(Test-Path $markerPath)) {
+            throw "Packaged Electron native module smoke failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Build Windows installer
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder --config electron-builder.mjs --win nsis --x64 --publish never --config.compression=normal
+
+      - name: Upload artifacts
+        uses: ./.github/actions/desktop-upload-artifacts
+        with:
+          artifact-name: desktop-win-x64-${{ needs.resolve.outputs.desktop_version }}
           retention-days: 7
 
   # Publish GitHub Release.
   publish:
     name: Publish GitHub Release
-    needs: [resolve, build]
+    needs: [resolve, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
@@ -215,7 +351,7 @@ jobs:
           mkdir -p release-assets
 
           shopt -s globstar nullglob
-          for file in artifacts/**/*.{dmg,zip,exe,AppImage,deb}; do
+          for file in artifacts/**/*.{dmg,zip,exe,blockmap,yml,AppImage,deb}; do
             target="release-assets/$(basename "$file")"
             if [ -e "$target" ]; then
               echo "Duplicate release asset name: $(basename "$file")" >&2
@@ -397,31 +533,12 @@ jobs:
             writeManifest(path.join(outputRoot, name), merged)
           }
 
-          if (releaseChannel === 'dev') {
-            // Strip version numbers from asset filenames so the rolling
-            // feed-dev release always contains stable names that get
-            // overwritten instead of accumulating stale assets.
-            const versionInName = /-(\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?)((?=-)|(?=\.\w+$))/
-            for (const entry of fs.readdirSync(outputRoot)) {
-              if (!entry.endsWith('.yml')) {
-                const stable = entry.replace(versionInName, '')
-                if (stable !== entry) {
-                  fs.renameSync(
-                    path.join(outputRoot, entry),
-                    path.join(outputRoot, stable),
-                  )
-                }
-              }
-            }
-          }
-
           writeCradleUpdateManifest()
           NODE
 
           if [ "$RELEASE_CHANNEL" = "dev" ]; then
             mkdir -p feed-assets
-            cp release-assets/manifest.json feed-assets/manifest.json
-            cp release-assets/*.zip feed-assets/
+            cp release-assets/* feed-assets/
             find feed-assets -maxdepth 1 -type f -print | sort
           fi
 
