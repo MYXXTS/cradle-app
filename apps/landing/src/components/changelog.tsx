@@ -10,16 +10,109 @@
  * in styles.css under the `.changelog-md` scope so headings, lists, code,
  * and the leading blockquote tagline all read cleanly inside the blueprint
  * aesthetic.
+ *
+ * Data is loaded at runtime from /changelog/index.json + individual .md files.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import { motion } from 'motion/react'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { StarBorders } from './blueprint-annotations'
-import { RELEASES, type Release } from '../lib/changelog-data'
 
 marked.setOptions({ gfm: true, breaks: false })
+
+/* ─── Types ───────────────────────────────────────────────────── */
+
+interface ChangelogIndexEntry {
+  version: string
+  date: string
+  title: Record<string, string>
+  languages: string[]
+}
+
+interface Release {
+  version: string
+  date: string
+  title: string
+  body: string
+  featured?: boolean
+}
+
+function resolveLocale(): string {
+  const lang = navigator.language || 'zh'
+  const short = lang.split('-')[0].toLowerCase()
+  return short === 'en' ? 'en' : 'zh'
+}
+
+/* ─── Frontmatter parser ──────────────────────────────────────── */
+
+function parseFrontmatter(content: string): { meta: Record<string, string>; body: string } {
+  const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(content)
+  if (!match) return { meta: {}, body: content }
+  const meta: Record<string, string> = {}
+  for (const line of match[1].split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx > 0) {
+      meta[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
+    }
+  }
+  return { meta, body: match[2].trim() }
+}
+
+/* ─── Data fetching ───────────────────────────────────────────── */
+
+function useChangelogData() {
+  const [releases, setReleases] = useState<Release[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      try {
+        const indexRes = await fetch('/changelog/index.json')
+        if (!indexRes.ok) throw new Error('Failed to fetch changelog index')
+        const index: ChangelogIndexEntry[] = await indexRes.json()
+
+        const locale = resolveLocale()
+
+        const loaded: Release[] = await Promise.all(
+          index.map(async (entry, i) => {
+            const lang = entry.languages.includes(locale)
+              ? locale
+              : entry.languages.includes('zh') ? 'zh' : entry.languages[0]
+            const res = await fetch(`/changelog/${entry.version}.${lang}.md`)
+            if (!res.ok) throw new Error(`Failed to fetch ${entry.version}.${lang}.md`)
+            const raw = await res.text()
+            const { body } = parseFrontmatter(raw)
+            return {
+              version: entry.version,
+              date: entry.date,
+              title: entry.title[locale] || entry.title['zh'] || entry.title['en'] || Object.values(entry.title)[0] || '',
+              body,
+              featured: i === 0,
+            }
+          }),
+        )
+
+        if (!cancelled) {
+          setReleases(loaded)
+          setLoading(false)
+        }
+      }
+      catch (err) {
+        console.error('Failed to load changelog:', err)
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void load()
+    return () => { cancelled = true }
+  }, [])
+
+  return { releases, loading }
+}
 
 /* ─── Date formatter ───────────────────────────────────────────── */
 
@@ -156,9 +249,11 @@ function ReleaseCard({ release }: { release: Release }) {
 /* ─── Sticky left rail with version stations ───────────────────── */
 
 function VersionRail({
+  releases,
   active,
   onSelect,
 }: {
+  releases: Release[]
   active: string
   onSelect: (v: string) => void
 }) {
@@ -182,7 +277,7 @@ function VersionRail({
           aria-hidden
           style={{ position: 'absolute', left: 7, top: 6, bottom: 6, width: 1, background: 'var(--border)' }}
         />
-        {RELEASES.map(r => {
+        {releases.map(r => {
           const isActive = r.version === active
           return (
             <li key={r.version} style={{ position: 'relative' }}>
@@ -274,10 +369,20 @@ const kbdStyle: React.CSSProperties = {
 /* ─── Page ─────────────────────────────────────────────────────── */
 
 export function ChangelogPage({ onBack }: { onBack: () => void }) {
-  const [active, setActive] = useState(RELEASES[0].version)
+  const { releases, loading } = useChangelogData()
+  const [active, setActive] = useState('')
   const railRefs = useRef<Map<string, Element>>(new Map())
 
+  // Set initial active version once data loads
   useEffect(() => {
+    if (releases.length > 0 && !active) {
+      setActive(releases[0].version)
+    }
+  }, [releases, active])
+
+  useEffect(() => {
+    if (releases.length === 0) return
+
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
@@ -289,7 +394,7 @@ export function ChangelogPage({ onBack }: { onBack: () => void }) {
       },
       { rootMargin: '-20% 0px -65% 0px', threshold: 0 }
     )
-    for (const r of RELEASES) {
+    for (const r of releases) {
       const el = document.getElementById(`release-${r.version}`)
       if (el) {
         observer.observe(el)
@@ -297,15 +402,17 @@ export function ChangelogPage({ onBack }: { onBack: () => void }) {
       }
     }
     return () => observer.disconnect()
-  }, [])
+  }, [releases])
 
   useEffect(() => {
+    if (releases.length === 0) return
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-      const idx = RELEASES.findIndex(r => r.version === active)
+      const idx = releases.findIndex(r => r.version === active)
       if (idx === -1) return
-      const next = e.key === 'ArrowDown' ? Math.min(idx + 1, RELEASES.length - 1) : Math.max(idx - 1, 0)
-      const target = RELEASES[next]
+      const next = e.key === 'ArrowDown' ? Math.min(idx + 1, releases.length - 1) : Math.max(idx - 1, 0)
+      const target = releases[next]
       if (target.version === active) return
       e.preventDefault()
       railRefs.current.get(target.version)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -313,11 +420,19 @@ export function ChangelogPage({ onBack }: { onBack: () => void }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active])
+  }, [active, releases])
 
-  const jumpTo = (v: string) => {
+  const jumpTo = useCallback((v: string) => {
     railRefs.current.get(v)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setActive(v)
+  }, [])
+
+  if (loading) {
+    return (
+      <main style={{ paddingTop: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>Loading changelog…</span>
+      </main>
+    )
   }
 
   return (
@@ -430,10 +545,10 @@ export function ChangelogPage({ onBack }: { onBack: () => void }) {
             alignItems: 'start',
           }}
         >
-          <VersionRail active={active} onSelect={jumpTo} />
+          <VersionRail releases={releases} active={active} onSelect={jumpTo} />
 
           <div>
-            {RELEASES.map(r => (
+            {releases.map(r => (
               <ReleaseCard key={r.version} release={r} />
             ))}
 

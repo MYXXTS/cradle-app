@@ -1,0 +1,62 @@
+[
+  {
+    "version": "dev-20260624.1",
+    "date": "2026-06-24",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Remote Runtime & Claude Subscription Login",
+      "zh": "Remote Runtime / Relay 全链路打通，Command Palette 重建，Claude 订阅登录，以及大量体验优化。"
+    }
+  },
+  {
+    "version": "dev-20260621.1",
+    "date": "2026-06-21",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Conversation Bridge & Diffs Preview",
+      "zh": "Conversation Bridge 与 Diffs Preview"
+    }
+  },
+  {
+    "version": "dev-20260620.1",
+    "date": "2026-06-20",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Plugin Management & Streaming Reliability",
+      "zh": "插件管理与流式稳定性优化"
+    }
+  },
+  {
+    "version": "dev-20260619.1",
+    "date": "2026-06-19",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Codex Auth Modes & Background Terminal",
+      "zh": "Codex 认证模式与后台终端面板"
+    }
+  },
+  {
+    "version": "dev-20260618.1",
+    "date": "2026-06-18",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "First Public Dev Build",
+      "zh": "首个公开 Dev 构建"
+    }
+  }
+]

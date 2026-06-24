@@ -194,6 +194,7 @@ jobs:
     needs: [resolve]
     runs-on: windows-latest
     timeout-minutes: 90
+    continue-on-error: true
 
     steps:
       - name: Checkout Cradle source
@@ -345,6 +346,7 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
           DESKTOP_VERSION: ${{ needs.resolve.outputs.desktop_version }}
+          DISPLAY_VERSION: ${{ needs.resolve.outputs.display_version }}
           UPDATE_MANIFEST_URL: ${{ needs.resolve.outputs.update_url }}
         run: |
           set -euo pipefail
@@ -369,7 +371,26 @@ jobs:
           const outputRoot = 'release-assets'
           const releaseChannel = process.env.RELEASE_CHANNEL
           const desktopVersion = process.env.DESKTOP_VERSION
+          const displayVersion = process.env.DISPLAY_VERSION
           const updateManifestUrl = process.env.UPDATE_MANIFEST_URL
+
+          function readChangelogBody() {
+            try {
+              // Try Chinese first (primary), then English, then any locale
+              const dir = path.join('apps', 'landing', 'changelog')
+              for (const locale of ['zh', 'en']) {
+                const p = path.join(dir, `${displayVersion}.${locale}.md`)
+                if (fs.existsSync(p)) {
+                  const content = fs.readFileSync(p, 'utf8')
+                  const match = /^---\n[\s\S]*?\n---\n?([\s\S]*)$/.exec(content)
+                  return match ? match[1].trim() : content.trim()
+                }
+              }
+              return null
+            } catch {
+              return null
+            }
+          }
 
           function walk(dir, files = []) {
             for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -496,7 +517,7 @@ jobs:
             const updateManifest = {
               version: desktopVersion,
               releaseName: `Cradle ${desktopVersion}`,
-              releaseNotes: null,
+              releaseNotes: readChangelogBody(),
               releaseDate: new Date().toISOString(),
               minSupportedVersion: null,
               files: updateFiles,
