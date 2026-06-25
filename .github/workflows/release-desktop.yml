@@ -339,6 +339,9 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -383,22 +386,66 @@ jobs:
           const updateManifestUrl = process.env.UPDATE_MANIFEST_URL
           const releaseDownloadUrl = process.env.RELEASE_DOWNLOAD_URL
 
-          function readChangelogBody() {
+          function readChangelog(locale) {
             try {
-              // Try Chinese first (primary), then English, then any locale
               const dir = path.join('apps', 'landing', 'changelog')
-              for (const locale of ['zh', 'en']) {
-                const p = path.join(dir, `${displayVersion}.${locale}.md`)
-                if (fs.existsSync(p)) {
-                  const content = fs.readFileSync(p, 'utf8')
-                  const match = /^---\n[\s\S]*?\n---\n?([\s\S]*)$/.exec(content)
-                  return match ? match[1].trim() : content.trim()
-                }
+              const p = path.join(dir, `${displayVersion}.${locale}.md`)
+              if (!fs.existsSync(p)) return null
+              const content = fs.readFileSync(p, 'utf8')
+              const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(content)
+              if (!match) return { title: null, date: null, body: content.trim() }
+              const meta = match[1]
+              const body = match[2].trim()
+              const get = (key) => {
+                const m = new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(meta)
+                return m ? m[1].replace(/^['"]|['"]$/g, '') : null
               }
-              return null
+              return { title: get('title'), date: get('date'), body }
             } catch {
               return null
             }
+          }
+
+          function readChangelogBody() {
+            for (const locale of ['zh', 'en']) {
+              const ch = readChangelog(locale)
+              if (ch && ch.body) return ch.body
+            }
+            return null
+          }
+
+          function generateReleaseBody() {
+            const en = readChangelog('en')
+            if (!en || !en.body) return null
+
+            const lines = []
+            const title = en.title || `Cradle ${displayVersion}`
+
+            lines.push(`# ${title}`)
+            lines.push('')
+            lines.push(`> Cradle **${displayVersion}** · ${en.date || ''}`)
+            lines.push('')
+            lines.push('---')
+            lines.push('')
+            lines.push(en.body)
+            lines.push('')
+            lines.push('---')
+            lines.push('')
+
+            const assets = fs.readdirSync(outputRoot)
+            const downloadLinks = []
+            const dmg = assets.find(f => f.endsWith('.dmg'))
+            const exe = assets.find(f => f.endsWith('.exe'))
+            if (dmg) downloadLinks.push(`[macOS (arm64)](${releaseDownloadUrl}/${encodeURIComponent(dmg)})`)
+            if (exe) downloadLinks.push(`[Windows (x64)](${releaseDownloadUrl}/${encodeURIComponent(exe)})`)
+            if (downloadLinks.length) {
+              lines.push(`📥 **Downloads**: ${downloadLinks.join(' · ')}`)
+              lines.push('')
+            }
+
+            lines.push('📖 [Full changelog](https://cradle.wibus.ren/#/changelog)')
+
+            return lines.join('\n')
           }
 
           function walk(dir, files = []) {
@@ -511,7 +558,8 @@ jobs:
               throw new Error('DESKTOP_VERSION is required')
             }
 
-            const assetBaseUrl = releaseChannel === 'dev' ? releaseDownloadUrl : dirnameUrl(updateManifestUrl)
+            const rawAssetBaseUrl = releaseChannel === 'dev' ? releaseDownloadUrl : dirnameUrl(updateManifestUrl)
+            const assetBaseUrl = rawAssetBaseUrl.endsWith('/') ? rawAssetBaseUrl : `${rawAssetBaseUrl}/`
             const updateFiles = []
             for (const artifactName of fs.readdirSync(outputRoot).filter(entry => entry.startsWith('Cradle-mac-') && entry.endsWith('.zip')).sort()) {
               const artifactPath = path.join(outputRoot, artifactName)
@@ -578,6 +626,9 @@ jobs:
           }
 
           writeCradleUpdateManifest()
+
+          const releaseBody = generateReleaseBody() || `Cradle ${displayVersion}`
+          fs.writeFileSync('release-body.md', releaseBody, 'utf8')
           NODE
 
           if [ "$RELEASE_CHANNEL" = "dev" ]; then
@@ -598,7 +649,7 @@ jobs:
           name: "${{ needs.resolve.outputs.release_tag }} (${{ needs.resolve.outputs.channel }})"
           prerelease: ${{ needs.resolve.outputs.channel == 'dev' }}
           make_latest: ${{ needs.resolve.outputs.channel == 'release' }}
-          generate_release_notes: true
+          body_path: release-body.md
           files: |
             release-assets/*
         env:
