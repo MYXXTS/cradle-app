@@ -390,8 +390,12 @@ jobs:
           function readChangelog(locale) {
             try {
               const dir = path.join('apps', 'landing', 'changelog')
-              const p = path.join(dir, `${displayVersion}.${locale}.md`)
-              if (!fs.existsSync(p)) return null
+              const candidates = [
+                path.join(dir, `${displayVersion}.${locale}.md`),
+                path.join(dir, `dev-${displayVersion}.${locale}.md`),
+              ]
+              const p = candidates.find(f => fs.existsSync(f))
+              if (!p) return null
               const content = fs.readFileSync(p, 'utf8')
               const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(content)
               if (!match) return { title: null, date: null, body: content.trim() }
