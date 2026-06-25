@@ -44,6 +44,7 @@ jobs:
       dev_feed_tag: ${{ steps.params.outputs.dev_feed_tag }}
       source_ref: ${{ steps.params.outputs.source_ref }}
       update_url: ${{ steps.params.outputs.update_url }}
+      release_download_url: ${{ steps.params.outputs.release_download_url }}
     steps:
       - name: Resolve parameters
         id: params
@@ -95,6 +96,7 @@ jobs:
           else
             UPDATE_URL="https://github.com/${{ github.repository }}/releases/download/${DEV_FEED_TAG}/manifest.json"
           fi
+          RELEASE_DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
 
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "desktop_version=$DESKTOP_VERSION" >> "$GITHUB_OUTPUT"
@@ -103,6 +105,7 @@ jobs:
           echo "dev_feed_tag=$DEV_FEED_TAG" >> "$GITHUB_OUTPUT"
           echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
           echo "update_url=$UPDATE_URL" >> "$GITHUB_OUTPUT"
+          echo "release_download_url=$RELEASE_DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
 
           echo "Channel: $CHANNEL"
           echo "Desktop version: $DESKTOP_VERSION"
@@ -111,6 +114,7 @@ jobs:
           echo "Dev feed tag: $DEV_FEED_TAG"
           echo "Source ref: $SOURCE_REF"
           echo "Update URL: $UPDATE_URL"
+          echo "Release download URL: $RELEASE_DOWNLOAD_URL"
 
   build-macos:
     name: Build Desktop (mac arm64)
@@ -161,7 +165,7 @@ jobs:
           set -euo pipefail
           node installer/build-dmg.mjs \
             --app apps/desktop/release/mac-${RELEASE_ARCH}/Cradle.app \
-            --output apps/desktop/release/Cradle-${DESKTOP_VERSION}-${RELEASE_ARCH}.dmg
+            --output apps/desktop/release/Cradle.dmg
 
       - name: Create macOS updater zip
         working-directory: apps/desktop
@@ -172,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           app_path="release/mac-${RELEASE_ARCH}/Cradle.app"
-          zip_path="release/Cradle-${DESKTOP_VERSION}-${RELEASE_ARCH}-mac.zip"
+          zip_path="release/Cradle-mac-${RELEASE_ARCH}.zip"
 
           if [ ! -d "$app_path" ]; then
             echo "Packaged app is missing: $app_path" >&2
@@ -194,7 +198,6 @@ jobs:
     needs: [resolve]
     runs-on: windows-latest
     timeout-minutes: 90
-    continue-on-error: true
 
     steps:
       - name: Checkout Cradle source
@@ -348,6 +351,7 @@ jobs:
           DESKTOP_VERSION: ${{ needs.resolve.outputs.desktop_version }}
           DISPLAY_VERSION: ${{ needs.resolve.outputs.display_version }}
           UPDATE_MANIFEST_URL: ${{ needs.resolve.outputs.update_url }}
+          RELEASE_DOWNLOAD_URL: ${{ needs.resolve.outputs.release_download_url }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
@@ -373,6 +377,7 @@ jobs:
           const desktopVersion = process.env.DESKTOP_VERSION
           const displayVersion = process.env.DISPLAY_VERSION
           const updateManifestUrl = process.env.UPDATE_MANIFEST_URL
+          const releaseDownloadUrl = process.env.RELEASE_DOWNLOAD_URL
 
           function readChangelogBody() {
             try {
@@ -445,18 +450,28 @@ jobs:
             return manifest
           }
 
-          function writeManifest(file, manifest) {
+          function writeManifest(file, manifest, artifactBaseUrl = null) {
             const lines = []
             if (manifest.version) {
               lines.push(`version: ${manifest.version}`)
             }
             lines.push('files:')
             for (const artifact of manifest.files) {
-              lines.push(`  - url: ${artifact.url}`)
-              for (const [key, value] of Object.entries(artifact)) {
+              const projected = {
+                ...artifact,
+                url: artifactBaseUrl ? `${artifactBaseUrl}/${path.basename(artifact.url)}` : artifact.url,
+              }
+              lines.push(`  - url: ${projected.url}`)
+              for (const [key, value] of Object.entries(projected)) {
                 if (key !== 'url') {
                   lines.push(`    ${key}: ${value}`)
                 }
+              }
+            }
+            if (manifest.path && artifactBaseUrl) {
+              manifest = {
+                ...manifest,
+                path: `${artifactBaseUrl}/${path.basename(manifest.path)}`,
               }
             }
             for (const key of ['path', 'sha512', 'releaseName', 'releaseNotes', 'releaseDate']) {
@@ -492,9 +507,9 @@ jobs:
               throw new Error('DESKTOP_VERSION is required')
             }
 
-            const assetBaseUrl = dirnameUrl(updateManifestUrl)
+            const assetBaseUrl = releaseChannel === 'dev' ? releaseDownloadUrl : dirnameUrl(updateManifestUrl)
             const updateFiles = []
-            for (const artifactName of fs.readdirSync(outputRoot).filter(entry => entry.endsWith('.zip')).sort()) {
+            for (const artifactName of fs.readdirSync(outputRoot).filter(entry => entry.startsWith('Cradle-mac-') && entry.endsWith('.zip')).sort()) {
               const artifactPath = path.join(outputRoot, artifactName)
               if (!fs.existsSync(artifactPath)) {
                 continue
@@ -551,7 +566,11 @@ jobs:
                 }
               }
             }
-            writeManifest(path.join(outputRoot, name), merged)
+            writeManifest(
+              path.join(outputRoot, name),
+              merged,
+              releaseChannel === 'dev' ? releaseDownloadUrl : null,
+            )
           }
 
           writeCradleUpdateManifest()
@@ -559,7 +578,10 @@ jobs:
 
           if [ "$RELEASE_CHANNEL" = "dev" ]; then
             mkdir -p feed-assets
-            cp release-assets/* feed-assets/
+            cp release-assets/manifest.json feed-assets/
+            if [ -f release-assets/latest.yml ]; then
+              cp release-assets/latest.yml feed-assets/
+            fi
             find feed-assets -maxdepth 1 -type f -print | sort
           fi
 
