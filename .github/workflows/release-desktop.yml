@@ -244,6 +244,23 @@ jobs:
         shell: pwsh
         run: |
           $serverNodeModules = "apps/desktop/release/win-unpacked/resources/server/node_modules"
+          if (Test-Path (Join-Path $serverNodeModules ".pnpm")) {
+            throw "Packaged server runtime still contains pnpm virtual store; NSIS installation requires a hoisted node_modules layout."
+          }
+
+          $requiredRuntimeFiles = @(
+            "ffi-rs/index.js",
+            "@ff-labs/fff-node/dist/src/ffi.js",
+            "@ff-labs/fff-bin-win32-x64/fff_c.dll",
+            "@yuuang/ffi-rs-win32-x64-msvc/ffi-rs.win32-x64-msvc.node"
+          )
+          foreach ($relativePath in $requiredRuntimeFiles) {
+            $path = Join-Path $serverNodeModules $relativePath
+            if (!(Test-Path $path)) {
+              throw "Packaged server runtime is missing $relativePath"
+            }
+          }
+
           $nativeFiles = Get-ChildItem $serverNodeModules -Recurse -File -Include *.node,*.dll,*.dylib,*.so
           if ($nativeFiles.Count -eq 0) {
             throw "No native .node/.dll files found in packaged server runtime."
@@ -318,9 +335,36 @@ jobs:
             throw "Packaged Electron native module smoke failed with exit code $LASTEXITCODE"
           }
 
+      - name: Launch packaged Windows app e2e
+        run: node .github/scripts/windows-packaged-e2e.mjs
+        env:
+          CRADLE_E2E_ARTIFACT_NAME: win-unpacked
+
       - name: Build Windows installer
         working-directory: apps/desktop
         run: pnpm exec electron-builder --config electron-builder.mjs --win nsis --x64 --publish never --config.compression=normal
+
+      - name: Install Windows installer silently
+        id: install
+        shell: pwsh
+        run: |
+          $installer = Resolve-Path "apps/desktop/release/Cradle-setup.exe"
+          $installDir = Join-Path $env:RUNNER_TEMP "CradleInstall"
+          Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $installDir | Out-Null
+          Start-Process -FilePath $installer -ArgumentList "/S", "/D=$installDir" -Wait -NoNewWindow
+          $exe = Join-Path $installDir "Cradle.exe"
+          if (!(Test-Path $exe)) {
+            Get-ChildItem $installDir -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+            throw "Installed Cradle.exe was not found at $exe"
+          }
+          "exe=$exe" >> $env:GITHUB_OUTPUT
+
+      - name: Launch installed Windows app e2e
+        run: node .github/scripts/windows-packaged-e2e.mjs
+        env:
+          CRADLE_E2E_ARTIFACT_NAME: installed
+          CRADLE_E2E_EXE_PATH: ${{ steps.install.outputs.exe }}
 
       - name: Upload artifacts
         uses: ./.github/actions/desktop-upload-artifacts
@@ -332,7 +376,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [resolve, build-macos, build-windows]
-    if: always() && needs.resolve.result == 'success' && needs.build-macos.result == 'success'
+    if: always() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
