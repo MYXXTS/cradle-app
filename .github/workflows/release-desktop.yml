@@ -261,21 +261,32 @@ jobs:
             }
           }
 
-          $nativeFiles = Get-ChildItem $serverNodeModules -Recurse -File -Include *.node,*.dll,*.dylib,*.so
+          $nativeFiles = @(Get-ChildItem $serverNodeModules -Recurse -File -Include *.node,*.dll,*.dylib,*.so)
           if ($nativeFiles.Count -eq 0) {
             throw "No native .node/.dll files found in packaged server runtime."
           }
           $nativeFiles | Select-Object FullName, Length | Sort-Object FullName | Format-Table -AutoSize | Out-String -Width 4096 | Tee-Object -FilePath native-files.txt
 
-          $wrongPlatformNames = $nativeFiles | Where-Object {
-            $_.FullName -match "darwin|linux|macos" -or $_.Extension -in ".dylib", ".so"
-          }
-          if ($wrongPlatformNames.Count -gt 0) {
-            $wrongPlatformNames | Select-Object FullName | Format-Table -AutoSize
-            throw "Packaged runtime contains non-Windows native files."
+          $allowedOptionalPrebuilds = @($nativeFiles | Where-Object {
+            $_.FullName -match "\\node-pty\\prebuilds\\(darwin|linux)-"
+          })
+          if ($allowedOptionalPrebuilds.Count -gt 0) {
+            Write-Host "Ignoring node-pty optional non-Windows prebuilds that are not loaded on Windows:"
+            $allowedOptionalPrebuilds | Select-Object FullName | Format-Table -AutoSize
           }
 
-          foreach ($file in $nativeFiles) {
+          $wrongPlatformNames = @($nativeFiles | Where-Object {
+            ($_.FullName -match "darwin|linux|macos" -or $_.Extension -in ".dylib", ".so") -and $_.FullName -notmatch "\\node-pty\\prebuilds\\(darwin|linux)-"
+          })
+          if ($wrongPlatformNames.Count -gt 0) {
+            $wrongPlatformNames | Select-Object FullName | Format-Table -AutoSize
+            throw "Packaged runtime contains unexpected non-Windows native files."
+          }
+
+          $windowsRuntimeFiles = @($nativeFiles | Where-Object {
+            $_.FullName -notmatch "\\node-pty\\prebuilds\\(darwin|linux)-"
+          })
+          foreach ($file in $windowsRuntimeFiles) {
             $stream = [System.IO.File]::OpenRead($file.FullName)
             try {
               $header = New-Object byte[] 2
