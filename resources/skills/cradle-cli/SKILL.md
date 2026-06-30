@@ -229,6 +229,7 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `issue-agent-session` | 3 | Inspect and control issue agent sessions. | `cradle man issue-agent-session` |
 | `link-preview` | 1 | Generated Cradle CLI module. | `cradle man link-preview` |
 | `observability` | 5 | Inspect local observability events, incidents, and exports. | `cradle man observability` |
+| `opencode` | 1 | Generated Cradle CLI module. | `cradle man opencode` |
 | `plugin` | 3 | Generated Cradle CLI module. | `cradle man plugin` |
 | `preferences` | 10 | Read and update server preferences. | `cradle man preferences` |
 | `profile` | 5 | Manage agent profiles. | `cradle man profile` |
@@ -241,7 +242,7 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `skill` | 10 | Manage skills and skill sources. | `cradle man skill` |
 | `usage` | 7 | Inspect usage and cost data. | `cradle man usage` |
 | `workflow-rule` | 4 | Manage workflow rules. | `cradle man workflow-rule` |
-| `workspace` | 49 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
+| `workspace` | 50 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
 
 <!-- CRADLE_CLI_MODULES_END -->
 
