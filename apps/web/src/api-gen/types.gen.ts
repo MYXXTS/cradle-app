@@ -200,6 +200,7 @@ export type GetPreferencesDesktopResponses = {
         autoCheckForUpdates: boolean;
         autoDownloadUpdates: boolean;
         lastSeenChangelogVersion: string | null;
+        externalTerminalApp: string | null;
     };
 };
 
@@ -213,6 +214,7 @@ export type PutPreferencesDesktopData = {
         autoCheckForUpdates: boolean;
         autoDownloadUpdates: boolean;
         lastSeenChangelogVersion: string | null;
+        externalTerminalApp: string | null;
     };
     path?: never;
     query?: never;
@@ -6771,6 +6773,7 @@ export type GetIssuesByIdResponse = GetIssuesByIdResponses[keyof GetIssuesByIdRe
 
 export type PatchIssuesByIdData = {
     body: {
+        workspaceId?: string;
         title?: string;
         description?: string | null;
         priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';

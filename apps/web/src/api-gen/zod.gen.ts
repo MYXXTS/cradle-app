@@ -43,7 +43,8 @@ export const zPutPreferencesDesktopBody = z.object({
     ]),
     autoCheckForUpdates: z.boolean().default(true),
     autoDownloadUpdates: z.boolean().default(false),
-    lastSeenChangelogVersion: z.string().nullable().default(null)
+    lastSeenChangelogVersion: z.string().nullable().default(null),
+    externalTerminalApp: z.string().nullable().default(null)
 });
 
 export const zPutPreferencesNetworkBody = z.object({
@@ -1533,6 +1534,7 @@ export const zGetIssuesByIdPath = z.object({
 });
 
 export const zPatchIssuesByIdBody = z.object({
+    workspaceId: z.string().min(1).optional(),
     title: z.string().min(1).optional(),
     description: z.string().nullish(),
     priority: z.enum([
