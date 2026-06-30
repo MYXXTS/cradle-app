@@ -4,11 +4,7 @@
 
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import {
-  EyeLine as Eye,
-  LayersLine as Layers,
-  Message1Line as MessageSquare
-} from '@mingcute/react'
+import { Eye, Layers, MessageSquare, Terminal } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 
 gsap.registerPlugin(useGSAP)

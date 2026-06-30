@@ -4,11 +4,7 @@
 
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import {
-  CheckCircleLine as CheckCircle2,
-  SubtractLine as Minus,
-  CloseLine as X
-} from '@mingcute/react'
+import { CheckCircle2, Minus, X } from 'lucide-react'
 import { useRef } from 'react'
 
 const TOOLS = ['Cursor', 'Claude Code', 'Devin', 'Cradle']

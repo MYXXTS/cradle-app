@@ -4,11 +4,7 @@
 
 import { useGSAP } from '@gsap/react'
 import gsap from 'gsap'
-import {
-  LayersLine as Layers,
-  Plugin2Line as PlugZap,
-  ProcessLine as Workflow
-} from '@mingcute/react'
+import { Layers, PlugZap, Workflow } from 'lucide-react'
 import { useRef } from 'react'
 
 const STEPS = [
