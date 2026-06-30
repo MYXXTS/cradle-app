@@ -223,6 +223,22 @@ export const zPatchWorkspacesByWorkspaceIdPath = z.object({
     workspaceId: z.string().min(1)
 });
 
+export const zPostWorkspacesByWorkspaceIdMigrateBody = z.object({
+    targetWorkspaceId: z.string().min(1),
+    entities: z.array(z.enum([
+        'issues',
+        'kanban',
+        'automation'
+    ])).optional(),
+    statusMappings: z.record(z.string(), z.unknown()).optional(),
+    milestoneMappings: z.record(z.string(), z.unknown()).optional(),
+    dryRun: z.boolean().optional()
+});
+
+export const zPostWorkspacesByWorkspaceIdMigratePath = z.object({
+    workspaceId: z.string().min(1)
+});
+
 export const zGetFilesystemBrowseQuery = z.object({
     path: z.string().optional()
 });

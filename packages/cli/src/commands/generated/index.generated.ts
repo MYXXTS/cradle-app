@@ -150,6 +150,7 @@ import { register as registerObservabilityEvents } from './observability/events'
 import { register as registerObservabilityExport } from './observability/export'
 import { register as registerObservabilityIncidents } from './observability/incidents'
 import { register as registerObservabilityRuntimeSnapshot } from './observability/runtime-snapshot'
+import { register as registerOpencodeServerResources } from './opencode/server/resources'
 import { register as registerPluginGet } from './plugin/get'
 import { register as registerPluginList } from './plugin/list'
 import { register as registerPluginSetEnabled } from './plugin/set-enabled'
@@ -280,6 +281,7 @@ import { register as registerWorkspaceGitStatus } from './workspace/git/status'
 import { register as registerWorkspaceImport } from './workspace/import'
 import { register as registerWorkspaceInspect } from './workspace/inspect'
 import { register as registerWorkspaceList } from './workspace/list'
+import { register as registerWorkspaceMigrate } from './workspace/migrate'
 import { register as registerWorkspaceMultiFolderCreate } from './workspace/multi-folder/create'
 import { register as registerWorkspaceMultiFolderImport } from './workspace/multi-folder/import'
 import { register as registerWorkspaceResolve } from './workspace/resolve'
@@ -436,6 +438,7 @@ export function registerGeneratedCommands(program: Command): void {
   registerObservabilityExport(program)
   registerObservabilityIncidents(program)
   registerObservabilityRuntimeSnapshot(program)
+  registerOpencodeServerResources(program)
   registerPluginGet(program)
   registerPluginList(program)
   registerPluginSetEnabled(program)
@@ -566,6 +569,7 @@ export function registerGeneratedCommands(program: Command): void {
   registerWorkspaceImport(program)
   registerWorkspaceInspect(program)
   registerWorkspaceList(program)
+  registerWorkspaceMigrate(program)
   registerWorkspaceMultiFolderCreate(program)
   registerWorkspaceMultiFolderImport(program)
   registerWorkspaceResolve(program)

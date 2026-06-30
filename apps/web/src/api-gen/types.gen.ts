@@ -1106,6 +1106,68 @@ export type PatchWorkspacesByWorkspaceIdResponses = {
 
 export type PatchWorkspacesByWorkspaceIdResponse = PatchWorkspacesByWorkspaceIdResponses[keyof PatchWorkspacesByWorkspaceIdResponses];
 
+export type PostWorkspacesByWorkspaceIdMigrateData = {
+    body: {
+        targetWorkspaceId: string;
+        /**
+         * Which entity types to migrate. Defaults to all three.
+         */
+        entities?: Array<'issues' | 'kanban' | 'automation'>;
+        /**
+         * Map source status name → target status name. Unmapped statuses fall back to target default.
+         */
+        statusMappings?: {
+            [key: string]: unknown;
+        };
+        /**
+         * Map source milestone title → target milestone title. Unmapped milestones are cleared.
+         */
+        milestoneMappings?: {
+            [key: string]: unknown;
+        };
+        /**
+         * Preview the migration without making changes.
+         */
+        dryRun?: boolean;
+    };
+    path: {
+        workspaceId: string;
+    };
+    query?: never;
+    url: '/workspaces/{workspaceId}/migrate';
+};
+
+export type PostWorkspacesByWorkspaceIdMigrateResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        dryRun: boolean;
+        issues: {
+            processed: number;
+            updated: number;
+            numbersReassigned: number;
+            statusesMapped: Array<{
+                from: string;
+                to: string;
+            }>;
+            milestonesMapped: Array<{
+                from: string;
+                to: string | null;
+            }>;
+            parentIssuesCleared: number;
+        };
+        kanban: {
+            boardsMoved: number;
+        };
+        automation: {
+            definitionsMoved: number;
+        };
+    };
+};
+
+export type PostWorkspacesByWorkspaceIdMigrateResponse = PostWorkspacesByWorkspaceIdMigrateResponses[keyof PostWorkspacesByWorkspaceIdMigrateResponses];
+
 export type GetFilesystemBrowseData = {
     body?: never;
     path?: never;
@@ -19395,6 +19457,30 @@ export type PostChronicleEmbeddingsResponses = {
 
 export type PostChronicleEmbeddingsResponse = PostChronicleEmbeddingsResponses[keyof PostChronicleEmbeddingsResponses];
 
+export type GetOpencodeServerResourcesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opencode/server/resources';
+};
+
+export type GetOpencodeServerResourcesResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        running: boolean;
+        pid: number | null;
+        url: string | null;
+        startedAt: number | null;
+        uptimeSeconds: number | null;
+        rssMB: number | null;
+        cpuPercent: number | null;
+    };
+};
+
+export type GetOpencodeServerResourcesResponse = GetOpencodeServerResourcesResponses[keyof GetOpencodeServerResourcesResponses];
+
 export type GetAgentSessionsByAgentSessionIdData = {
     body?: never;
     path: {
@@ -19981,6 +20067,15 @@ export type GetObservabilityRuntimeSnapshotResponses = {
         chronicle: {
             running: boolean;
             pid: number | null;
+            rssMB: number | null;
+            cpuPercent: number | null;
+        };
+        opencodeServer: {
+            running: boolean;
+            pid: number | null;
+            url: string | null;
+            startedAt: number | null;
+            uptimeSeconds: number | null;
             rssMB: number | null;
             cpuPercent: number | null;
         };
