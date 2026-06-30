@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readdirSync, mkdtempSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { arch, tmpdir } from 'node:os'
 import appdmg from 'appdmg'
 
 const REPO_ROOT = resolve(import.meta.dirname, '..')
@@ -103,8 +103,12 @@ function resolvePayload(appInput, stageDir) {
 function stagePayload(appPath, stageDir) {
   const payloadDir = resolve(stageDir, '.payload')
   mkdirSync(payloadDir, { recursive: true })
-  cpSync(appPath, resolve(payloadDir, 'Cradle.app'), { recursive: true })
-  execFileSync('/usr/bin/xattr', ['-cr', resolve(payloadDir, 'Cradle.app')], { stdio: 'ignore' })
+  const payloadApp = resolve(payloadDir, 'Cradle.app')
+  execFileSync('/usr/bin/ditto', [appPath, payloadApp])
+  execFileSync('/usr/bin/xattr', ['-cr', payloadApp], { stdio: 'ignore' })
+  if (arch() === 'arm64') {
+    execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', payloadApp], { stdio: 'ignore' })
+  }
   return payloadDir
 }
 
