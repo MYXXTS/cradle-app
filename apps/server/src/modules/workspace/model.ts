@@ -238,4 +238,40 @@ export const WorkspaceModel = {
     message: t.String(),
     details: t.Object({ locator: workspaceLocator }),
   }),
+
+  migrateBody: t.Object({
+    targetWorkspaceId: t.String({ minLength: 1 }),
+    entities: t.Optional(t.Array(t.Union([
+      t.Literal('issues'),
+      t.Literal('kanban'),
+      t.Literal('automation'),
+    ]), {
+      description: 'Which entity types to migrate. Defaults to all three.',
+    })),
+    statusMappings: t.Optional(t.Record(t.String(), t.String(), {
+      description: 'Map source status name → target status name. Unmapped statuses fall back to target default.',
+    })),
+    milestoneMappings: t.Optional(t.Record(t.String(), t.String(), {
+      description: 'Map source milestone title → target milestone title. Unmapped milestones are cleared.',
+    })),
+    dryRun: t.Optional(t.Boolean({ description: 'Preview the migration without making changes.' })),
+  }, { additionalProperties: false }),
+
+  migrateResponse: t.Object({
+    dryRun: t.Boolean(),
+    issues: t.Object({
+      processed: t.Number(),
+      updated: t.Number(),
+      numbersReassigned: t.Number(),
+      statusesMapped: t.Array(t.Object({ from: t.String(), to: t.String() })),
+      milestonesMapped: t.Array(t.Object({ from: t.String(), to: t.Nullable(t.String()) })),
+      parentIssuesCleared: t.Number(),
+    }),
+    kanban: t.Object({
+      boardsMoved: t.Number(),
+    }),
+    automation: t.Object({
+      definitionsMoved: t.Number(),
+    }),
+  }),
 } as const

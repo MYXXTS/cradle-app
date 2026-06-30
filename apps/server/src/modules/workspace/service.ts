@@ -4,11 +4,12 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 
 import type { Workspace } from '@cradle/db'
-import { workspaces } from '@cradle/db'
+import { automationDefinitions, kanbanBoards, workspaces } from '@cradle/db'
 import { desc, eq } from 'drizzle-orm'
 
 import { AppError } from '../../errors/app-error'
 import { db, getServerConfig } from '../../infra'
+import { migrateIssues, type MigrateIssuesOptions, type MigrateIssuesResult } from '../issue/service'
 import { assertAppFeatureFlagEnabled, isAppFeatureFlagEnabled } from '../preferences/service'
 import * as RemoteHosts from '../remote-hosts/service'
 import { subscribeWorkspaceFileChanges } from './file-watch'
@@ -302,6 +303,70 @@ export function update(input: { id: string, name?: string, pinned?: boolean }): 
 
 export function remove(id: string): void {
   db().delete(workspaces).where(eq(workspaces.id, id)).run()
+}
+
+// ── workspace migration ──
+
+export type MigrateEntity = 'issues' | 'kanban' | 'automation'
+
+export interface MigrateWorkspaceOptions extends MigrateIssuesOptions {
+  entities?: MigrateEntity[]
+}
+
+export interface MigrateWorkspaceResult {
+  dryRun: boolean
+  issues: MigrateIssuesResult
+  kanban: { boardsMoved: number }
+  automation: { definitionsMoved: number }
+}
+
+export function migrateWorkspace(sourceId: string, targetId: string, options: MigrateWorkspaceOptions = {}): MigrateWorkspaceResult {
+  if (sourceId === targetId) {
+    throw new AppError({ code: 'workspace_migrate_same', status: 400, message: 'Source and target workspace must be different' })
+  }
+  const source = get(sourceId)
+  if (!source) {
+    throw new AppError({ code: 'workspace_not_found', status: 404, message: 'Source workspace not found', details: { workspaceId: sourceId } })
+  }
+  const target = get(targetId)
+  if (!target) {
+    throw new AppError({ code: 'workspace_not_found', status: 404, message: 'Target workspace not found', details: { workspaceId: targetId } })
+  }
+
+  const entities = options.entities ?? ['issues', 'kanban', 'automation']
+  const dryRun = options.dryRun ?? false
+
+  // Issues
+  const issuesResult: MigrateIssuesResult = entities.includes('issues')
+    ? migrateIssues(sourceId, targetId, options)
+    : { processed: 0, updated: 0, numbersReassigned: 0, statusesMapped: [], milestonesMapped: [], parentIssuesCleared: 0 }
+
+  // Kanban boards
+  let boardsMoved = 0
+  if (entities.includes('kanban') && !dryRun) {
+    const result = db().update(kanbanBoards).set({ workspaceId: targetId, updatedAt: Math.floor(Date.now() / 1000) }).where(eq(kanbanBoards.workspaceId, sourceId)).run()
+    boardsMoved = result.changes
+  } else if (entities.includes('kanban') && dryRun) {
+    const rows = db().select({ id: kanbanBoards.id }).from(kanbanBoards).where(eq(kanbanBoards.workspaceId, sourceId)).all()
+    boardsMoved = rows.length
+  }
+
+  // Automation definitions
+  let definitionsMoved = 0
+  if (entities.includes('automation') && !dryRun) {
+    const result = db().update(automationDefinitions).set({ workspaceId: targetId, updatedAt: Math.floor(Date.now() / 1000) }).where(eq(automationDefinitions.workspaceId, sourceId)).run()
+    definitionsMoved = result.changes
+  } else if (entities.includes('automation') && dryRun) {
+    const rows = db().select({ id: automationDefinitions.id }).from(automationDefinitions).where(eq(automationDefinitions.workspaceId, sourceId)).all()
+    definitionsMoved = rows.length
+  }
+
+  return {
+    dryRun,
+    issues: issuesResult,
+    kanban: { boardsMoved },
+    automation: { definitionsMoved },
+  }
 }
 
 export async function getFiles(workspaceId: string) {

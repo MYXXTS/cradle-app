@@ -366,6 +366,25 @@ export const workspace = new Elysia({
     body: WorkspaceModel.updateBody,
     response: { 200: WorkspaceModel.nullableRecord },
   })
+  .post('/:workspaceId/migrate', ({ params, body }) => {
+    return Workspace.migrateWorkspace(params.workspaceId, body.targetWorkspaceId, {
+      entities: body.entities as Workspace.MigrateEntity[] | undefined,
+      statusMappings: body.statusMappings,
+      milestoneMappings: body.milestoneMappings,
+      dryRun: body.dryRun,
+    })
+  }, {
+    detail: {
+      'summary': 'Migrate all entities from one workspace to another',
+      'description': 'Bulk-migrate issues, kanban boards, and automation definitions from the source workspace to the target. Supports dry-run preview, status/milestone mapping, and number conflict resolution.',
+      'x-cradle-cli': {
+        command: ['workspace', 'migrate'],
+      },
+    },
+    params: WorkspaceModel.workspaceIdParams,
+    body: WorkspaceModel.migrateBody,
+    response: { 200: WorkspaceModel.migrateResponse },
+  })
   .delete('/:workspaceId', ({ params }) => {
     Workspace.remove(params.workspaceId)
     return { ok: true as const }
