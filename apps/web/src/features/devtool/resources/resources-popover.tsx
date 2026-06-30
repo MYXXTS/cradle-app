@@ -18,6 +18,7 @@ import {
   getChronicleDaemonResourcesOptions,
   getChronicleStatusOptions,
   getHealthOptions,
+  getOpencodeServerResourcesOptions,
   getTerminalSessionsResourcesOptions,
 } from '~/api-gen/@tanstack/react-query.gen'
 import { Button } from '~/components/ui/button'
@@ -84,6 +85,16 @@ const ChronicleResourcesSchema = z.object({
   cpuPercent: z.number().nullable().default(null),
 })
 
+const OpencodeServerResourcesSchema = z.object({
+  running: z.boolean(),
+  pid: z.number().nullable(),
+  url: z.string().nullable(),
+  startedAt: z.number().nullable(),
+  uptimeSeconds: z.number().nullable(),
+  rssMB: z.number().nullable(),
+  cpuPercent: z.number().nullable().default(null),
+})
+
 export interface ServerHealth {
   memory: {
     heapUsed: number
@@ -136,6 +147,16 @@ interface ChronicleStatus {
   running: boolean
 }
 
+interface OpencodeServerResources {
+  running: boolean
+  pid: number | null
+  url: string | null
+  startedAt: number | null
+  uptimeSeconds: number | null
+  rssMB: number | null
+  cpuPercent: number | null
+}
+
 interface RendererMemory {
   heapUsed: number
   heapTotal: number
@@ -160,6 +181,11 @@ export interface ResourceSnapshot {
   chroniclePid: number | null
   chronicleRss: number
   chronicleCpuPercent: number | null
+  opencodeRunning: boolean
+  opencodePid: number | null
+  opencodeRss: number
+  opencodeCpuPercent: number | null
+  opencodeUptime: number
   terminals: PtyResourceItem[]
   timestamp: number
   updatedAtLabel: string
@@ -172,6 +198,8 @@ interface ResourceSnapshotInput {
   pty: PtyResources | null
   chronicle: ChronicleResources | null
   chronicleWarning: string | null
+  opencode: OpencodeServerResources | null
+  opencodeWarning: string | null
   timestamp: number
 }
 
@@ -207,6 +235,8 @@ function createResourceSnapshot({
   pty,
   chronicle,
   chronicleWarning,
+  opencode,
+  opencodeWarning,
   timestamp,
 }: ResourceSnapshotInput): ResourceSnapshot {
   const mbToBytes = (mb: number) => mb * 1024 * 1024
@@ -220,6 +250,9 @@ function createResourceSnapshot({
   }
   if (chronicleWarning) {
     warnings.push(chronicleWarning)
+  }
+  if (opencodeWarning) {
+    warnings.push(opencodeWarning)
   }
 
   return {
@@ -240,6 +273,11 @@ function createResourceSnapshot({
     chroniclePid: chronicle?.pid ?? null,
     chronicleRss: chronicle?.rssMB ? mbToBytes(chronicle.rssMB) : 0,
     chronicleCpuPercent: chronicle?.cpuPercent ?? null,
+    opencodeRunning: opencode?.running ?? false,
+    opencodePid: opencode?.pid ?? null,
+    opencodeRss: opencode?.rssMB ? mbToBytes(opencode.rssMB) : 0,
+    opencodeCpuPercent: opencode?.cpuPercent ?? null,
+    opencodeUptime: opencode?.uptimeSeconds ?? 0,
     terminals: pty?.terminals ?? [],
     timestamp,
     updatedAtLabel: formatTimestampLabel(timestamp),
@@ -351,6 +389,16 @@ const CHRONICLE_OFF_RESOURCES: ChronicleResources = {
   cpuPercent: null,
 }
 
+const OPENCODE_OFF_RESOURCES: OpencodeServerResources = {
+  running: false,
+  pid: null,
+  url: null,
+  startedAt: null,
+  uptimeSeconds: null,
+  rssMB: null,
+  cpuPercent: null,
+}
+
 function parseServerHealth(data: unknown): ServerHealth {
   return ServerHealthSchema.parse(data)
 }
@@ -365,6 +413,10 @@ function selectChronicleStatus(data: ChronicleStatus): ChronicleStatus {
 
 function parseChronicleResources(data: unknown): ChronicleResources {
   return ChronicleResourcesSchema.parse(data)
+}
+
+function parseOpencodeServerResources(data: unknown): OpencodeServerResources {
+  return OpencodeServerResourcesSchema.parse(data)
 }
 
 function useResourceSnapshot(open: boolean) {
@@ -427,6 +479,24 @@ function useResourceSnapshot(open: boolean) {
         : false,
     retry: false,
   })
+  const opencodeResourcesEnabled = open
+  const {
+    data: opencodeResources,
+    isError: opencodeResourcesError,
+    isFetched: opencodeResourcesFetched,
+    isFetching: opencodeResourcesFetching,
+    isSuccess: opencodeResourcesSuccess,
+    refetch: refetchOpencodeResources,
+  } = useQuery({
+    ...getOpencodeServerResourcesOptions(),
+    select: parseOpencodeServerResources,
+    enabled: opencodeResourcesEnabled,
+    refetchInterval: query =>
+      opencodeResourcesEnabled && query.state.status !== 'error'
+        ? REFRESH_INTERVAL_MS
+        : false,
+    retry: false,
+  })
 
   useEffect(() => {
     if (!open) {
@@ -448,7 +518,7 @@ function useResourceSnapshot(open: boolean) {
     const refetches: Array<Promise<unknown>> = [refetchHealth()]
 
     if (open) {
-      refetches.push(refetchPty(), refetchChronicleStatus())
+      refetches.push(refetchPty(), refetchChronicleStatus(), refetchOpencodeResources())
     }
 
     if (chronicleResourcesEnabled) {
@@ -462,6 +532,7 @@ function useResourceSnapshot(open: boolean) {
     || ptyFetched
     || chronicleStatusFetched
     || chronicleResourcesFetched
+    || opencodeResourcesFetched
 
   const chronicleWarning = chronicleStatusError
     ? 'Chronicle status unavailable'
@@ -471,6 +542,12 @@ function useResourceSnapshot(open: boolean) {
   const chronicle = chronicleResourcesEnabled
     ? chronicleResources ?? null
     : CHRONICLE_OFF_RESOURCES
+  const opencodeWarning = opencodeResourcesEnabled && opencodeResourcesError
+    ? 'opencode server metrics unavailable'
+    : null
+  const opencode = opencodeResourcesEnabled
+    ? opencodeResources ?? null
+    : OPENCODE_OFF_RESOURCES
   const snap = hasSnapshot
     ? createResourceSnapshot({
         renderer,
@@ -478,6 +555,8 @@ function useResourceSnapshot(open: boolean) {
         pty: pty ?? null,
         chronicle,
         chronicleWarning,
+        opencode,
+        opencodeWarning,
         timestamp,
       })
     : null
@@ -486,10 +565,12 @@ function useResourceSnapshot(open: boolean) {
     || ptyFetching
     || chronicleStatusFetching
     || (chronicleResourcesEnabled && chronicleResourcesFetching)
+    || (opencodeResourcesEnabled && opencodeResourcesFetching)
   const resourcesReady = healthSuccess
     && ptySuccess
     && chronicleStatusSuccess
     && (!chronicleResourcesEnabled || chronicleResourcesSuccess)
+    && (!opencodeResourcesEnabled || opencodeResourcesSuccess)
 
   return { snap, loading, refresh, resourcesReady }
 }
@@ -510,13 +591,15 @@ export function ResourcesPopover() {
   const totalCliTuiMB = snap ? bytesToMegabytes(snap.cliTuiRss) : 0
   const totalBottomPanelMB = snap ? bytesToMegabytes(snap.bottomPanelRss) : 0
   const totalChronicleMB = snap ? bytesToMegabytes(snap.chronicleRss) : 0
-  const totalMB = totalRendererMB + totalServerMB + totalCliTuiMB + totalBottomPanelMB + totalChronicleMB
+  const totalOpencodeMB = snap ? bytesToMegabytes(snap.opencodeRss) : 0
+  const totalMB = totalRendererMB + totalServerMB + totalCliTuiMB + totalBottomPanelMB + totalChronicleMB + totalOpencodeMB
   const totalCpuPercent = snap
     ? Math.round((
       (snap.serverCpuPercent ?? 0)
       + snap.cliTuiCpuPercent
       + snap.bottomPanelCpuPercent
       + (snap.chronicleCpuPercent ?? 0)
+      + (snap.opencodeCpuPercent ?? 0)
     ) * 100) / 100
     : null
   const cliTuiTerminals = snap?.terminals.filter(item => item.role === 'cli-tui') ?? []
@@ -590,10 +673,10 @@ export function ResourcesPopover() {
         {snap && (
           <div className="px-3 pt-2 pb-1">
             <MemoryBar
-              used={snap.rendererHeapUsed + snap.serverRss + snap.cliTuiRss + snap.bottomPanelRss + snap.chronicleRss}
+              used={snap.rendererHeapUsed + snap.serverRss + snap.cliTuiRss + snap.bottomPanelRss + snap.chronicleRss + snap.opencodeRss}
               total={Math.max(
                 snap.rendererHeapLimit,
-                (snap.rendererHeapUsed + snap.serverRss + snap.cliTuiRss + snap.bottomPanelRss + snap.chronicleRss) * 2,
+                (snap.rendererHeapUsed + snap.serverRss + snap.cliTuiRss + snap.bottomPanelRss + snap.chronicleRss + snap.opencodeRss) * 2,
               )}
             />
           </div>
@@ -702,6 +785,30 @@ export function ResourcesPopover() {
 : (
                 <SectionRow label="Not running" value="0 MB / 0%" dimLabel branch="last" />
               )}
+            </ResourceGroup>
+
+            <div className="border-t border-border my-1.5" />
+
+            <ResourceGroup
+              icon={<ServerIcon className="size-3.5" />}
+              label="opencode"
+              value={snap?.opencodeRunning
+                ? formatResourceUsage(bytesToMegabytes(snap.opencodeRss), snap.opencodeCpuPercent)
+                : 'Off'}
+            >
+              {snap?.opencodeRunning
+                ? (
+                  <SectionRow
+                    label="opencode-serve"
+                    detail={snap.opencodePid ? `pid ${snap.opencodePid}` : undefined}
+                    value={`${snap.opencodeRss > 0 ? formatMegabytes(bytesToMegabytes(snap.opencodeRss), 1) : '—'} / ${formatCpuPercent(snap.opencodeCpuPercent)}`}
+                    dimLabel
+                    branch="last"
+                  />
+                )
+                : (
+                  <SectionRow label="Not running" value="0 MB / 0%" dimLabel branch="last" />
+                )}
             </ResourceGroup>
 
             <div className="border-t border-border my-1.5" />
