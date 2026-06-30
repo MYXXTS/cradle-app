@@ -4,23 +4,29 @@ This file provides guidance to Agent when working with code in this repository.
 
 ## Principles
 
-Please be clear: When designing features for Cradle, always consider ownership and namespace. Each feature should have a clear owner responsible for its semantics, configuration, lifecycle, compatibility, and migration. This ownership should be reflected in the namespace where the feature resides. The fundamental question to ask is: "Who owns this feature, who is it for, and with whom will it evolve?"
+### Ownership & Namespace
 
-By adhering to this principle, we can ensure that features are well-organized, maintainable, and evolve in a way that serves their intended users effectively. This approach promotes clarity, accountability, and a better developer experience across the codebase.
+Every feature must have a clear owner responsible for its semantics, configuration, lifecycle, and evolution. Ownership is reflected in namespace boundaries.
 
-We should keep the compatibility with other products, we can read data from others namespace,but we should never write data to others namespace, this is the basic principle of namespace ownership.
+**Read across, write within.** You may read data from other namespaces (e.g., `~/.agents/skills`), but never write to them. Write only to your own namespace (e.g., Cradle's). Each namespace owner controls the full lifecycle of its data.
 
-For example, if we want to use skills in agent, we can read skills data from (\~/.)/.agents/skills namespace, but we should never write skills data to skills namespace, we should write skills data to our Cradle namespace, and let agent own the lifecycle of skills data in agent context.
+### Architecture First
 
-- 破坏性重构，不要做兼容性代码！务必要从大局的架构上思考问题，而不是局限于某个文件、某个模块、某个功能点的实现细节！如果你发现了一个问题，并且你认为这个问题的解决方案需要对现有代码进行破坏性的重构，那么请大胆地进行重构！不要担心兼容性问题，因为我们现在还没有发布任何版本，我们可以随时进行破坏性的重构！我们要追求的是一个干净、简洁、易于维护的代码库，而不是一个充斥着兼容性代码的代码库！所以，请务必从大局的架构上思考问题，勇敢地进行破坏性的重构！
-- 如果能选择架构升级，就直接架构升级，不要犹豫！不要担心兼容性问题！我们现在还没有发布任何版本，我们可以随时进行架构升级！我们要追求的是一个干净、简洁、易于维护的代码库，而不是一个充斥着兼容性代码的代码库！所以，请务必从大局的架构上思考问题，勇敢地进行架构升级！
-- 麻烦写前端的时候，不要给组件写 Test... 不要花无用的时间在这些无意义的事情上！不要莫名其妙就拿 Browser 来测，有很多东西只有我让你测了才需要测！不要为了测试而测试！我们要追求的是一个干净、简洁、易于维护的代码库，而不是一个充斥着无意义测试代码的代码库！所以，请务必从大局的架构上思考问题，勇敢地进行开发，不要被无意义的测试所束缚！
-- 最高警告：请不要随意发明一个新的类型，新的投影。一切的一切，请从现有的可能能用到的库的 API 当中寻找，而不是考虑自创
-- 请不要动不动就使用启发式方案，如果你觉得你想要使用启发式方案的话，立即停止下来跟我交流为什么你想这样使用
-- 请你信任内部 TS 类型，不要动不动就对值做 unknown，直接注解为期望类型，而不是 unknown 后使用大量内联辅助函数解决类型安全问题
-  - 同时，如果你发现改这里不行，必须要一直往上改才可以做到不内联的情况，请你立即反馈报告给我
-- 请你不要动不动就改 DB Schema，也不要动不动就想着 DB Migration，即使 Migration 也请你谨慎。。不是什么都要扯到 DB 去的😅、
-- 把这些全部都补齐，依照最佳实践，必要的时候允许重构以及分离文件，不要把所有东西锁在一个文件里面，默认项目里的代码质量参差不齐，你才是拥有最好代码组织能力的人
+- **Prefer breaking refactors over compatibility shims.** No stable versions are published yet — clean, well-structured code matters more than backward compatibility. If a fix requires a breaking change, make it.
+- **Upgrade architecture without hesitation.** If a better approach exists, adopt it. Don't accumulate technical debt for the sake of incremental compatibility.
+
+### Code Quality
+
+- **Trust TypeScript types.** Annotate values with their expected types directly. Avoid `unknown` + inline type guards. If proper typing requires changes up the call chain, report it rather than working around it.
+- **Don't invent new types or projections.** Exhaust existing library APIs and patterns before introducing new abstractions.
+- **Don't casually modify DB schema.** Not every problem needs a database change. Schema migrations require careful consideration.
+- **Separate concerns.** Don't lock everything in one file. Refactor and split when it improves clarity — assume existing code quality is uneven, and you are responsible for bringing it up to standard.
+- **Discuss before using heuristics.** If you're considering a heuristic approach, stop and explain why before proceeding.
+
+### Testing
+
+Don't write component tests for the sake of coverage. Only test when explicitly requested or when the test exercises a critical path that can't be verified otherwise. Avoid browser-based testing unless specifically asked.
+
 
 ## Stacks
 
