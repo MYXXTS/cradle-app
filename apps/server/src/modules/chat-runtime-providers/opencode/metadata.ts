@@ -24,10 +24,10 @@ export const OPENCODE_RUNTIME_METADATA = {
 
 export const OPENCODE_RUNTIME_CAPABILITIES = {
   supportsSteerTurn: false,
-  supportsShellExecution: false,
-  supportsLastTurnRollback: false,
+  supportsShellExecution: true,
+  supportsLastTurnRollback: true,
   supportsRuntimeSettings: false,
-  supportsUiSlotStates: false,
+  supportsUiSlotStates: true,
   supportsDynamicCapabilities: false,
   sessionModelSwitch: 'in-session',
 } satisfies ChatRuntimeCapabilities

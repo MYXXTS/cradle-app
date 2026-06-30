@@ -1,12 +1,22 @@
 import type { UIMessageChunk } from 'ai'
-import type { AssistantMessage as OpencodeAssistantMessage, Config } from '@opencode-ai/sdk'
+import type { AssistantMessage as OpencodeAssistantMessage, Config, Message as OpencodeMessage, Part as OpencodePart } from '@opencode-ai/sdk'
 
 import type {
   CancelTurnInput,
   ChatRuntime,
+  ExecuteShellCommandInput,
+  ExecuteShellCommandResult,
+  GenerateSessionTitleInput,
+  GetCapabilitiesInput,
+  GetUiSlotStatesInput,
   ProviderContext,
+  QuickQuestionInput,
   ResumeChatSessionInput,
+  RollbackLastTurnInput,
+  RollbackLastTurnResult,
+  RuntimePresentationCapabilities,
   RuntimeSession,
+  RuntimeUiSlotState,
   StartChatSessionInput,
   StreamTurnInput,
   TokenUsage,
@@ -14,17 +24,31 @@ import type {
   RuntimeModelCatalog,
 } from '../../chat-runtime/runtime-provider-types'
 import { ProviderErrors, ProviderRuntimeError } from '../../chat-runtime/runtime-provider-types'
+import type { RuntimeKind } from '../../provider-contracts/types'
 import { readProviderStateSnapshot } from '../provider-state-snapshot'
 import { resolveOpencodeConfig } from './config'
 import { OpencodeEventStreamProjector } from './event-stream'
-import { projectOpencodePromptParts } from './input-projector'
+import {
+  projectOpencodePromptParts,
+  projectOpencodeQuickQuestionParts,
+  readOpencodeSlashCommandInvocation,
+} from './input-projector'
 import { listOpencodeRuntimeModels, OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_ID } from './model-inventory'
 import {
   OPENCODE_RUNTIME_CAPABILITIES,
   OPENCODE_RUNTIME_KIND,
   OPENCODE_RUNTIME_METADATA,
 } from './metadata'
+import { createOpencodeRuntimePresentation } from './presentation'
 import { acquireOpencodeRuntimeResource, type OpencodeRuntimeResource } from './runtime-context'
+
+interface OpencodeTurnResult {
+  data: {
+    info: OpencodeAssistantMessage
+    parts: OpencodePart[]
+  } | undefined
+  error: unknown | undefined
+}
 
 export function createOpencodeProvider(ctx: ProviderContext): ChatRuntime {
   return new OpencodeProvider(ctx)
@@ -53,6 +77,58 @@ export class OpencodeProvider implements ChatRuntime {
       runtimeKind: this.runtimeKind,
       workspacePath: input.workspacePath,
     })
+  }
+
+  getDraftPresentation(): RuntimePresentationCapabilities {
+    return createOpencodeRuntimePresentation()
+  }
+
+  async getPresentation(input: GetCapabilitiesInput): Promise<RuntimePresentationCapabilities> {
+    const handle = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const result = await handle.client.command.list({
+      query: { directory: input.workspacePath },
+    })
+    if (result.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'command.list', formatOpencodeError(result.error)),
+      )
+    }
+    return createOpencodeRuntimePresentation(result.data)
+  }
+
+  async getUiSlotStates(input: GetUiSlotStatesInput): Promise<RuntimeUiSlotState[]> {
+    const providerSessionId = input.runtimeSession.providerSessionId
+    if (!providerSessionId) {
+      return []
+    }
+
+    const snapshot = readProviderStateSnapshot(input.runtimeSession.providerStateSnapshot)
+    const modelId = input.modelId ?? snapshot.models.currentModelId ?? null
+    const providerModel = parseOpenCodeModelRef(modelId)
+    const updatedAt = Date.now()
+    return [
+      {
+        kind: 'status',
+        slotId: 'opencode:status',
+        threadId: providerSessionId,
+        status: 'idle',
+        activeFlags: [],
+        updatedAt,
+      },
+      {
+        kind: 'model',
+        slotId: 'opencode:model',
+        threadId: providerSessionId,
+        modelId,
+        modelLabel: providerModel?.modelID ?? modelId,
+        modelProvider: providerModel?.providerID ?? null,
+        serviceTier: null,
+        supportsImages: null,
+        supportsWebSearch: null,
+        supportsNamespaceTools: null,
+        updatedAt,
+      },
+    ]
   }
 
   async startChatSession(input: StartChatSessionInput): Promise<RuntimeSession> {
@@ -124,6 +200,225 @@ export class OpencodeProvider implements ChatRuntime {
     }
   }
 
+  async* quickQuestion(input: QuickQuestionInput): AsyncGenerator<UIMessageChunk, void, void> {
+    const snapshot = readProviderStateSnapshot(input.runtimeSession.providerStateSnapshot)
+    const resolved = await this.resolveRuntimeConfig({
+      profile: input.profile,
+      requestedModelId: snapshot.models.currentModelId,
+    })
+    const resource = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const session = await this.createNativeSession(
+      resource,
+      input.workspacePath,
+      `${input.runtimeSession.chatSessionId} quick question`,
+    )
+    const projector = new OpencodeEventStreamProjector(session.id)
+
+    try {
+      const result = await resource.client.session.prompt({
+        path: { id: session.id },
+        query: { directory: input.workspacePath },
+        body: {
+          ...(resolved.model ? { model: resolved.model } : {}),
+          parts: projectOpencodeQuickQuestionParts({
+            question: input.question,
+            transcript: input.transcript,
+          }),
+        },
+      })
+
+      if (result.error) {
+        throw new ProviderRuntimeError(
+          ProviderErrors.requestFailed(this.runtimeKind, 'quickQuestion', formatOpencodeError(result.error)),
+        )
+      }
+      if (result.data.info.error) {
+        throw new ProviderRuntimeError(
+          ProviderErrors.requestFailed(
+            this.runtimeKind,
+            'quickQuestion',
+            formatOpencodeAssistantError(result.data.info.error),
+          ),
+        )
+      }
+
+      for (const chunk of projector.projectPromptResult(result.data)) {
+        yield chunk
+      }
+      yield projector.finish(result.data.info)
+    }
+    finally {
+      await resource.client.session.delete({
+        path: { id: session.id },
+        query: { directory: input.workspacePath },
+      }).catch(() => undefined)
+    }
+  }
+
+  async generateSessionTitle(input: GenerateSessionTitleInput): Promise<string | null> {
+    const providerSessionId = input.runtimeSession.providerSessionId
+    if (!providerSessionId) {
+      return null
+    }
+
+    const handle = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const resolved = await this.resolveRuntimeConfig({
+      profile: input.profile,
+      requestedModelId: input.modelId,
+    })
+    const titleModel = parseOpenCodeModelRef(resolved.config.small_model) ?? resolved.model
+    if (!titleModel) {
+      return null
+    }
+
+    const summarizeResult = await handle.client.session.summarize({
+      path: { id: providerSessionId },
+      query: { directory: input.workspacePath },
+      body: titleModel,
+    })
+    if (summarizeResult.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.summarize', formatOpencodeError(summarizeResult.error)),
+      )
+    }
+
+    const sessionResult = await handle.client.session.get({
+      path: { id: providerSessionId },
+      query: { directory: input.workspacePath },
+    })
+    if (sessionResult.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.get', formatOpencodeError(sessionResult.error)),
+      )
+    }
+
+    const title = sessionResult.data.title.trim()
+    if (!title) {
+      return null
+    }
+
+    const updateResult = await handle.client.session.update({
+      path: { id: providerSessionId },
+      query: { directory: input.workspacePath },
+      body: { title },
+    })
+    if (updateResult.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.update', formatOpencodeError(updateResult.error)),
+      )
+    }
+    return title
+  }
+
+  async executeShellCommand(input: ExecuteShellCommandInput): Promise<ExecuteShellCommandResult> {
+    const command = input.command.trim()
+    if (!command) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'executeShellCommand', 'opencode shell command must not be empty'),
+      )
+    }
+
+    const providerSessionId = input.runtimeSession.providerSessionId
+    if (!providerSessionId) {
+      throw new ProviderRuntimeError(ProviderErrors.sessionNotFound(this.runtimeKind, input.runtimeSession.chatSessionId))
+    }
+
+    const handle = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const resolved = await this.resolveRuntimeConfig({
+      profile: input.profile,
+      requestedModelId: input.modelId,
+    })
+    const startedAt = Date.now()
+    const result = await handle.client.session.shell({
+      path: { id: providerSessionId },
+      query: { directory: input.workspacePath },
+      body: {
+        agent: 'build',
+        ...(resolved.model ? { model: resolved.model } : {}),
+        command,
+      },
+      signal: input.signal,
+    })
+    if (result.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.shell', formatOpencodeError(result.error)),
+      )
+    }
+    if (result.data.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.shell', formatOpencodeAssistantError(result.data.error)),
+      )
+    }
+
+    const messageResult = await handle.client.session.message({
+      path: { id: providerSessionId, messageID: result.data.id },
+      query: { directory: input.workspacePath },
+    })
+    if (messageResult.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.message', formatOpencodeError(messageResult.error)),
+      )
+    }
+
+    const shell = projectOpencodeShellResult(messageResult.data.parts)
+    return {
+      command,
+      stdout: shell.stdout,
+      stderr: shell.stderr,
+      exitCode: null,
+      durationMs: shell.durationMs ?? Math.max(0, Date.now() - startedAt),
+      timedOut: false,
+      truncated: false,
+    }
+  }
+
+  async rollbackLastTurn(input: RollbackLastTurnInput): Promise<RollbackLastTurnResult> {
+    const providerSessionId = input.runtimeSession.providerSessionId
+    if (!providerSessionId) {
+      throw new ProviderRuntimeError(ProviderErrors.sessionNotFound(this.runtimeKind, input.runtimeSession.chatSessionId))
+    }
+
+    const handle = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const messagesResult = await handle.client.session.messages({
+      path: { id: providerSessionId },
+      query: { directory: input.workspacePath, limit: 50 },
+    })
+    if (messagesResult.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.messages', formatOpencodeError(messagesResult.error)),
+      )
+    }
+
+    const message = readLastAssistantMessage(messagesResult.data)
+    if (!message) {
+      return {
+        runtimeKind: this.runtimeKind,
+        providerSessionId,
+        rolledBackTurns: 0,
+        fileChangesReverted: false,
+      }
+    }
+
+    const revertResult = await handle.client.session.revert({
+      path: { id: providerSessionId },
+      query: { directory: input.workspacePath },
+      body: { messageID: message.id },
+    })
+    if (revertResult.error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.revert', formatOpencodeError(revertResult.error)),
+      )
+    }
+
+    return {
+      runtimeKind: this.runtimeKind,
+      providerSessionId,
+      rolledBackTurns: 1,
+      fileChangesReverted: false,
+      providerResult: revertResult.data,
+    }
+  }
+
   async* streamTurn(input: StreamTurnInput): AsyncGenerator<UIMessageChunk, void, void> {
     const opencodeSessionId = input.runtimeSession.providerSessionId
     const lease = input.runtimeSession.providerRuntimeLease
@@ -175,38 +470,44 @@ export class OpencodeProvider implements ChatRuntime {
     }
 
     void (async () => {
-      const result = await resource.client.session.prompt({
-        path: { id: opencodeSessionId },
-        query: { directory: input.workspacePath },
-        body: {
-          ...(resolved.model ? { model: resolved.model } : {}),
-          ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
-          parts: projectOpencodePromptParts(input.message),
-        },
+      const submission = await submitOpencodeTurn(resource, {
+        sessionId: opencodeSessionId,
+        workspacePath: input.workspacePath,
+        model: resolved.model,
+        systemPrompt: input.systemPrompt,
+        message: input.message,
       })
+      const { operation, result } = submission
 
       if (result.error) {
         chunks.fail(new ProviderRuntimeError(
-          ProviderErrors.requestFailed(this.runtimeKind, 'session.prompt', formatOpencodeError(result.error)),
+          ProviderErrors.requestFailed(this.runtimeKind, operation, formatOpencodeError(result.error)),
         ))
         return
       }
-      if (result.data.info.error) {
+      const data = result.data
+      if (!data) {
+        chunks.fail(new ProviderRuntimeError(
+          ProviderErrors.requestFailed(this.runtimeKind, operation, 'opencode returned no turn data'),
+        ))
+        return
+      }
+      if (data.info.error) {
         chunks.fail(new ProviderRuntimeError(
           ProviderErrors.requestFailed(
             this.runtimeKind,
-            'session.prompt',
-            formatOpencodeAssistantError(result.data.info.error),
+            operation,
+            formatOpencodeAssistantError(data.info.error),
           ),
         ))
         return
       }
 
-      for (const chunk of projector.projectPromptResult(result.data)) {
+      for (const chunk of projector.projectPromptResult(data)) {
         chunks.push(chunk)
       }
       this._lastUsage = projector.usage
-      chunks.push(projector.finish(result.data.info))
+      chunks.push(projector.finish(data.info))
       chunks.close()
     })().catch(error => chunks.fail(error))
 
@@ -359,6 +660,151 @@ function parseOpenCodeModelRef(modelId: string | null | undefined): { providerID
     providerID: modelId.slice(0, slashIndex),
     modelID: modelId.slice(slashIndex + 1),
   }
+}
+
+function readOpencodeRuntimeHandle(runtimeKind: RuntimeKind, runtimeSession: RuntimeSession): OpencodeRuntimeResource {
+  const lease = runtimeSession.providerRuntimeLease
+  if (!runtimeSession.providerSessionId || !lease) {
+    throw new ProviderRuntimeError(ProviderErrors.sessionNotFound(runtimeKind, runtimeSession.chatSessionId))
+  }
+  return lease.resource as OpencodeRuntimeResource
+}
+
+async function submitOpencodeTurn(
+  resource: OpencodeRuntimeResource,
+  input: {
+    sessionId: string
+    workspacePath?: string
+    model: { providerID: string; modelID: string } | null
+    systemPrompt?: string
+    message: StreamTurnInput['message']
+  },
+): Promise<{
+  operation: 'session.command' | 'session.prompt'
+  result: OpencodeTurnResult
+}> {
+  const invocation = readOpencodeSlashCommandInvocation(input.message)
+  if (invocation) {
+    const commandList = await resource.client.command.list({
+      query: { directory: input.workspacePath },
+    })
+    if (commandList.error) {
+      return {
+        operation: 'session.prompt',
+        result: normalizeOpencodeTurnResult(await resource.client.session.prompt({
+          path: { id: input.sessionId },
+          query: { directory: input.workspacePath },
+          body: {
+            ...(input.model ? { model: input.model } : {}),
+            ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
+            parts: projectOpencodePromptParts(input.message),
+          },
+        })),
+      }
+    }
+
+    const command = (commandList.data ?? []).find(candidate => candidate.name === invocation.command)
+    if (command) {
+      return {
+        operation: 'session.command',
+        result: normalizeOpencodeTurnResult(await resource.client.session.command({
+          path: { id: input.sessionId },
+          query: { directory: input.workspacePath },
+          body: {
+            command: invocation.command,
+            arguments: invocation.arguments,
+            ...(command.agent ? { agent: command.agent } : {}),
+            ...(command.model ? { model: command.model } : {}),
+          },
+        })),
+      }
+    }
+  }
+
+  return {
+    operation: 'session.prompt',
+    result: normalizeOpencodeTurnResult(await resource.client.session.prompt({
+      path: { id: input.sessionId },
+      query: { directory: input.workspacePath },
+      body: {
+        ...(input.model ? { model: input.model } : {}),
+        ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
+        parts: projectOpencodePromptParts(input.message),
+      },
+    })),
+  }
+}
+
+function normalizeOpencodeTurnResult(result: {
+  data?: {
+    info: OpencodeAssistantMessage
+    parts: OpencodePart[]
+  }
+  error?: unknown
+}): OpencodeTurnResult {
+  return {
+    data: result.data,
+    error: result.error,
+  }
+}
+
+function readLastAssistantMessage(
+  messages: Array<{ info: OpencodeMessage; parts: OpencodePart[] }>,
+): OpencodeAssistantMessage | null {
+  let selected: OpencodeAssistantMessage | null = null
+  for (const message of messages) {
+    if (message.info.role !== 'assistant') {
+      continue
+    }
+    if (!selected || message.info.time.created >= selected.time.created) {
+      selected = message.info
+    }
+  }
+  return selected
+}
+
+function projectOpencodeShellResult(parts: OpencodePart[]): {
+  stdout: string
+  stderr: string
+  durationMs: number | null
+} {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  let durationMs: number | null = null
+
+  for (const part of parts) {
+    if (part.type === 'text' && part.text) {
+      stdout.push(part.text)
+      continue
+    }
+    if (part.type !== 'tool') {
+      continue
+    }
+    switch (part.state.status) {
+      case 'completed':
+        stdout.push(part.state.output)
+        durationMs = readToolDurationMs(part.state.time.start, part.state.time.end, durationMs)
+        break
+      case 'error':
+        stderr.push(part.state.error)
+        durationMs = readToolDurationMs(part.state.time.start, part.state.time.end, durationMs)
+        break
+      case 'pending':
+      case 'running':
+        break
+    }
+  }
+
+  return {
+    stdout: stdout.join('\n').trim(),
+    stderr: stderr.join('\n').trim(),
+    durationMs,
+  }
+}
+
+function readToolDurationMs(startedAt: number, completedAt: number, current: number | null): number {
+  const duration = Math.max(0, completedAt - startedAt)
+  return current === null ? duration : Math.max(current, duration)
 }
 
 function formatOpencodeError(error: unknown): string {
