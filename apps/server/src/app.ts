@@ -7,8 +7,8 @@ import { createRequestIdPlugin } from './http/request-id'
 import { acp } from './modules/acp'
 import { agentIdentity } from './modules/agent-identity'
 import { agentInteractionRuntime } from './modules/agent-interaction-runtime'
-import { automation } from './modules/automation'
 import { assets } from './modules/assets'
+import { automation } from './modules/automation'
 import { chatRuntime } from './modules/chat-runtime'
 import { chronicle } from './modules/chronicle'
 import { conversationBridge } from './modules/conversation-bridge'
@@ -26,14 +26,15 @@ import { kanban } from './modules/kanban'
 import { linkPreview } from './modules/link-preview'
 import { modelRegistry } from './modules/model-registry'
 import { observability } from './modules/observability'
+import { opencodeServer } from './modules/opencode-server'
 import { plugins as pluginsApi } from './modules/plugins'
 import { preferences } from './modules/preferences'
 import { profiles } from './modules/profiles'
 import { providers } from './modules/provider-catalog'
 import { providerTargets } from './modules/provider-targets'
+import { registerPtyRoutes } from './modules/pty'
 import { relayServers } from './modules/relay-servers'
 import { remoteHosts } from './modules/remote-hosts'
-import { registerPtyRoutes } from './modules/pty'
 import { search } from './modules/search'
 import { secrets } from './modules/secrets'
 import { session } from './modules/session'
@@ -152,6 +153,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(chatRuntime)
   app.use(conversationBridge)
   app.use(chronicle)
+  app.use(opencodeServer)
   app.use(agentInteractionRuntime)
   app.use(desktop)
   registerPtyRoutes(app)
@@ -185,6 +187,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     conversationBridgeSupervisor,
     { destroyWorkspaceFileIndexes },
     localRelaydSupervisor,
+    { startOpencodeServer, stopOpencodeServer },
   ] = await Promise.all([
     import('./infra'),
     import('./modules/chat-runtime/service'),
@@ -199,6 +202,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     import('./modules/conversation-bridge/runtime-supervisor'),
     import('./modules/workspace/files'),
     import('./modules/relay-servers/local-relayd-supervisor'),
+    import('./modules/chat-runtime-providers/opencode/runtime-context'),
   ])
   if (recoverPersistedRunsOnCreate) {
     recoverPersistedRunProjections()
@@ -216,6 +220,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     () => conversationBridgeSupervisor.stopAllConversationBridgeConnections(),
     () => deactivateAllPlugins(),
     () => providerRuntimeHostManager.shutdown(),
+    () => stopOpencodeServer(),
     () => localRelaydSupervisor.stopManagedLocalRelayd(),
     () => chronicleService.stopActivityPipelineScheduler(),
     () => chronicleService.stopSlackBackgroundSync(),
@@ -249,6 +254,12 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
       chronicleService.startSlackBackgroundSync()
     }
     providerRuntimeHostManager.startReaper()
+    // The opencode server is a single shared, always-on host for every chat
+    // session; warm it up at boot so the first turn does not pay the spawn cost.
+    // Failures are non-fatal — the lazy acquire path retries on demand.
+    void startOpencodeServer().catch((error) => {
+      console.error('[opencode] shared server warm-start failed:', error)
+    })
     void conversationBridgeSupervisor.startEnabledConversationBridgeConnections()
     void localRelaydSupervisor.startManagedLocalRelayd()
   }

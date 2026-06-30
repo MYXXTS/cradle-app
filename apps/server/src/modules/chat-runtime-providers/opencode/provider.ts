@@ -1,5 +1,5 @@
-import type { UIMessageChunk } from 'ai'
 import type { AssistantMessage as OpencodeAssistantMessage, Config, Message as OpencodeMessage, Part as OpencodePart } from '@opencode-ai/sdk'
+import type { UIMessageChunk } from 'ai'
 
 import type {
   CancelTurnInput,
@@ -9,19 +9,19 @@ import type {
   GenerateSessionTitleInput,
   GetCapabilitiesInput,
   GetUiSlotStatesInput,
+  ListRuntimeModelsInput,
   ProviderContext,
   QuickQuestionInput,
   ResumeChatSessionInput,
   RollbackLastTurnInput,
   RollbackLastTurnResult,
+  RuntimeModelCatalog,
   RuntimePresentationCapabilities,
   RuntimeSession,
   RuntimeUiSlotState,
   StartChatSessionInput,
   StreamTurnInput,
   TokenUsage,
-  ListRuntimeModelsInput,
-  RuntimeModelCatalog,
 } from '../../chat-runtime/runtime-provider-types'
 import { ProviderErrors, ProviderRuntimeError } from '../../chat-runtime/runtime-provider-types'
 import type { RuntimeKind } from '../../provider-contracts/types'
@@ -33,14 +33,15 @@ import {
   projectOpencodeQuickQuestionParts,
   readOpencodeSlashCommandInvocation,
 } from './input-projector'
-import { listOpencodeRuntimeModels, OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_ID } from './model-inventory'
 import {
   OPENCODE_RUNTIME_CAPABILITIES,
   OPENCODE_RUNTIME_KIND,
   OPENCODE_RUNTIME_METADATA,
 } from './metadata'
+import { listOpencodeRuntimeModels, OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_ID } from './model-inventory'
 import { createOpencodeRuntimePresentation } from './presentation'
-import { acquireOpencodeRuntimeResource, type OpencodeRuntimeResource } from './runtime-context'
+import type { OpencodeRuntimeResource } from './runtime-context'
+import { acquireOpencodeRuntimeResource } from './runtime-context'
 
 interface OpencodeTurnResult {
   data: {
@@ -141,6 +142,7 @@ export class OpencodeProvider implements ChatRuntime {
       providerTargetId: resolved.hostProviderTargetId,
       chatSessionId: input.chatSessionId,
       config: resolved.config,
+      directory: input.workspacePath,
     })
 
     let leaseTransferred = false
@@ -181,6 +183,7 @@ export class OpencodeProvider implements ChatRuntime {
       providerTargetId: resolved.hostProviderTargetId,
       chatSessionId: input.runtimeSession.chatSessionId,
       config: resolved.config,
+      directory: input.workspacePath,
     })
 
     const snapshot = readProviderStateSnapshot(input.runtimeSession.providerStateSnapshot)
@@ -560,7 +563,7 @@ export class OpencodeProvider implements ChatRuntime {
     requestedModelId?: string | null
   }): Promise<{
     config: Config
-    model: { providerID: string; modelID: string } | null
+    model: { providerID: string, modelID: string } | null
     modelId: string | null
     providerTargetId: string | null
     hostProviderTargetId: string
@@ -598,6 +601,7 @@ class AsyncChunkQueue implements AsyncIterable<UIMessageChunk> {
     resolve: (result: IteratorResult<UIMessageChunk>) => void
     reject: (error: unknown) => void
   }> = []
+
   private closed = false
   private failure: unknown
 
@@ -648,7 +652,7 @@ class AsyncChunkQueue implements AsyncIterable<UIMessageChunk> {
   }
 }
 
-function parseOpenCodeModelRef(modelId: string | null | undefined): { providerID: string; modelID: string } | null {
+function parseOpenCodeModelRef(modelId: string | null | undefined): { providerID: string, modelID: string } | null {
   if (!modelId) {
     return null
   }
@@ -675,7 +679,7 @@ async function submitOpencodeTurn(
   input: {
     sessionId: string
     workspacePath?: string
-    model: { providerID: string; modelID: string } | null
+    model: { providerID: string, modelID: string } | null
     systemPrompt?: string
     message: StreamTurnInput['message']
   },
@@ -749,7 +753,7 @@ function normalizeOpencodeTurnResult(result: {
 }
 
 function readLastAssistantMessage(
-  messages: Array<{ info: OpencodeMessage; parts: OpencodePart[] }>,
+  messages: Array<{ info: OpencodeMessage, parts: OpencodePart[] }>,
 ): OpencodeAssistantMessage | null {
   let selected: OpencodeAssistantMessage | null = null
   for (const message of messages) {
