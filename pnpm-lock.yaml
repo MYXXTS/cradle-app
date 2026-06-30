@@ -424,7 +424,7 @@ importers:
         specifier: 42.4.1
         version: 42.4.1
       electron-builder:
-        specifier: ^26.15.6
+        specifier: ^26.15.3
         version: 26.15.6(electron-builder-squirrel-windows@26.15.6)
       electron-vite:
         specifier: ^5.0.0
@@ -22735,7 +22735,7 @@ snapshots:
   fs-extra@10.1.0:
     dependencies:
       graceful-fs: 4.2.11
-      jsonfile: 6.2.0
+      jsonfile: 6.2.1
       universalify: 2.0.1
 
   fs-extra@11.3.1:

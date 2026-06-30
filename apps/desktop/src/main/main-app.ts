@@ -394,11 +394,22 @@ function requestDesktopExit(input: { reason: string, exitCode: number, stopServe
 
   console.warn(`[desktop] shutting down runtime: ${input.reason}`)
   isQuitting = true
+
+  // Force-kill the process if async cleanup takes too long.
+  // Without this, a hanging stopServer() or plugin teardown prevents the
+  // process from ever exiting, which blocks installers (NSIS WM_CLOSE).
+  const forceExitTimer = setTimeout(() => {
+    console.error('[desktop] graceful shutdown timed out, force-exiting')
+    process.exit(input.exitCode)
+  }, 5_000)
+  forceExitTimer.unref() // don't keep the event loop alive just for the timer
+
   shutdownPromise = shutdownDesktopRuntime({ stopServerRuntime: input.stopServerRuntime })
     .catch((error) => {
       console.error('[desktop] runtime shutdown failed:', error)
     })
     .finally(() => {
+      clearTimeout(forceExitTimer)
       app.exit(input.exitCode)
     })
 }
