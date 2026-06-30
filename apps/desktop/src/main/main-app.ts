@@ -192,10 +192,16 @@ function setMainWindow(win: BrowserWindow): void {
   })
 
   win.on('close', (event) => {
-    if (!isQuitting && trayManager) {
-      event.preventDefault()
-      win.hide()
+    if (isQuitting || !trayManager) {
+      return // allow close → triggers 'closed' → cleanup + app.quit()
     }
+    event.preventDefault()
+    win.hide()
+    // External close requests (installer WM_CLOSE, task manager) are also
+    // delivered as 'close' events.  By calling app.quit() here we ensure the
+    // process actually terminates instead of hiding forever.
+    quitGuard.allowNextQuit()
+    app.quit()
   })
 
   win.on('closed', () => {
