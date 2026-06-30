@@ -289,6 +289,15 @@ export const ObservabilityModel = {
       rssMB: t.Nullable(t.Number()),
       cpuPercent: t.Nullable(t.Number()),
     }),
+    opencodeServer: t.Object({
+      running: t.Boolean(),
+      pid: t.Nullable(t.Number()),
+      url: t.Nullable(t.String()),
+      startedAt: t.Nullable(t.Number()),
+      uptimeSeconds: t.Nullable(t.Number()),
+      rssMB: t.Nullable(t.Number()),
+      cpuPercent: t.Nullable(t.Number()),
+    }),
     desktop: t.Object({
       latestSamples: t.Array(t.Object({
         source: t.Literal('desktop-main'),

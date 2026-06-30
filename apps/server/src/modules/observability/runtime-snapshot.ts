@@ -3,15 +3,17 @@ import {
   updateChronicleMetrics,
   updateDesktopMetrics,
   updateObservabilityMetrics,
+  updateOpencodeServerMetrics,
   updateProviderRuntimeMetrics,
   updatePtyMetrics,
   updateServerProcessMetrics,
 } from '../../telemetry/metrics'
 import * as ChatRuntime from '../chat-runtime/service'
+import { getOpencodeServerResources } from '../chat-runtime-providers/opencode/runtime-context'
 import { getDaemonResources } from '../chronicle/daemon-manager'
 import * as Health from '../health/service'
-import * as Pty from '../pty/service'
 import { providerRuntimeHostManager } from '../provider-runtime/host-manager'
+import * as Pty from '../pty/service'
 import { getDesktopRuntimeSamples, getQueueHealth } from './service'
 
 const TOP_DRILLDOWN_LIMIT = 10
@@ -305,6 +307,7 @@ export async function getRuntimeSnapshot() {
   const providerHosts = providerRuntimeHostManager.listHosts()
   const pty = await Pty.listResources()
   const chronicle = getDaemonResources()
+  const opencodeServer = getOpencodeServerResources()
   const observability = getQueueHealth()
   const desktop = {
     latestSamples: getDesktopRuntimeSamples(),
@@ -465,6 +468,13 @@ export async function getRuntimeSnapshot() {
     descendantCountByRole,
   })
   updateChronicleMetrics(chronicle)
+  updateOpencodeServerMetrics({
+    running: opencodeServer.running,
+    pid: opencodeServer.pid,
+    uptimeSeconds: opencodeServer.uptimeSeconds,
+    rssMB: opencodeServer.rssMB,
+    cpuPercent: opencodeServer.cpuPercent,
+  })
   updateDesktopMetrics({
     latestSampleAgeMs: latestDesktopSample ? Date.now() - latestDesktopSample.sampledAt : null,
     windowCount: latestDesktopSample?.windows.length ?? 0,
@@ -510,6 +520,7 @@ export async function getRuntimeSnapshot() {
     },
     pty,
     chronicle,
+    opencodeServer,
     desktop,
     drilldowns,
     observability,

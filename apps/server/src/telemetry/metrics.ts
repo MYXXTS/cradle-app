@@ -42,6 +42,14 @@ export interface ChronicleMetricSnapshot {
   cpuPercent: number | null
 }
 
+export interface OpencodeServerMetricSnapshot {
+  running: boolean
+  pid: number | null
+  uptimeSeconds: number | null
+  rssMB: number | null
+  cpuPercent: number | null
+}
+
 export interface ObservabilityMetricSnapshot {
   queueDepth: number
   recentEvents: number
@@ -66,6 +74,7 @@ let chatRuntimeSnapshot: ChatRuntimeMetricSnapshot | null = null
 let providerRuntimeSnapshot: ProviderRuntimeMetricSnapshot | null = null
 let ptySnapshot: PtyMetricSnapshot | null = null
 let chronicleSnapshot: ChronicleMetricSnapshot | null = null
+let opencodeServerSnapshot: OpencodeServerMetricSnapshot | null = null
 let observabilitySnapshot: ObservabilityMetricSnapshot | null = null
 let desktopSnapshot: DesktopMetricSnapshot | null = null
 
@@ -241,6 +250,37 @@ export function initializeCradleMetrics(): void {
     }
   })
 
+  const opencodeRssGauge = meter.createObservableGauge('cradle_opencode_server_rss_bytes', {
+    description: 'Shared opencode server process RSS in bytes.',
+  })
+  opencodeRssGauge.addCallback((result) => {
+    if (opencodeServerSnapshot?.rssMB !== null && opencodeServerSnapshot?.rssMB !== undefined) {
+      result.observe(opencodeServerSnapshot.rssMB * 1024 * 1024, { process: 'opencode-server' })
+    }
+  })
+
+  const opencodeStateGauge = meter.createObservableGauge('cradle_opencode_server_state', {
+    description: 'Shared opencode server running state and CPU percent.',
+  })
+  opencodeStateGauge.addCallback((result) => {
+    if (!opencodeServerSnapshot) {
+      return
+    }
+    result.observe(opencodeServerSnapshot.running ? 1 : 0, { kind: 'running' })
+    if (opencodeServerSnapshot.cpuPercent !== null) {
+      result.observe(opencodeServerSnapshot.cpuPercent, { kind: 'cpu_percent' })
+    }
+  })
+
+  const opencodeUptimeGauge = meter.createObservableGauge('cradle_opencode_server_uptime_seconds', {
+    description: 'Shared opencode server process uptime in seconds.',
+  })
+  opencodeUptimeGauge.addCallback((result) => {
+    if (opencodeServerSnapshot?.uptimeSeconds !== null && opencodeServerSnapshot?.uptimeSeconds !== undefined) {
+      result.observe(opencodeServerSnapshot.uptimeSeconds, { process: 'opencode-server' })
+    }
+  })
+
   const observabilityQueueGauge = meter.createObservableGauge('cradle_observability_queue_depth', {
     description: 'Current pending observability event queue depth.',
   })
@@ -356,6 +396,10 @@ export function updatePtyMetrics(snapshot: PtyMetricSnapshot): void {
 
 export function updateChronicleMetrics(snapshot: ChronicleMetricSnapshot): void {
   chronicleSnapshot = snapshot
+}
+
+export function updateOpencodeServerMetrics(snapshot: OpencodeServerMetricSnapshot): void {
+  opencodeServerSnapshot = snapshot
 }
 
 export function updateObservabilityMetrics(snapshot: ObservabilityMetricSnapshot): void {
