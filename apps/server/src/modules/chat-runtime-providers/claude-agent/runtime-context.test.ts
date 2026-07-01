@@ -99,7 +99,7 @@ describe('claude agent runtime context native skill projection', () => {
       })
 
       const context = resolveClaudeAgentRuntimeContext('/tmp/workspace', null)
-      const projection = join(tempHome, '.claude', 'skills', 'cradle', 'plugin-runtime-demo', 'SKILL.md')
+      const projection = join(tempHome, '.claude', 'skills', 'cradle-plugin-runtime-demo', 'SKILL.md')
 
       expect(context.agentHome).toBeNull()
       expect(fs.existsSync(projection)).toBe(false)
@@ -149,12 +149,14 @@ describe('claude agent runtime context native skill projection', () => {
       })
 
       const context = resolveClaudeAgentRuntimeContext('/tmp/workspace', null)
-      const projection = join(tempHome, '.claude', 'skills', 'cradle', 'plugin-runtime-demo', 'SKILL.md')
-      const builtinProjection = join(tempHome, '.claude', 'skills', 'cradle', 'builtin-demo', 'SKILL.md')
+      const projection = join(tempHome, '.claude', 'skills', 'cradle-plugin-runtime-demo', 'SKILL.md')
+      const builtinProjection = join(tempHome, '.claude', 'skills', 'cradle-builtin-demo', 'SKILL.md')
+      const legacyProjection = join(tempHome, '.claude', 'skills', 'cradle', 'plugin-runtime-demo', 'SKILL.md')
 
       expect(context.agentHome).toBeNull()
       expect(fs.existsSync(projection)).toBe(true)
       expect(fs.existsSync(builtinProjection)).toBe(true)
+      expect(fs.existsSync(legacyProjection)).toBe(false)
     }
     finally {
       if (previousHome === undefined) {

@@ -16,6 +16,7 @@ import {
 } from './runtime-settings'
 import { assertStoredSession, getSessionRunContext } from './runtime-session-context'
 import { runRegistry } from './run-registry'
+import { liveRuntimeSessionRegistry } from './runtime-live-session-registry'
 import { normalizeClaudeAgentConfigPatch } from '../provider-contracts/claude-agent-config'
 import type {
   ChatRuntimeSettings,
@@ -80,11 +81,15 @@ export async function updateSessionRuntimeSettings(input: {
 
   const runId = runRegistry.getActiveRunIdForSession(input.sessionId)
   if (!runId) {
+    const applied = await applyIdleSessionRuntimeSettings({
+      sessionId: input.sessionId,
+      runtimeSettings
+    })
     return {
       sessionId: input.sessionId,
       runtimeSettings,
       claudeAgent: readSessionClaudeAgentConfig(assertStoredSession(input.sessionId).configJson),
-      applied: readRuntimeSettingsApplied(input.sessionId, runtimeSettings)
+      applied
     }
   }
   const activeRun = runRegistry.getActiveRun(runId)
@@ -121,6 +126,32 @@ export async function updateSessionRuntimeSettings(input: {
     runtimeSettings,
     claudeAgent: readSessionClaudeAgentConfig(assertStoredSession(input.sessionId).configJson),
     applied
+  }
+}
+
+async function applyIdleSessionRuntimeSettings(input: {
+  sessionId: string
+  runtimeSettings: ChatRuntimeSettings
+}): Promise<boolean> {
+  if (runRegistry.hasPendingRun(input.sessionId)) {
+    return false
+  }
+
+  const liveRuntimeSession = liveRuntimeSessionRegistry.read(input.sessionId)
+  if (!liveRuntimeSession) {
+    return true
+  }
+
+  try {
+    await liveRuntimeSession.updateRuntimeSettings(input.runtimeSettings)
+    return true
+  } catch (error) {
+    settingsLogger.warn('update idle runtime settings failed', {
+      error,
+      sessionId: input.sessionId,
+      runtimeSettings: input.runtimeSettings
+    })
+    return false
   }
 }
 

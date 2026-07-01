@@ -19,6 +19,7 @@ import type {
 import type { UIMessageChunk } from 'ai'
 
 import type { TokenUsage } from '../../chat-runtime-engine/ai-sdk-engine'
+import { CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE, isClaudeAgentEnterPlanModeToolName, isClaudeAgentExitPlanModeToolName } from './plan-mode'
 import { ClaudeCodeToolName } from './tools/identity'
 import type { ClaudeAgentSubagentProjection } from './subagent-projector'
 import {
@@ -38,7 +39,6 @@ import {
 import type { TodoPluginItem } from './tools/todo-plugin-state'
 import { isTodoWriteToolName, synthesizeTodoWritePluginState } from './tools/todo-plugin-state'
 
-const CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE = 'Cradle captured the proposed plan. Stop here and wait for the user to refine or implement it in a later turn.'
 const PLAN_IMPLEMENTATION_TOOL_NAME = 'plan_implementation'
 const CLAUDE_PLAN_FILE_PATH_SEGMENT = '/.claude/plans/'
 
@@ -950,7 +950,7 @@ function emitToolUseChunks(
     }
   }
 
-  if (isEnterPlanModeToolName(toolName) && !current.interactionModeCaptured) {
+  if (isClaudeAgentEnterPlanModeToolName(toolName) && !current.interactionModeCaptured) {
     capturedInteractionModes.push({ toolCallId, interactionMode: 'plan' })
     current.interactionModeCaptured = true
   }
@@ -994,7 +994,7 @@ function readClaudeAgentAsyncLaunchResult(output: unknown): { status: 'async_lau
 }
 
 function readExitPlanModePlan(toolName: string, input: unknown): string | null {
-  if (!isExitPlanModeToolName(toolName)) {
+  if (!isClaudeAgentExitPlanModeToolName(toolName)) {
     return null
   }
   if (!isRecord(input)) {
@@ -1035,7 +1035,7 @@ function readExitPlanModePlanContent(
   if (explicitPlan) {
     return explicitPlan
   }
-  if (!isExitPlanModeToolName(toolName) || !isRecord(input) || !hasAllowedPrompts(input.allowedPrompts)) {
+  if (!isClaudeAgentExitPlanModeToolName(toolName) || !isRecord(input) || !hasAllowedPrompts(input.allowedPrompts)) {
     return null
   }
   const plan = state.latestPlanFileContent?.trim() ?? ''
@@ -1078,14 +1078,6 @@ function emitPlanImplementationApprovalChunks(
   return chunks
 }
 
-function isExitPlanModeToolName(toolName: string): boolean {
-  return toolName === 'ExitPlanMode' || toolName === 'exit_plan_mode' || toolName === 'exitplanmode'
-}
-
-function isEnterPlanModeToolName(toolName: string): boolean {
-  return toolName === 'EnterPlanMode' || toolName === 'enter_plan_mode' || toolName === 'enterplanmode'
-}
-
 function isCapturedExitPlanModeError(
   toolCallId: string,
   errorText: string,
@@ -1093,7 +1085,7 @@ function isCapturedExitPlanModeError(
 ): boolean {
   const toolName = state.toolNamesByToolCallId.get(toolCallId)
   return toolName !== undefined
-    && isExitPlanModeToolName(toolName)
+    && isClaudeAgentExitPlanModeToolName(toolName)
     && state.capturedExitPlanToolCallIds.has(toolCallId)
     && (
       errorText === CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE

@@ -7,7 +7,15 @@ import type { UIMessage, UIMessageChunk } from 'ai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { addHostMcpServer, removeHostMcpServer } from '../../../plugins/mcp-registry'
-import type { ProviderSyntheticTurnEvent, RuntimeProviderTargetProfile, RuntimeSession, RuntimeUserInputRequest } from '../../chat-runtime/runtime-provider-types'
+import type {
+  ProviderSyntheticTurnEvent,
+  RuntimeProviderTargetProfile,
+  RuntimeSession,
+  RuntimeToolApprovalRequest,
+  RuntimeToolApprovalResolution,
+  RuntimeUserInputRequest,
+} from '../../chat-runtime/runtime-provider-types'
+import { liveRuntimeSessionRegistry } from '../../chat-runtime/runtime-live-session-registry'
 import { ClaudeAgentProvider } from './provider'
 
 const sdkMocks = vi.hoisted(() => ({
@@ -334,6 +342,7 @@ describe('claudeAgentProvider MCP integration', () => {
     sdkMocks.getSubagentMessages.mockReset()
     sdkMocks.listSubagents.mockReset()
     sdkMocks.renameSession.mockReset()
+    liveRuntimeSessionRegistry.clear()
     vi.unstubAllEnvs()
   })
 
@@ -784,7 +793,7 @@ describe('claudeAgentProvider MCP integration', () => {
 
     const options = readQueryOptions(0)
     expect(options).toEqual(expect.objectContaining({
-      persistSession: true,
+      persistSession: false,
       settingSources: ['user', 'project', 'local'],
       managedSettings: expect.objectContaining({
         forceLoginMethod: 'claudeai',
@@ -799,7 +808,7 @@ describe('claudeAgentProvider MCP integration', () => {
     await vi.waitFor(() => {
       expect(runtimeSession.providerStateSnapshot).toContain('"subscriptionType":"max"')
     })
-    expect(runtimeSession.providerSessionId).toBe('claude-session-official')
+    expect(runtimeSession.providerSessionId).toBeNull()
     expect(runtimeSession.providerStateSnapshot).toContain('"authStatus"')
     expect(runtimeSession.providerStateSnapshot).toContain('"rateLimit"')
 
@@ -821,7 +830,7 @@ describe('claudeAgentProvider MCP integration', () => {
     ]))
   })
 
-  it('leaves Claude disallowed tools empty — plan mode enforced by SDK natively', async () => {
+  it('leaves Claude disallowed tools empty and captures ExitPlanMode through Cradle', async () => {
     const requestToolApproval = vi.fn()
     sdkMocks.query.mockReturnValue(createAsyncQuery([
       {
@@ -857,7 +866,9 @@ describe('claudeAgentProvider MCP integration', () => {
     expect(options.disallowedTools).not.toContain('AskUserQuestion')
     expect(options.disallowedTools).not.toContain('EnterPlanMode')
     expect(options.disallowedTools).not.toContain('ExitPlanMode')
-    // canUseTool no longer intercepts plan mode — the SDK's native permissionMode: 'plan' handles it.
+    // ExitPlanMode is the provider-owned signal that a proposed plan is ready.
+    // Cradle captures it into the plan slot and denies the native exit action so
+    // Chat Runtime settings remain the interaction-mode owner.
     await expect((options.canUseTool as CanUseTool)(
       'ExitPlanMode',
       { plan: '1. Inspect\n2. Patch' },
@@ -866,10 +877,10 @@ describe('claudeAgentProvider MCP integration', () => {
         toolUseID: 'toolu_plan_1',
       },
     )).resolves.toEqual({
-      behavior: 'allow',
-      updatedInput: { plan: '1. Inspect\n2. Patch' },
+      behavior: 'deny',
+      message: 'Cradle captured the proposed plan. Stop here and wait for the user to refine or implement it in a later turn.',
     })
-    // Bash is also allowed by canUseTool (SDK handles blocking natively)
+    // Ordinary implementation tools fail closed while Cradle's interaction mode is still plan.
     await expect((options.canUseTool as CanUseTool)(
       'Bash',
       { command: 'echo hi' },
@@ -878,8 +889,8 @@ describe('claudeAgentProvider MCP integration', () => {
         toolUseID: 'toolu_bash_1',
       },
     )).resolves.toEqual({
-      behavior: 'allow',
-      updatedInput: { command: 'echo hi' },
+      behavior: 'deny',
+      message: 'Cradle is in plan mode. Submit or revise the plan before running implementation tools.',
     })
     expect(requestToolApproval).not.toHaveBeenCalled()
   })
@@ -915,8 +926,7 @@ describe('claudeAgentProvider MCP integration', () => {
     }
 
     const options = readQueryOptions(0)
-    // canUseTool no longer has plan mode logic — AskUserQuestion is routed to requestUserInput.
-    // The SDK's native permissionMode: 'plan' handles blocking tools before canUseTool is called.
+    // AskUserQuestion stays interactive even while ordinary implementation tools fail closed in plan mode.
     await expect((options.canUseTool as CanUseTool)(
       'AskUserQuestion',
       {
@@ -986,6 +996,117 @@ describe('claudeAgentProvider MCP integration', () => {
     expect(requestUserInput).not.toHaveBeenCalled()
   })
 
+  it('routes ordinary Claude Agent permission requests through Chat Runtime tool approval', async () => {
+    const activeQuery = createPendingQuery()
+    const approvalResolver: {
+      resolve: ((resolution: RuntimeToolApprovalResolution) => void) | null
+    } = { resolve: null }
+    const requestToolApproval = vi.fn((_request: RuntimeToolApprovalRequest) => {
+      return new Promise<RuntimeToolApprovalResolution>((resolve) => {
+        approvalResolver.resolve = resolve
+      })
+    })
+    sdkMocks.query.mockReturnValue(activeQuery)
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+      requestToolApproval,
+    })
+    const stream = provider.streamTurn({
+      runId: 'run-claude-agent-tool-approval',
+      runtimeSession: createRuntimeSession(),
+      profile: createProfile(),
+      message: createUserMessage('Run a command'),
+      workspaceId: 'workspace-1',
+      providerOptions: {
+        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'default' },
+      },
+    })
+    const firstChunk = stream.next()
+
+    await vi.waitFor(() => {
+      expect(sdkMocks.query).toHaveBeenCalledOnce()
+    })
+
+    const toolInput = { command: 'rm -rf build' }
+    const options = readQueryOptions(0)
+    const permissionResult = (options.canUseTool as CanUseTool)(
+      'Bash',
+      toolInput,
+      {
+        signal: new AbortController().signal,
+        toolUseID: 'toolu_bash_approval',
+        title: 'Claude wants to run rm -rf build',
+        displayName: 'Run command',
+        description: 'Claude will run a shell command in the workspace.',
+      },
+    )
+
+    await expect(firstChunk).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'tool-input-start',
+        toolCallId: 'toolu_bash_approval',
+        toolName: 'Bash',
+      },
+    })
+    await expect(stream.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'tool-input-available',
+        toolCallId: 'toolu_bash_approval',
+        toolName: 'Bash',
+        input: {
+          type: 'cradle.builtin-tool-call.input.v1',
+          identifier: 'claude-code',
+          apiName: 'Bash',
+          args: toolInput,
+        },
+      },
+    })
+    await expect(stream.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: 'tool-approval-request',
+        toolCallId: 'toolu_bash_approval',
+        approvalId: 'toolu_bash_approval',
+      },
+    })
+
+    expect(requestToolApproval).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'chat-session-1',
+      runId: 'run-claude-agent-tool-approval',
+      providerRequestId: 'toolu_bash_approval',
+      providerMethod: 'canUseTool',
+      toolCallId: 'toolu_bash_approval',
+      metadata: expect.objectContaining({
+        toolName: 'Bash',
+        params: toolInput,
+        permission: expect.objectContaining({
+          title: 'Claude wants to run rm -rf build',
+          displayName: 'Run command',
+          description: 'Claude will run a shell command in the workspace.',
+        }),
+      }),
+    }))
+
+    approvalResolver.resolve?.({
+      requestId: 'toolu_bash_approval',
+      approved: false,
+      reason: 'Too destructive',
+    })
+    await expect(permissionResult).resolves.toEqual({
+      behavior: 'deny',
+      message: 'Too destructive',
+    })
+
+    activeQuery.close()
+    await expect(stream.next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    })
+  })
+
   it('surfaces active permission mode update failures to the caller', async () => {
     const activeQuery = createPendingQuery()
     const permissionError = new Error('Cannot set permission mode to bypassPermissions')
@@ -1021,6 +1142,46 @@ describe('claudeAgentProvider MCP integration', () => {
 
     activeQuery.close()
     await pendingNext
+  })
+
+  it('registers active queries for idle runtime settings propagation', async () => {
+    const activeQuery = createPendingQuery()
+    sdkMocks.query.mockReturnValue(activeQuery)
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+    })
+    const runtimeSession = createRuntimeSession()
+    const stream = provider.streamTurn({
+      runId: 'run-claude-agent-live-registry',
+      runtimeSession,
+      profile: createProfile(),
+      message: createUserMessage('Keep query alive'),
+      workspaceId: 'workspace-1',
+      providerOptions: {
+        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'plan' },
+      },
+    })
+    const pendingNext = stream.next()
+
+    await vi.waitFor(() => {
+      expect(sdkMocks.query).toHaveBeenCalledOnce()
+    })
+
+    const liveRuntimeSession = liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)
+    expect(liveRuntimeSession).toBeDefined()
+    expect(liveRuntimeSession?.readRuntimeSession()).toBe(runtimeSession)
+
+    await liveRuntimeSession!.updateRuntimeSettings({
+      accessMode: 'full-access',
+      interactionMode: 'default',
+    })
+
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('bypassPermissions')
+
+    activeQuery.close()
+    await pendingNext
+    expect(liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)).toBeUndefined()
   })
 
   it('resyncs reused active query permission mode from current runtime settings', async () => {
@@ -1073,6 +1234,7 @@ describe('claudeAgentProvider MCP integration', () => {
       expect(readQueryOptions(0)).toEqual(expect.objectContaining({
         permissionMode: 'plan',
       }))
+      const originalCanUseTool = readQueryOptions(0).canUseTool as CanUseTool
       expect(readActiveQuery().setPermissionMode).not.toHaveBeenCalled()
 
       for await (const _chunk of provider.streamTurn({
@@ -1090,7 +1252,113 @@ describe('claudeAgentProvider MCP integration', () => {
 
       expect(sdkMocks.query).toHaveBeenCalledOnce()
       expect(readActiveQuery().setPermissionMode).toHaveBeenCalledWith('bypassPermissions')
+      await expect(originalCanUseTool(
+        'Bash',
+        { command: 'echo now allowed' },
+        {
+          signal: new AbortController().signal,
+          toolUseID: 'toolu_reused_now_allowed',
+        },
+      )).resolves.toEqual({
+        behavior: 'allow',
+        updatedInput: { command: 'echo now allowed' },
+      })
       expect(prompts).toEqual(['Start in plan mode', 'Implement now'])
+    }
+    finally {
+      await provider.dispose()
+    }
+  })
+
+  it('resyncs reused canUseTool callback from full-access to approval-required', async () => {
+    const prompts: unknown[] = []
+    let activeQuery: ReturnType<typeof createPromptDrivenQuery> | null = null
+    sdkMocks.query.mockImplementation((call: { prompt?: AsyncIterable<{ message: { content: unknown } }> }) => {
+      expect(call.prompt).toBeDefined()
+      activeQuery = createPromptDrivenQuery(call.prompt!, [
+        [
+          {
+            type: 'result',
+            session_id: 'claude-session-reused-approval',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        ],
+        [
+          {
+            type: 'result',
+            session_id: 'claude-session-reused-approval',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        ],
+      ], prompts)
+      return activeQuery
+    })
+    const readActiveQuery = (): ReturnType<typeof createPromptDrivenQuery> => {
+      expect(activeQuery).not.toBeNull()
+      return activeQuery!
+    }
+    const requestToolApproval = vi.fn(async (request: RuntimeToolApprovalRequest) => ({
+      requestId: request.providerRequestId,
+      approved: true,
+    }))
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+      requestToolApproval,
+    })
+    const runtimeSession = createRuntimeSession()
+
+    try {
+      for await (const _chunk of provider.streamTurn({
+        runId: 'run-claude-agent-reused-bypass',
+        runtimeSession,
+        profile: createProfile(),
+        message: createUserMessage('Start with full access'),
+        workspaceId: 'workspace-1',
+        providerOptions: {
+          runtimeSettings: { accessMode: 'full-access', interactionMode: 'default' },
+        },
+      })) {
+        // Drain stream.
+      }
+
+      expect(readQueryOptions(0)).toEqual(expect.objectContaining({
+        permissionMode: 'bypassPermissions',
+      }))
+      const originalCanUseTool = readQueryOptions(0).canUseTool as CanUseTool
+
+      for await (const _chunk of provider.streamTurn({
+        runId: 'run-claude-agent-reused-approval',
+        runtimeSession,
+        profile: createProfile(),
+        message: createUserMessage('Now require approval'),
+        workspaceId: 'workspace-1',
+        providerOptions: {
+          runtimeSettings: { accessMode: 'approval-required', interactionMode: 'default' },
+        },
+      })) {
+        // Drain stream.
+      }
+
+      expect(sdkMocks.query).toHaveBeenCalledOnce()
+      expect(readActiveQuery().setPermissionMode).toHaveBeenCalledWith('plan')
+      await expect(originalCanUseTool(
+        'Bash',
+        { command: 'pwd' },
+        {
+          signal: new AbortController().signal,
+          toolUseID: 'toolu_reused_requires_approval',
+        },
+      )).resolves.toEqual({
+        behavior: 'allow',
+        updatedInput: { command: 'pwd' },
+      })
+      expect(requestToolApproval).toHaveBeenCalledWith(expect.objectContaining({
+        runId: 'run-claude-agent-reused-approval',
+        providerRequestId: 'toolu_reused_requires_approval',
+        toolCallId: 'toolu_reused_requires_approval',
+      }))
+      expect(prompts).toEqual(['Start with full access', 'Now require approval'])
     }
     finally {
       await provider.dispose()

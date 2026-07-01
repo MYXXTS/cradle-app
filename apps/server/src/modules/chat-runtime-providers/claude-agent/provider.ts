@@ -43,6 +43,7 @@ import {
   ProviderRuntimeError,
   requireRuntimeProviderTargetProfile,
 } from '../../chat-runtime/runtime-provider-types'
+import { liveRuntimeSessionRegistry } from '../../chat-runtime/runtime-live-session-registry'
 import { isChatStreamTraceEnabled, recordChatStreamTrace } from '../../chat-runtime/stream-trace'
 import type { TokenUsage } from '../../chat-runtime-engine/ai-sdk-engine'
 import { readTrustedClaudeAgentConfig } from '../../provider-contracts/provider-base'
@@ -69,6 +70,12 @@ import {
   CLAUDE_AGENT_RUNTIME_METADATA,
   projectClaudeAgentPresentation,
 } from './metadata'
+import {
+  createClaudeAgentPermissionBridgeState,
+  type ClaudeAgentPermissionBridgeState,
+  type ClaudeAgentToolApprovalRequest,
+  updateClaudeAgentPermissionBridgeState,
+} from './permission-bridge'
 import { generateClaudeSessionTitle, shouldGenerateClaudeSessionTitle } from './provider-title-generation'
 import { activateClaudeAgentSdkConfigDir, resolveClaudeAgentRuntimeContext } from './runtime-context'
 import {
@@ -97,8 +104,10 @@ type ActiveClaudeQuery = {
   abortController: AbortController
   inputStream: ClaudeAgentInputStream
   mapperState: ClaudeAgentChunkMapperState
+  permissionBridgeState: ClaudeAgentPermissionBridgeState
   runtimeSession: RuntimeSession
   providerTargetId: string
+  releaseLiveRuntimeSession: () => void
   currentTurn: ActiveClaudeTurn | null
   syntheticTurn: ActiveClaudeSyntheticTurn | null
   onProviderSyntheticTurnEvent: StreamTurnInput['onProviderSyntheticTurnEvent'] | null
@@ -204,6 +213,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
   constructor(private readonly deps: ClaudeAgentProviderDeps) {}
 
   private releaseQuery(sessionId: string, entry: ActiveClaudeQuery): void {
+    entry.releaseLiveRuntimeSession()
     if (this.activeQueries.get(sessionId) === entry) {
       this.activeQueries.delete(sessionId)
       this.activePermissionModesBySession.delete(sessionId)
@@ -386,20 +396,27 @@ export class ClaudeAgentProvider implements ChatRuntime {
       readWorkspaceProviderStateSnapshot(input.runtimeSession.providerStateSnapshot),
     )
     const sessionId = input.runtimeSession.chatSessionId
+    let activeEntry = this.activeQueries.get(sessionId)
+    if (activeEntry && (activeEntry.closed || activeEntry.providerTargetId !== profile.providerTargetId)) {
+      this.closeSessionQuery(sessionId, activeEntry)
+      activeEntry = undefined
+    }
+    const permissionBridgeState = activeEntry?.permissionBridgeState ?? createClaudeAgentPermissionBridgeState({
+      runtimeInput: input,
+      permissionMode: 'bypassPermissions',
+      runtimeSettings: input.providerOptions?.runtimeSettings,
+    })
     let turnPermissionMode: 'bypassPermissions' | 'plan' = 'bypassPermissions'
     const queryOptions = buildClaudeQueryOptions({
       deps: this.deps,
       input,
       abortController,
       attachPermissionHandler: true,
+      permissionBridgeState,
+      emitToolApprovalRequest: request => this.emitClaudeAgentToolApprovalRequest(sessionId, request),
     })
     turnPermissionMode = readActiveClaudeQueryPermissionMode(queryOptions.permissionMode)
 
-    let activeEntry = this.activeQueries.get(sessionId)
-    if (activeEntry && (activeEntry.closed || activeEntry.providerTargetId !== profile.providerTargetId)) {
-      this.closeSessionQuery(sessionId, activeEntry)
-      activeEntry = undefined
-    }
     if (!activeEntry) {
       this.activePermissionModesBySession.set(sessionId, turnPermissionMode)
       const inputStream = new ClaudeAgentInputStream()
@@ -409,14 +426,30 @@ export class ClaudeAgentProvider implements ChatRuntime {
         abortController,
         inputStream,
         mapperState: createClaudeAgentChunkMapperState(),
+        permissionBridgeState,
         runtimeSession: input.runtimeSession,
         providerTargetId: profile.providerTargetId,
+        releaseLiveRuntimeSession: () => undefined,
         currentTurn: null,
         syntheticTurn: null,
         onProviderSyntheticTurnEvent: null,
         closed: false,
       }
       this.activeQueries.set(sessionId, activeEntry)
+      const registeredEntry = activeEntry
+      activeEntry.releaseLiveRuntimeSession = liveRuntimeSessionRegistry.register({
+        sessionId,
+        runtimeKind: this.runtimeKind,
+        providerTargetId: profile.providerTargetId,
+        readRuntimeSession: () => registeredEntry.runtimeSession,
+        updateRuntimeSettings: async settings => {
+          await this.updateRuntimeSettings({
+            runtimeSession: registeredEntry.runtimeSession,
+            profile,
+            settings,
+          })
+        },
+      })
       void this.captureClaudeAgentAccountSnapshot(input.runtimeSession, activeQuery)
       void this.pumpClaudeSessionQuery(sessionId, activeEntry)
     }
@@ -430,6 +463,8 @@ export class ClaudeAgentProvider implements ChatRuntime {
       await this.updateActiveQueryPermissionMode({
         runtimeSession: input.runtimeSession,
         mode: turnPermissionMode,
+        runtimeInput: input,
+        runtimeSettings: input.providerOptions?.runtimeSettings,
       })
       activeEntry.runtimeSession = input.runtimeSession
       resetClaudeAgentChunkMapperForTurn(activeEntry.mapperState)
@@ -646,6 +681,51 @@ export class ClaudeAgentProvider implements ChatRuntime {
       }
       resetClaudeAgentChunkMapperForTurn(entry.mapperState)
     }
+  }
+
+  private emitClaudeAgentToolApprovalRequest(sessionId: string, request: ClaudeAgentToolApprovalRequest): void {
+    const entry = this.activeQueries.get(sessionId)
+    const turn = entry?.currentTurn
+    if (!entry || !turn) {
+      return
+    }
+
+    const current = entry.mapperState.emittedToolStateByToolCallId.get(request.toolCallId) ?? {
+      started: false,
+      inputAvailable: false,
+    }
+    entry.mapperState.toolNamesByToolCallId.set(request.toolCallId, request.toolName)
+
+    if (!current.started) {
+      turn.queue.push({
+        type: 'tool-input-start',
+        toolCallId: request.toolCallId,
+        toolName: request.toolName,
+      })
+      current.started = true
+    }
+
+    if (!current.inputAvailable) {
+      entry.mapperState.toolArgsByToolCallId.set(request.toolCallId, request.toolInput)
+      turn.queue.push({
+        type: 'tool-input-available',
+        toolCallId: request.toolCallId,
+        toolName: request.toolName,
+        input: createClaudeCodeToolInputPayload(request.toolName, request.toolInput),
+      })
+      current.inputAvailable = true
+    }
+
+    if (!current.approvalRequested) {
+      turn.queue.push({
+        type: 'tool-approval-request',
+        toolCallId: request.toolCallId,
+        approvalId: request.toolCallId,
+      })
+      current.approvalRequested = true
+    }
+
+    entry.mapperState.emittedToolStateByToolCallId.set(request.toolCallId, current)
   }
 
   private async handleClaudeSyntheticSessionMessage(entry: ActiveClaudeQuery, message: SDKMessage): Promise<void> {
@@ -969,7 +1049,11 @@ export class ClaudeAgentProvider implements ChatRuntime {
   }
 
   private async updateActiveQueryPermissionMode(
-    input: Pick<UpdateRuntimeSettingsInput, 'runtimeSession'> & { mode: 'bypassPermissions' | 'plan' },
+    input: Pick<UpdateRuntimeSettingsInput, 'runtimeSession'> & {
+      mode: 'bypassPermissions' | 'plan'
+      runtimeInput?: StreamTurnInput | GetCapabilitiesInput
+      runtimeSettings?: UpdateRuntimeSettingsInput['settings']
+    },
   ): Promise<void> {
     const sessionId = input.runtimeSession.chatSessionId
     const entry = this.activeQueries.get(sessionId)
@@ -978,6 +1062,11 @@ export class ClaudeAgentProvider implements ChatRuntime {
     }
     await entry.query.setPermissionMode(input.mode)
     this.activePermissionModesBySession.set(sessionId, input.mode)
+    updateClaudeAgentPermissionBridgeState(entry.permissionBridgeState, {
+      runtimeInput: input.runtimeInput ?? entry.permissionBridgeState.runtimeInput,
+      permissionMode: input.mode,
+      runtimeSettings: input.runtimeSettings ?? entry.permissionBridgeState.runtimeSettings,
+    })
   }
 
   private async requestRuntimeInteractionModeUpdate(
@@ -1008,6 +1097,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     await this.updateActiveQueryPermissionMode({
       runtimeSession: input.runtimeSession,
       mode,
+      runtimeSettings: input.settings,
     })
   }
 
@@ -1074,13 +1164,8 @@ export class ClaudeAgentProvider implements ChatRuntime {
   }
 
   private async captureClaudeAgentAccountSnapshot(runtimeSession: RuntimeSession, activeQuery: Query): Promise<void> {
-    const initializationResult = (activeQuery as { initializationResult?: () => Promise<{ account?: AccountInfo }> }).initializationResult
-    if (typeof initializationResult !== 'function') {
-      return
-    }
-
     try {
-      const result = await initializationResult.call(activeQuery)
+      const result = await activeQuery.initializationResult()
       if (hasClaudeAgentAccountSignal(result.account)) {
         writeClaudeAgentAccountSnapshot(runtimeSession, result.account)
       }

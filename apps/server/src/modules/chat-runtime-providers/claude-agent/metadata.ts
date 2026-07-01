@@ -33,7 +33,7 @@ export const CLAUDE_AGENT_RUNTIME_CAPABILITIES = {
   supportsRuntimeSettings: true,
   supportsUiSlotStates: true,
   supportsDynamicCapabilities: false,
-  sessionModelSwitch: 'restart-session',
+  sessionModelSwitch: 'in-session',
 } satisfies ChatRuntimeCapabilities
 
 const CLAUDE_AGENT_COMPACT_SLOT: RuntimeUiSlot = {

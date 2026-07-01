@@ -4,7 +4,7 @@
  * Position: Claude Agent provider package boundary from Cradle runtime contracts to SDK-native input.
  */
 
-import type { CanUseTool, McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk'
+import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk'
 import type { UIMessage } from 'ai'
 
 import { readObjectRecord as readRecord } from '../../../helpers/json-record'
@@ -31,6 +31,13 @@ import {
 import { resolveAnthropicWireAuth } from '../../provider-catalog/provider-endpoint-registry'
 import { readWorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
 import { CLAUDE_AGENT_RUNTIME_KIND } from './metadata'
+import {
+  createClaudeAgentCanUseTool,
+  createClaudeAgentPermissionBridgeState,
+  type ClaudeAgentPermissionBridgeState,
+  type ClaudeAgentToolApprovalRequest,
+  updateClaudeAgentPermissionBridgeState,
+} from './permission-bridge'
 import {
   prepareClaudeAgentSdkConfigDir,
   removeCradleOwnedClaudeConfigDirFromEnv,
@@ -169,6 +176,8 @@ export function buildClaudeQueryOptions(input: {
   input: StreamTurnInput | GetCapabilitiesInput
   abortController: AbortController
   attachPermissionHandler: boolean
+  permissionBridgeState?: ClaudeAgentPermissionBridgeState
+  emitToolApprovalRequest?: (request: ClaudeAgentToolApprovalRequest) => void
   persistSession?: boolean
 }): Options {
   const profile = requireRuntimeProviderTargetProfile(input.input.profile, CLAUDE_AGENT_RUNTIME_KIND)
@@ -232,15 +241,23 @@ export function buildClaudeQueryOptions(input: {
   }
   const disallowedTools = config.disallowedTools ?? []
   queryOptions.disallowedTools = [...new Set(disallowedTools)]
+  const permissionBridgeState = input.permissionBridgeState ?? createClaudeAgentPermissionBridgeState({
+    runtimeInput: input.input,
+    permissionMode,
+    runtimeSettings: providerOptions?.runtimeSettings,
+  })
+  updateClaudeAgentPermissionBridgeState(permissionBridgeState, {
+    runtimeInput: input.input,
+    permissionMode,
+    runtimeSettings: providerOptions?.runtimeSettings,
+  })
   const hasUserInputHandler = Boolean(input.deps.requestUserInput)
   if (input.attachPermissionHandler || hasUserInputHandler) {
-    queryOptions.canUseTool = (async (toolName, toolInput, options) => {
-      if (toolName === 'AskUserQuestion' && input.deps.requestUserInput) {
-        return handleAskUserQuestionViaCanUseTool(input.deps, input.input, toolInput, options)
-      }
-
-      return allowClaudeAgentTool(toolInput)
-    }) as CanUseTool
+    queryOptions.canUseTool = createClaudeAgentCanUseTool({
+      deps: input.deps,
+      state: permissionBridgeState,
+      emitToolApprovalRequest: input.emitToolApprovalRequest,
+    })
   }
   if (shouldPersistSession && input.input.runtimeSession.providerSessionId) {
     queryOptions.resume = input.input.runtimeSession.providerSessionId
@@ -310,7 +327,9 @@ export function resolveClaudeAgentAuthMode(
 export function shouldPersistClaudeAgentSdkSession(authMode: ClaudeAgentAuthMode): boolean {
   switch (authMode) {
     case 'apiKey':
+      return CLAUDE_AGENT_SDK_PERSIST_SESSION
     case 'claudeAi':
+      return false
     default:
       return CLAUDE_AGENT_SDK_PERSIST_SESSION
   }
@@ -628,120 +647,4 @@ function readNonEmptyEnvValue(value: string | undefined): string | undefined {
 
 function claudeAgentRequestError(method: string, detail: string): ProviderRuntimeError {
   return new ProviderRuntimeError(ProviderErrors.requestFailed(CLAUDE_AGENT_RUNTIME_KIND, method, detail))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function readClaudeAgentAskUserQuestionInput(input: unknown): { questions: Array<{ question: string, header: string, options: Array<{ label: string, description: string }>, multiSelect: boolean }> } | null {
-  if (!isRecord(input) || !Array.isArray(input.questions) || input.questions.length === 0) {
-    return null
-  }
-
-  const questions = input.questions.flatMap((item: unknown) => {
-    if (!isRecord(item) || typeof item.question !== 'string' || typeof item.header !== 'string') {
-      return []
-    }
-    if (!Array.isArray(item.options) || item.options.length < 2) {
-      return []
-    }
-
-    const options = item.options.flatMap((opt: unknown) => {
-      if (!isRecord(opt) || typeof opt.label !== 'string' || typeof opt.description !== 'string') {
-        return []
-      }
-      return [{ label: opt.label, description: opt.description }]
-    })
-
-    if (options.length < 2) {
-      return []
-    }
-
-    return [{
-      question: item.question,
-      header: item.header,
-      options,
-      multiSelect: item.multiSelect === true,
-    }]
-  })
-
-  return questions.length > 0 ? { questions } : null
-}
-
-function allowClaudeAgentTool(toolInput: Record<string, unknown>): { behavior: 'allow', updatedInput: Record<string, unknown> } {
-  return {
-    behavior: 'allow',
-    updatedInput: toolInput,
-  }
-}
-
-function buildClaudeAgentAskUserQuestionAnswerMap(
-  questions: Array<{ question: string }>,
-  answers: Record<string, string[]>,
-): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const [questionId, answerValues] of Object.entries(answers)) {
-    const questionIndex = Number.parseInt(questionId.replace('question-', ''), 10) - 1
-    const question = questions[questionIndex]
-    if (question) {
-      result[question.question] = answerValues.join(', ')
-    }
-  }
-  return result
-}
-
-async function handleAskUserQuestionViaCanUseTool(
-  deps: ProviderContext,
-  input: StreamTurnInput | GetCapabilitiesInput,
-  toolInput: Record<string, unknown>,
-  options: { readonly signal: AbortSignal, readonly toolUseID?: string },
-): Promise<{ behavior: 'allow', updatedInput: Record<string, unknown> } | { behavior: 'deny', message: string }> {
-  const questionInput = readClaudeAgentAskUserQuestionInput(toolInput)
-  if (!questionInput) {
-    return {
-      behavior: 'deny',
-      message: 'Invalid AskUserQuestion input.',
-    }
-  }
-
-  const sessionId = input.runtimeSession.chatSessionId
-  const runId = 'runId' in input ? input.runId : ''
-
-  const questions = questionInput.questions.map((question, index) => ({
-    id: `question-${index + 1}`,
-    header: question.header,
-    question: question.question,
-    isOther: true,
-    isSecret: false,
-    multiSelect: question.multiSelect,
-    options: question.options.map(option => ({
-      label: option.label,
-      description: option.description,
-    })),
-  }))
-
-  const resolution = await deps.requestUserInput!({
-    sessionId,
-    runId,
-    providerRequestId: options.toolUseID ?? 'ask-user-question',
-    providerKind: requireRuntimeProviderTargetProfile(input.profile, CLAUDE_AGENT_RUNTIME_KIND).providerKind,
-    runtimeKind: CLAUDE_AGENT_RUNTIME_KIND,
-    providerMethod: 'askUserQuestion',
-    toolCallId: options.toolUseID ?? 'ask-user-question',
-    questions,
-    metadata: {
-      params: questionInput,
-    },
-  })
-
-  const answers = buildClaudeAgentAskUserQuestionAnswerMap(questionInput.questions, resolution.answers)
-
-  return {
-    behavior: 'allow',
-    updatedInput: {
-      questions: toolInput.questions,
-      answers,
-    },
-  }
 }
