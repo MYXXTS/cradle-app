@@ -186,6 +186,13 @@ jobs:
         run: |
           pnpm dist:mac --arm64
 
+      - name: Verify macOS framework symlinks
+        shell: bash
+        run: |
+          node apps/desktop/scripts/fix-macos-framework-symlinks.mjs \
+            apps/desktop/release/mac-arm64/Cradle.app \
+            --check
+
       - name: Build installer DMG
         env:
           DESKTOP_VERSION: ${{ needs.resolve.outputs.desktop_version }}

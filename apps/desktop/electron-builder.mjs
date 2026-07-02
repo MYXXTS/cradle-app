@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { fixMacOSFrameworkSymlinks } from './scripts/fix-macos-framework-symlinks.mjs'
 import { copyCodexRuntimeToPackagedResources } from './scripts/sync-codex-runtime.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -100,6 +101,22 @@ async function removeUnusedMacFrameworkLocales(context) {
 async function afterPack(context) {
   await copyCodexRuntimeToPackagedResources(context)
   await removeUnusedMacFrameworkLocales(context)
+  if (['darwin', 'mas'].includes(context.electronPlatformName)) {
+    const appPath = path.join(
+      context.appOutDir,
+      `${context.packager.appInfo.productFilename}.app`,
+    )
+    const result = fixMacOSFrameworkSymlinks(appPath)
+    if (result.absoluteSymlinks.length > 0) {
+      const details = result.absoluteSymlinks
+        .map(symlink => `${symlink.linkPath} -> ${symlink.target}`)
+        .join('\n')
+      throw new Error(`Unfixed absolute macOS framework symlink(s):\n${details}`)
+    }
+    if (result.rewritten > 0) {
+      console.warn(`[desktop] Rewrote ${result.rewritten} macOS framework symlink(s).`)
+    }
+  }
 }
 
 /**
