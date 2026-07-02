@@ -919,6 +919,7 @@ const runtimeStatusSchema = t.Union([
   t.Literal('idle'),
   t.Literal('pending'),
   t.Literal('streaming'),
+  t.Literal('waitingForUserInput'),
   t.Literal('cancelling')
 ])
 const providerThreadSourceKindSchema = t.Union([

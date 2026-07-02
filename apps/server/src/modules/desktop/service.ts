@@ -58,6 +58,20 @@ interface DesktopAwaitItem {
   createdAt: number
 }
 
+interface DesktopUserInputRequestItem {
+  id: string
+  sessionId: string
+  runId: string
+  requestId: string
+  title: string
+  workspaceId: string | null
+  workspaceName: string
+  providerMethod: string
+  questionCount: number
+  firstQuestion: string | null
+  createdAt: number
+}
+
 const DEFAULT_WORKSPACE_NAME = 'No workspace'
 const DEFAULT_SESSION_TITLE = 'Waiting session'
 const RUNNING_LIMIT = 8
@@ -259,6 +273,40 @@ export function getDesktopAwaits(): DesktopAwaitItem[] {
     reason: row.reason,
     createdAt: row.createdAt,
   }))
+}
+
+export function getDesktopUserInputRequests(): DesktopUserInputRequestItem[] {
+  const pendingInputs = ChatRuntime.listPendingRuntimeUserInputs()
+  if (pendingInputs.length === 0) {
+    return []
+  }
+
+  const sessionIds = [...new Set(pendingInputs.map(input => input.sessionId))]
+  const sessionRows = db()
+    .select({ id: sessions.id, title: sessions.title, workspaceId: sessions.workspaceId })
+    .from(sessions)
+    .where(inArray(sessions.id, sessionIds))
+    .all()
+  const sessionsById = new Map(sessionRows.map(row => [row.id, row]))
+  const workspaceNames = readWorkspaceNames(sessionRows.map(row => row.workspaceId))
+
+  return pendingInputs.map((input) => {
+    const session = sessionsById.get(input.sessionId)
+    const workspaceId = session?.workspaceId ?? null
+    return {
+      id: `${input.sessionId}:${input.requestId}`,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      requestId: input.requestId,
+      title: session?.title ?? DEFAULT_SESSION_TITLE,
+      workspaceId,
+      workspaceName: workspaceId ? workspaceNames.get(workspaceId) ?? DEFAULT_WORKSPACE_NAME : DEFAULT_WORKSPACE_NAME,
+      providerMethod: input.providerMethod,
+      questionCount: input.questionCount,
+      firstQuestion: input.firstQuestion,
+      createdAt: input.createdAt,
+    }
+  })
 }
 
 function readWorkspaceCount(): number {

@@ -31,3 +31,9 @@ export const desktop = new Elysia({
     },
     response: { 200: DesktopModel.desktopAwaits },
   })
+  .get('/user-input-requests', () => Desktop.getDesktopUserInputRequests(), {
+    detail: {
+      summary: 'Get desktop runtime user input request facts',
+    },
+    response: { 200: DesktopModel.desktopUserInputRequests },
+  })

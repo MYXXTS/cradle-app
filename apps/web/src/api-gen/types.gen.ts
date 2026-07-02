@@ -15699,7 +15699,7 @@ export type GetChatSessionsBySessionIdRuntimeStatusResponses = {
      */
     200: {
         sessionId: string;
-        status: 'idle' | 'pending' | 'streaming' | 'cancelling';
+        status: 'idle' | 'pending' | 'streaming' | 'waitingForUserInput' | 'cancelling';
         runtimeKind: string;
         providerTargetId: string | null;
         providerSessionId: string | null;
@@ -19634,6 +19634,34 @@ export type GetDesktopAwaitsResponses = {
 };
 
 export type GetDesktopAwaitsResponse = GetDesktopAwaitsResponses[keyof GetDesktopAwaitsResponses];
+
+export type GetDesktopUserInputRequestsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/desktop/user-input-requests';
+};
+
+export type GetDesktopUserInputRequestsResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        id: string;
+        sessionId: string;
+        runId: string;
+        requestId: string;
+        title: string;
+        workspaceId: string | null;
+        workspaceName: string;
+        providerMethod: string;
+        questionCount: number;
+        firstQuestion: string | null;
+        createdAt: number;
+    }>;
+};
+
+export type GetDesktopUserInputRequestsResponse = GetDesktopUserInputRequestsResponses[keyof GetDesktopUserInputRequestsResponses];
 
 export type GetTerminalSessionsResourcesData = {
     body?: never;

@@ -70,6 +70,7 @@ export default {
   'session.aria.newReply': 'New reply',
   'session.aria.pinned': 'Pinned',
   'session.aria.running': 'Session running',
+  'session.aria.waitingForUserInput': 'Waiting for your input',
   'session.empty': 'No sessions yet',
   'session.fallbackTitle': 'Untitled',
   'session.relative.days': '{{count}}d',

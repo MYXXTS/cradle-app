@@ -142,6 +142,71 @@ describe('notificationCenterManager', () => {
     expect(notifications[0]?.close).toHaveBeenCalledTimes(1)
   })
 
+  it('shows an input-required notification for pending runtime user input', async () => {
+    const notifications: FakeNotification[] = []
+    const broker = { startResponseDetached: vi.fn() }
+    const mainWindow = {
+      isDestroyed: vi.fn(() => false),
+      isMinimized: vi.fn(() => false),
+      restore: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      webContents: { send: vi.fn() },
+    }
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/desktop/user-input-requests')) {
+        return createJsonResponse([
+          {
+            id: 'session-ask:request-ask',
+            sessionId: 'session-ask',
+            runId: 'run-ask',
+            requestId: 'request-ask',
+            title: 'Choose scope',
+            workspaceId: 'workspace-1',
+            workspaceName: 'Workspace',
+            providerMethod: 'askUserQuestion',
+            questionCount: 2,
+            firstQuestion: 'Which scope should I use?',
+            createdAt: 120,
+          },
+        ])
+      }
+      return createJsonResponse({ runs: [] })
+    })
+    const manager = new NotificationCenterManager({
+      serverUrl: 'http://127.0.0.1:21423',
+      chatStreamBroker: broker as never,
+      fetchFn: fetchFn as typeof fetch,
+      createNotification: (options) => {
+        const notification = new FakeNotification(options)
+        notifications.push(notification)
+        return notification
+      },
+      getMainWindow: () => mainWindow as never,
+      platform: 'darwin',
+    })
+
+    await manager.poll()
+
+    expect(fetchFn).toHaveBeenCalledWith(new URL('http://127.0.0.1:21423/desktop/user-input-requests'))
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]?.options).toMatchObject({
+      title: 'Choose scope',
+      body: 'Needs your input: Which scope should I use? (2 questions)',
+      hasReply: false,
+    })
+    expect(notifications[0]?.show).toHaveBeenCalledTimes(1)
+
+    notifications[0]?.emitClick()
+
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith('desktop-tray:action-requested', {
+      actionId: 'open-chat',
+      payload: { sessionId: 'session-ask' },
+    })
+    expect(notifications[0]?.close).toHaveBeenCalledTimes(1)
+  })
+
   it('queues a reply when the session is already busy', async () => {
     const notifications: FakeNotification[] = []
     const broker = { startResponseDetached: vi.fn() }

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { requestRuntimeUserInput, submitRuntimeUserInput } from '../src/modules/chat-runtime/pending-user-input'
 
 function createTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -69,6 +70,7 @@ describe('desktop tray projection', () => {
       store.insert(workspaces).values({
         id: workspaceId,
         name: 'Desktop Workspace',
+        locatorJson: JSON.stringify({ hostId: 'local', path: workspaceRoot }),
         path: workspaceRoot,
       }).run()
       store.insert(sessions).values({
@@ -127,6 +129,51 @@ describe('desktop tray projection', () => {
           reason: 'Waiting for checks',
         }),
       ])
+
+      const pendingUserInput = requestRuntimeUserInput({
+        sessionId,
+        runId: 'run-desktop-user-input',
+        providerRequestId: 'request-desktop-user-input',
+        providerKind: 'anthropic',
+        runtimeKind: 'claude-agent',
+        providerMethod: 'askUserQuestion',
+        toolCallId: 'toolu-desktop-user-input',
+        questions: [
+          {
+            id: 'choice',
+            header: 'Choice',
+            question: 'Which option should the session use?',
+            isOther: false,
+            isSecret: false,
+            multiSelect: false,
+            options: [{ label: 'Option A', description: 'Use option A' }],
+          },
+        ],
+      })
+
+      const userInputResponse = await app.handle(new Request('http://localhost/desktop/user-input-requests'))
+      expect(userInputResponse.status).toBe(200)
+      expect(await userInputResponse.json()).toEqual([
+        expect.objectContaining({
+          id: `${sessionId}:request-desktop-user-input`,
+          sessionId,
+          requestId: 'request-desktop-user-input',
+          title: 'Pinned Chat',
+          workspaceName: 'Desktop Workspace',
+          questionCount: 1,
+          firstQuestion: 'Which option should the session use?',
+        }),
+      ])
+
+      submitRuntimeUserInput({
+        sessionId,
+        requestId: 'request-desktop-user-input',
+        answers: { choice: ['Option A'] },
+      })
+      await expect(pendingUserInput).resolves.toEqual({
+        requestId: 'request-desktop-user-input',
+        answers: { choice: ['Option A'] },
+      })
     }
     finally {
       shutdownInfra()

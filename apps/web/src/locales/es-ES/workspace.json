@@ -69,6 +69,7 @@
   "session.aria.newReply": "Nueva respuesta",
   "session.aria.pinned": "Fijado",
   "session.aria.running": "Sesión en ejecución",
+  "session.aria.waitingForUserInput": "Esperando tu respuesta",
   "session.empty": "Aún no hay sesiones",
   "session.fallbackTitle": "Sin título",
   "session.relative.days": "{{count}}d",

@@ -47,6 +47,7 @@ import {
 } from './ui-message'
 import {
   appendPendingRuntimeUserInputSlotStates,
+  listPendingRuntimeUserInputSummaries,
   rejectPendingUserInputsForRun,
   setRuntimeUserInputPublisher
 } from './pending-user-input'
@@ -391,7 +392,24 @@ export interface CompletedChatRunsDto {
   runs: CompletedChatRunDto[]
 }
 
-export type RuntimeSessionStatusKind = 'idle' | 'pending' | 'streaming' | 'cancelling'
+export interface PendingRuntimeUserInputDto {
+  sessionId: string
+  runId: string
+  requestId: string
+  providerMethod: string
+  toolCallId: string
+  questionCount: number
+  firstQuestion: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type RuntimeSessionStatusKind =
+  | 'idle'
+  | 'pending'
+  | 'streaming'
+  | 'waitingForUserInput'
+  | 'cancelling'
 
 export interface RuntimeSessionRunDto {
   runId: string
@@ -805,6 +823,7 @@ function createProviderSyntheticTurnEventHandler(
         },
         isTerminalChunk: isTerminalUIMessageChunk
       })
+      return
     }
 
     let syntheticTurn = syntheticTurns.get(event.providerTurnId)
@@ -1146,6 +1165,9 @@ export async function getRuntimeSessionStatus(
     activeRun?.modelId ?? SessionService.readSessionModelPreference(session.configJson) ?? binding?.requestedModelId ?? null
   const runtimeSettings =
     activeRun?.runtimeSettings ?? readSessionRuntimeSettings(session.configJson)
+  const pendingUserInputs = activeRun
+    ? listPendingRuntimeUserInputSummaries({ sessionId, runId: activeRun.runId })
+    : []
   const providerTargetAvailable = activeRun ? true : isProviderTargetAvailable(providerTargetId)
   const hasActiveGoal =
     binding?.runtimeKind === 'codex' &&
@@ -1156,7 +1178,7 @@ export async function getRuntimeSessionStatus(
   const status: RuntimeSessionStatusKind = activeRun
     ? activeRun.cancelRequested
       ? 'cancelling'
-      : 'streaming'
+      : pendingUserInputs.length > 0 ? 'waitingForUserInput' : 'streaming'
     : pendingState
       ? 'pending'
       : 'idle'
@@ -1196,6 +1218,10 @@ export async function getRuntimeSessionStatus(
       : null,
     queue
   }
+}
+
+export function listPendingRuntimeUserInputs(): PendingRuntimeUserInputDto[] {
+  return listPendingRuntimeUserInputSummaries()
 }
 
 function toRuntimeSessionRunDto(

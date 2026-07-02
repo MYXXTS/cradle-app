@@ -69,6 +69,7 @@
   "session.aria.newReply": "新しい返信",
   "session.aria.pinned": "ピン留め済み",
   "session.aria.running": "セッション実行中",
+  "session.aria.waitingForUserInput": "入力待ち",
   "session.empty": "セッションはまだありません",
   "session.fallbackTitle": "無題",
   "session.relative.days": "{{count}}d",

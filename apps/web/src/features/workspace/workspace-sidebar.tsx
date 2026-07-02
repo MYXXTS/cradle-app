@@ -28,8 +28,9 @@ import {
   Settings2Line as SettingsIcon,
   TransferVerticalLine as ArrowUpDownIcon,
   UpSmallLine as ChevronUpIcon,
+  UserQuestionLine as UserQuestionIcon,
 } from '@mingcute/react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import {
   Fragment,
@@ -100,6 +101,7 @@ import {
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { toastManager } from '~/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
+import { runtimeSessionStatusQueryOptions } from '~/features/chat/commands/runtime-session-status-command'
 import { prefetchChatSession } from '~/features/chat/session/chat-session-prefetch'
 import { useDirectoryPicker } from '~/features/filesystem/directory-picker-provider'
 import { KanbanSidebar } from '~/features/kanban/kanban-sidebar'
@@ -233,6 +235,39 @@ function isSessionRunning(
   locallyStreamingSessionIds: Set<string>,
 ): boolean {
   return session.status === 'streaming' || locallyStreamingSessionIds.has(session.id)
+}
+
+function useWaitingForUserInputSessionIds(
+  sessions: readonly WorkspaceSession[],
+  locallyStreamingSessionIds: Set<string>,
+): Set<string> {
+  const activeSessionIds = useMemo(
+    () => sessions
+      .filter(session => isSessionRunning(session, locallyStreamingSessionIds))
+      .map(session => session.id),
+    [locallyStreamingSessionIds, sessions],
+  )
+  const statusQueries = useQueries({
+    queries: activeSessionIds.map(sessionId => ({
+      ...runtimeSessionStatusQueryOptions(sessionId),
+      staleTime: 1_000,
+      refetchInterval: 1_000,
+      refetchIntervalInBackground: true,
+    })),
+  })
+
+  return useMemo(() => {
+    const waitingSessionIds = new Set<string>()
+    statusQueries.forEach((query, index) => {
+      if (query.data?.status === 'waitingForUserInput') {
+        const sessionId = activeSessionIds[index]
+        if (sessionId) {
+          waitingSessionIds.add(sessionId)
+        }
+      }
+    })
+    return waitingSessionIds
+  }, [activeSessionIds, statusQueries])
 }
 
 function isSessionRecent(session: WorkspaceSession, currentUnixTimestamp: number): boolean {
@@ -1606,6 +1641,7 @@ const SessionItem = memo(
   ({
     session,
     isStreaming,
+    isWaitingForUserInput,
     hasError,
     isRenaming,
     t,
@@ -1617,6 +1653,7 @@ const SessionItem = memo(
   }: {
     session: WorkspaceSession
     isStreaming: boolean
+    isWaitingForUserInput: boolean
     hasError: boolean
     isRenaming: boolean
     t: WorkspaceTranslation
@@ -1641,6 +1678,33 @@ const SessionItem = memo(
     const dragCleanupRef = useRef<(() => void) | null>(null)
     const dragWasTornOffRef = useRef(false)
     const sessionTitle = session.title ?? t('session.fallbackTitle')
+    const trailingIndicator = isStreaming
+      ? isWaitingForUserInput
+        ? (
+            <span
+              className="grid size-3.5 shrink-0 place-items-center text-amber-500/85 [contain:layout_paint]"
+              aria-label={t('session.aria.waitingForUserInput')}
+              role="status"
+              data-testid={`session-waiting-user-input-indicator-${session.id}`}
+            >
+              <UserQuestionIcon className="size-3.5" aria-hidden="true" />
+            </span>
+          )
+        : (
+            <span
+              className="grid size-3.5 shrink-0 animate-spin place-items-center text-muted-foreground/70 [contain:layout_paint] [will-change:transform] motion-reduce:animate-none"
+              aria-label={t('session.aria.running')}
+              role="status"
+              data-testid={`session-running-indicator-${session.id}`}
+            >
+              <LoadingLine className="size-3.5" aria-hidden="true" />
+            </span>
+          )
+      : (
+          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
+            {formatRelativeTime(session.listActivityAt, t)}
+          </span>
+        )
 
     const prepareSessionOpen = useCallback(() => {
       onPrepareSessionOpen(session)
@@ -1890,22 +1954,7 @@ const SessionItem = memo(
                 active={active}
                 label={t('session.aria.newReply')}
               />
-              {isStreaming
-? (
-                <span
-                  className="grid size-3.5 shrink-0 animate-spin place-items-center text-muted-foreground/70 [contain:layout_paint] [will-change:transform] motion-reduce:animate-none"
-                  aria-label={t('session.aria.running')}
-                  role="status"
-                  data-testid={`session-running-indicator-${session.id}`}
-                >
-                  <LoadingLine className="size-3.5" aria-hidden="true" />
-                </span>
-              )
-: (
-                <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-                  {formatRelativeTime(session.listActivityAt, t)}
-                </span>
-              )}
+              {trailingIndicator}
             </button>
             <button
               type="button"
@@ -1931,6 +1980,7 @@ interface SessionListProps {
   sessions: WorkspaceSession[]
   renamingSessionId: string | null
   locallyStreamingSessionIds: Set<string>
+  waitingForUserInputSessionIds: Set<string>
   locallyErroredSessionIds: Set<string>
   t: WorkspaceTranslation
   onPrepareSessionOpen: (session: WorkspaceSession) => void
@@ -1945,6 +1995,7 @@ const SessionListRows = memo(
     sessions,
     renamingSessionId,
     locallyStreamingSessionIds,
+    waitingForUserInputSessionIds,
     locallyErroredSessionIds,
     t,
     onPrepareSessionOpen,
@@ -1962,6 +2013,7 @@ const SessionListRows = memo(
               key={session.id}
               session={session}
               isStreaming={isStreaming}
+              isWaitingForUserInput={waitingForUserInputSessionIds.has(session.id)}
               hasError={
                 !isStreaming
                 && (session.status === 'error' || locallyErroredSessionIds.has(session.id))
@@ -2101,6 +2153,7 @@ function WorkspaceSessionListSection({
   renamingSessionId,
   retainedSessionIds,
   locallyStreamingSessionIds,
+  waitingForUserInputSessionIds,
   locallyErroredSessionIds,
   t,
   onPrepareSessionOpen,
@@ -2114,6 +2167,7 @@ function WorkspaceSessionListSection({
   renamingSessionId: string | null
   retainedSessionIds: Set<string>
   locallyStreamingSessionIds: Set<string>
+  waitingForUserInputSessionIds: Set<string>
   locallyErroredSessionIds: Set<string>
   t: WorkspaceTranslation
   onPrepareSessionOpen: (session: WorkspaceSession) => void
@@ -2210,6 +2264,7 @@ function WorkspaceSessionListSection({
           sessions={visibleSessions}
           renamingSessionId={renamingSessionId}
           locallyStreamingSessionIds={locallyStreamingSessionIds}
+          waitingForUserInputSessionIds={waitingForUserInputSessionIds}
           locallyErroredSessionIds={locallyErroredSessionIds}
           t={t}
           onPrepareSessionOpen={onPrepareSessionOpen}
@@ -2297,6 +2352,10 @@ const WorkspaceGroup = memo(
         [workspaceSessionIds],
       ),
       shallow,
+    )
+    const waitingForUserInputSessionIds = useWaitingForUserInputSessionIds(
+      sessions,
+      locallyStreamingSessionIds,
     )
     const locallyErroredSessionIds = useChatStore(
       useCallback(
@@ -2758,6 +2817,7 @@ const WorkspaceGroup = memo(
           renamingSessionId={renamingSessionId}
           retainedSessionIds={retainedSessionIds}
           locallyStreamingSessionIds={locallyStreamingSessionIds}
+          waitingForUserInputSessionIds={waitingForUserInputSessionIds}
           locallyErroredSessionIds={locallyErroredSessionIds}
           t={t}
           onPrepareSessionOpen={handlePrepareSessionOpen}

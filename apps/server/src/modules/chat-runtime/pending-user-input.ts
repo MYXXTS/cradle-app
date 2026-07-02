@@ -17,6 +17,18 @@ interface PendingUserInputState {
   reject: (error: Error) => void
 }
 
+export interface PendingRuntimeUserInputSummary {
+  sessionId: string
+  runId: string
+  requestId: string
+  providerMethod: string
+  toolCallId: string
+  questionCount: number
+  firstQuestion: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 type RuntimeUserInputPublisher = (runId: string, chunk: UIMessageChunk) => void
 
 const pendingUserInputById = new Map<string, PendingUserInputState>()
@@ -111,6 +123,33 @@ export function listPendingRuntimeUserInputStates(input: {
     })
   }
   return states.sort((a, b) => a.createdAt - b.createdAt || a.requestId.localeCompare(b.requestId))
+}
+
+export function listPendingRuntimeUserInputSummaries(input: {
+  sessionId?: string
+  runId?: string
+} = {}): PendingRuntimeUserInputSummary[] {
+  const summaries: PendingRuntimeUserInputSummary[] = []
+  for (const pending of pendingUserInputById.values()) {
+    if (input.sessionId && pending.request.sessionId !== input.sessionId) {
+      continue
+    }
+    if (input.runId && pending.request.runId !== input.runId) {
+      continue
+    }
+    summaries.push({
+      sessionId: pending.request.sessionId,
+      runId: pending.request.runId,
+      requestId: pending.request.providerRequestId,
+      providerMethod: pending.request.providerMethod,
+      toolCallId: pending.request.toolCallId,
+      questionCount: pending.request.questions.length,
+      firstQuestion: pending.request.questions[0]?.question ?? null,
+      createdAt: pending.createdAt,
+      updatedAt: pending.createdAt
+    })
+  }
+  return summaries.sort((a, b) => a.createdAt - b.createdAt || a.requestId.localeCompare(b.requestId))
 }
 
 export function appendPendingRuntimeUserInputSlotStates(

@@ -19,8 +19,24 @@ interface CompletedRunsResponse {
 }
 
 interface RuntimeStatusResponse {
-  status: 'idle' | 'pending' | 'streaming' | 'cancelling'
+  status: 'idle' | 'pending' | 'streaming' | 'waitingForUserInput' | 'cancelling'
 }
+
+interface UserInputRequest {
+  id: string
+  sessionId: string
+  runId: string
+  requestId: string
+  title: string
+  workspaceId: string | null
+  workspaceName: string
+  providerMethod: string
+  questionCount: number
+  firstQuestion: string | null
+  createdAt: number
+}
+
+type UserInputRequestsResponse = UserInputRequest[] | { requests: UserInputRequest[] }
 
 interface NativeNotification {
   show: () => void
@@ -40,8 +56,10 @@ interface NotificationCenterManagerOptions {
 }
 
 const COMPLETED_RUNS_PATH = '/chat/runs/completed'
+const USER_INPUT_REQUESTS_PATH = '/desktop/user-input-requests'
 const DEFAULT_POLL_INTERVAL_MS = 3_000
 const MAX_SEEN_RUN_IDS = 500
+const MAX_SEEN_USER_INPUT_REQUEST_IDS = 500
 
 export class NotificationCenterManager {
   private readonly serverUrl: string
@@ -53,6 +71,7 @@ export class NotificationCenterManager {
   private readonly nowSeconds: () => number
   private readonly platform: NodeJS.Platform
   private seenRunIds = new Set<string>()
+  private seenUserInputRequestIds = new Set<string>()
   private activeNotifications = new Set<NativeNotification>()
   private timer: ReturnType<typeof setInterval> | null = null
   private lastFinishedAt = 0
@@ -97,29 +116,59 @@ export class NotificationCenterManager {
     }
     this.polling = true
     try {
-      const response = await this.fetchFn(this.buildUrl(COMPLETED_RUNS_PATH, {
-        since: String(Math.max(0, this.lastFinishedAt - 1)),
-        limit: '50',
-      }))
-      if (!response.ok) {
-        return
-      }
-      const payload = await response.json() as CompletedRunsResponse
-      const runs = [...payload.runs].sort((left, right) => left.finishedAt - right.finishedAt)
-      for (const run of runs) {
-        this.lastFinishedAt = Math.max(this.lastFinishedAt, run.finishedAt)
-        if (this.seenRunIds.has(run.runId)) {
-          continue
-        }
-        this.rememberRun(run.runId)
-        this.showCompletionNotification(run)
-      }
-    }
-    catch (error) {
-      console.warn('[notification-center] failed to poll completed runs:', error)
+      await this.pollCompletedRuns().catch((error) => {
+        console.warn('[notification-center] failed to poll completed runs:', error)
+      })
+      await this.pollUserInputRequests().catch((error) => {
+        console.warn('[notification-center] failed to poll user input requests:', error)
+      })
     }
     finally {
       this.polling = false
+    }
+  }
+
+  private async pollCompletedRuns(): Promise<void> {
+    const response = await this.fetchFn(this.buildUrl(COMPLETED_RUNS_PATH, {
+      since: String(Math.max(0, this.lastFinishedAt - 1)),
+      limit: '50',
+    }))
+    if (!response.ok) {
+      return
+    }
+    const payload = await response.json() as CompletedRunsResponse
+    const runs = Array.isArray(payload.runs)
+      ? [...payload.runs].sort((left, right) => left.finishedAt - right.finishedAt)
+      : []
+    for (const run of runs) {
+      this.lastFinishedAt = Math.max(this.lastFinishedAt, run.finishedAt)
+      if (this.seenRunIds.has(run.runId)) {
+        continue
+      }
+      this.rememberSeenId(this.seenRunIds, run.runId, MAX_SEEN_RUN_IDS)
+      this.showCompletionNotification(run)
+    }
+  }
+
+  private async pollUserInputRequests(): Promise<void> {
+    const response = await this.fetchFn(this.buildUrl(USER_INPUT_REQUESTS_PATH))
+    if (!response.ok) {
+      return
+    }
+    const payload = await response.json() as UserInputRequestsResponse
+    const requests = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.requests) ? payload.requests : []
+    for (const request of requests) {
+      if (this.seenUserInputRequestIds.has(request.id)) {
+        continue
+      }
+      this.rememberSeenId(
+        this.seenUserInputRequestIds,
+        request.id,
+        MAX_SEEN_USER_INPUT_REQUEST_IDS,
+      )
+      this.showUserInputNotification(request)
     }
   }
 
@@ -154,6 +203,31 @@ export class NotificationCenterManager {
     })
     notification.on('click', () => {
       this.handleNotificationClick(run.sessionId, notification)
+      releaseNotification()
+    })
+    notification.on('close', releaseNotification)
+    notification.show()
+  }
+
+  private showUserInputNotification(request: UserInputRequest): void {
+    const question = request.firstQuestion?.trim()
+    const suffix = request.questionCount > 1 ? ` (${request.questionCount} questions)` : ''
+    const notification = this.createNotification({
+      title: request.title || 'Cradle session',
+      body: question ? `Needs your input: ${question}${suffix}` : `Needs your input${suffix}`,
+      hasReply: false,
+      actions: this.platform === 'darwin'
+        ? []
+        : [{ type: 'button', text: 'Open' }],
+      closeButtonText: 'Close',
+    })
+    this.activeNotifications.add(notification)
+    const releaseNotification = () => {
+      this.activeNotifications.delete(notification)
+    }
+
+    notification.on('click', () => {
+      this.handleNotificationClick(request.sessionId, notification)
       releaseNotification()
     })
     notification.on('close', releaseNotification)
@@ -247,14 +321,14 @@ export class NotificationCenterManager {
     return url
   }
 
-  private rememberRun(runId: string): void {
-    this.seenRunIds.add(runId)
-    if (this.seenRunIds.size <= MAX_SEEN_RUN_IDS) {
+  private rememberSeenId(ids: Set<string>, id: string, maxSize: number): void {
+    ids.add(id)
+    if (ids.size <= maxSize) {
       return
     }
-    const oldest = this.seenRunIds.values().next().value as string | undefined
+    const oldest = ids.values().next().value as string | undefined
     if (oldest) {
-      this.seenRunIds.delete(oldest)
+      ids.delete(oldest)
     }
   }
 }

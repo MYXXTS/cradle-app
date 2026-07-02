@@ -411,6 +411,7 @@ function Metric({
           'mt-0.5 truncate text-[11px] font-medium',
           tone === 'streaming' && 'text-primary',
           tone === 'pending' && 'text-primary',
+          tone === 'waitingForUserInput' && 'text-amber-600 dark:text-amber-400',
           tone === 'cancelling' && 'text-amber-600 dark:text-amber-400',
           tone === 'error' && 'text-destructive',
           tone === 'idle' && 'text-foreground'
@@ -604,6 +605,9 @@ function collectSessionToolParts(messages: UIMessage[]): RenderableToolPart[] {
 }
 
 function formatStatus(status: RuntimeSessionStatusKind | 'error'): string {
+  if (status === 'waitingForUserInput') {
+    return 'Waiting for user input'
+  }
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
@@ -644,7 +648,10 @@ function formatSnapshotFreshness(updatedAt: number): string {
 }
 
 function statusShouldPoll(status: RuntimeSessionStatusKind | undefined): boolean {
-  return status === 'streaming' || status === 'pending' || status === 'cancelling'
+  return status === 'streaming' ||
+    status === 'pending' ||
+    status === 'waitingForUserInput' ||
+    status === 'cancelling'
 }
 
 function shouldPollRuntimeSlotStates(states: ChatRuntimeUiSlotState[]): boolean {

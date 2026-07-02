@@ -69,6 +69,7 @@
   "session.aria.newReply": "新回复",
   "session.aria.pinned": "已置顶",
   "session.aria.running": "会话进行中",
+  "session.aria.waitingForUserInput": "等待你的输入",
   "session.empty": "暂无会话",
   "session.fallbackTitle": "未命名",
   "session.relative.days": "{{count}}d",

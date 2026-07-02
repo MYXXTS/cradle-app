@@ -56,9 +56,24 @@ const desktopAwaitItem = t.Object({
   createdAt: t.Number(),
 })
 
+const desktopUserInputRequestItem = t.Object({
+  id: t.String(),
+  sessionId: t.String(),
+  runId: t.String(),
+  requestId: t.String(),
+  title: t.String(),
+  workspaceId: t.Nullable(t.String()),
+  workspaceName: t.String(),
+  providerMethod: t.String(),
+  questionCount: t.Number(),
+  firstQuestion: t.Nullable(t.String()),
+  createdAt: t.Number(),
+})
+
 export const DesktopModel = {
   desktopSummary,
   desktopHealth: t.Array(desktopHealthItem),
   desktopRecentSessions: t.Array(desktopSessionItem),
   desktopAwaits: t.Array(desktopAwaitItem),
+  desktopUserInputRequests: t.Array(desktopUserInputRequestItem),
 } as const
