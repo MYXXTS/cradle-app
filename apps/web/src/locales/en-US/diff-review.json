@@ -14,6 +14,7 @@
   "reviews.compareBaseRef.placeholder": "Base ref - search or type...",
   "reviews.compareHeadRef.placeholder": "Head ref - search or type...",
   "reviews.empty.cta": "Compare branches",
+  "reviews.empty.compareCta": "Compare branches",
   "reviews.empty.description": "Open your working tree, or compare branches to start a review.",
   "reviews.empty.filterTitle": "No reviews match your filter",
   "reviews.empty.title": "No reviews yet",
@@ -21,6 +22,7 @@
   "reviews.filter.shortcut": "⌘K",
   "reviews.live": "Live",
   "reviews.open": "Open",
+  "reviews.workingTree.cta": "Working tree",
   "thread.addComment.placeholder": "Add a comment...",
   "thread.reply.placeholder": "Reply..."
 }

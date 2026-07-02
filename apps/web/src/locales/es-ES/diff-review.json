@@ -18,9 +18,11 @@
   "reviews.empty.title": "Aún no hay revisiones",
   "reviews.empty.description": "Abre tu árbol de trabajo o compara ramas para iniciar una revisión.",
   "reviews.empty.cta": "Comparar ramas",
+  "reviews.empty.compareCta": "Comparar ramas",
   "reviews.empty.filterTitle": "Ninguna revisión coincide con el filtro",
   "reviews.open": "Abrir",
   "reviews.live": "En vivo",
+  "reviews.workingTree.cta": "Árbol de trabajo",
   "thread.addComment.placeholder": "Add a comment...",
   "thread.reply.placeholder": "Reply..."
 }

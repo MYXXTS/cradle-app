@@ -18,9 +18,11 @@
   "reviews.empty.title": "まだレビューはありません",
   "reviews.empty.description": "ワーキングツリーを開くか、ブランチを比較してレビューを始めましょう。",
   "reviews.empty.cta": "ブランチを比較",
+  "reviews.empty.compareCta": "ブランチを比較",
   "reviews.empty.filterTitle": "条件に一致するレビューはありません",
   "reviews.open": "開く",
   "reviews.live": "ライブ",
+  "reviews.workingTree.cta": "ワーキングツリー",
   "thread.addComment.placeholder": "Add a comment...",
   "thread.reply.placeholder": "Reply..."
 }

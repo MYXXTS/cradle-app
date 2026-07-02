@@ -18,6 +18,7 @@ import {
 import { Button } from '~/components/ui/button'
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
@@ -258,6 +259,15 @@ function Header({
         )}
       </div>
 
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-8 gap-1.5 text-[12px]"
+        onClick={() => navigateToReview(workspaceId, WORKING_TREE_REVIEW_ID, { repositoryPath })}
+      >
+        <PlusIcon className="size-3.5" aria-hidden />
+        {t('reviews.workingTree.cta' as DiffReviewKey)}
+      </Button>
       <CommitDialog
         workspaceId={workspaceId}
         repositoryPath={repositoryPath}
@@ -334,8 +344,8 @@ function ReviewsContent({
 }) {
   const { t } = useTranslation('diff-review')
 
-  // No reviews at all → empty state. The working-tree card is hidden here too:
-  // an empty workspace has nothing to anchor on.
+  // No reviews at all -> empty state. Keep the working-tree action visible because
+  // the live working-tree review is materialized only after the user opens it.
   if (!hasAnyReviews) {
     return (
       <EmptyState
@@ -393,14 +403,23 @@ function EmptyState({
           <EmptyTitle>{t('reviews.empty.title' as DiffReviewKey)}</EmptyTitle>
           <EmptyDescription>{t('reviews.empty.description' as DiffReviewKey)}</EmptyDescription>
         </EmptyHeader>
-        <CompareDialog
-          workspaceId={workspaceId}
-          repositoryPath={repositoryPath}
-          onCompare={onCompare}
-          pending={comparePending}
-          triggerLabel={t('reviews.empty.cta' as DiffReviewKey)}
-          asPrimary
-        />
+        <EmptyContent className="flex-row justify-center">
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-[12px]"
+            onClick={() => navigateToReview(workspaceId, WORKING_TREE_REVIEW_ID, { repositoryPath })}
+          >
+            <PlusIcon className="size-3.5" aria-hidden />
+            {t('reviews.workingTree.cta' as DiffReviewKey)}
+          </Button>
+          <CompareDialog
+            workspaceId={workspaceId}
+            repositoryPath={repositoryPath}
+            onCompare={onCompare}
+            pending={comparePending}
+            triggerLabel={t('reviews.empty.compareCta' as DiffReviewKey)}
+          />
+        </EmptyContent>
       </Empty>
     </div>
   )
