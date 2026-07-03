@@ -37,6 +37,7 @@ import { profiles } from './modules/profiles'
 import { providers } from './modules/provider-catalog'
 import { providerTargets } from './modules/provider-targets'
 import { registerPtyRoutes } from './modules/pty'
+import { registerSyncGatewayRoutes } from './modules/sync-gateway'
 import { relayServers } from './modules/relay-servers'
 import { remoteHosts } from './modules/remote-hosts'
 import { search } from './modules/search'
@@ -162,6 +163,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(agentInteractionRuntime)
   app.use(desktop)
   registerPtyRoutes(app)
+  registerSyncGatewayRoutes(app)
   app.use(observability)
   app.use(issueAgent)
   if (process.env.NODE_ENV === 'test') {

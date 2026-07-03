@@ -8,6 +8,11 @@ import type {
   DesktopChatSubscribeSessionEventsRequest,
 } from '~/lib/electron'
 import { readDesktopChatEventTailBridge } from '~/lib/electron'
+import {
+  createSyncGlobalSessionEventSource,
+  createSyncSessionEventSource,
+  isSyncSocketEnabled,
+} from '~/lib/sync-socket'
 
 import type { SessionEventSource } from '../session/session-sync-engine'
 
@@ -31,19 +36,27 @@ const pendingDesktopEventTailEvents = new Map<string, BufferedDesktopEvent[]>()
 export function createChatSessionEventSource(url: string): SessionEventSource {
   const bridge = readDesktopChatEventTailBridge()
   const request = readDesktopSessionEventTailRequest(url)
-  if (!bridge || !request) {
-    return new EventSource(url)
+  if (bridge && request) {
+    return new DesktopChatSessionEventSource(bridge, request)
   }
-  return new DesktopChatSessionEventSource(bridge, request)
+  const syncRequest = readSyncSessionEventTailRequest(url)
+  if (isSyncSocketEnabled() && syncRequest) {
+    return createSyncSessionEventSource(syncRequest)
+  }
+  return new EventSource(url)
 }
 
 export function createGlobalSessionEventSource(url: string): GlobalSessionEventSource {
   const bridge = readDesktopChatEventTailBridge()
   const request = readDesktopGlobalSessionEventTailRequest(url)
-  if (!bridge || !request) {
-    return new EventSource(url)
+  if (bridge && request) {
+    return new DesktopGlobalSessionEventSource(bridge, request)
   }
-  return new DesktopGlobalSessionEventSource(bridge, request)
+  const syncRequest = readSyncGlobalSessionEventTailRequest(url)
+  if (isSyncSocketEnabled() && syncRequest) {
+    return createSyncGlobalSessionEventSource(syncRequest)
+  }
+  return new EventSource(url)
 }
 
 class DesktopChatSessionEventSource implements SessionEventSource {
@@ -327,6 +340,45 @@ function readAfterVersion(value: string | null): number {
     return 0
   }
   return Math.max(0, Math.floor(parsed))
+}
+
+function readSyncSessionEventTailRequest(url: string): {
+  sessionId: string
+  afterVersion: number
+} | null {
+  try {
+    const parsed = new URL(url)
+    const match = /^\/chat\/sessions\/([^/]+)\/events$/.exec(parsed.pathname)
+    if (!match?.[1]) {
+      return null
+    }
+    return {
+      sessionId: decodeURIComponent(match[1]),
+      afterVersion: readAfterVersion(parsed.searchParams.get('afterVersion')),
+    }
+  }
+  catch {
+    return null
+  }
+}
+
+function readSyncGlobalSessionEventTailRequest(url: string): {
+  afterSequenceId: number
+  workspaceId?: string | null
+} | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.pathname !== '/events' || parsed.searchParams.get('scope') !== 'sessions') {
+      return null
+    }
+    return {
+      afterSequenceId: readAfterVersion(parsed.searchParams.get('afterSequenceId')),
+      workspaceId: parsed.searchParams.get('workspaceId')?.trim() || null,
+    }
+  }
+  catch {
+    return null
+  }
 }
 
 export function disposeChatEventTailTransport(): void {

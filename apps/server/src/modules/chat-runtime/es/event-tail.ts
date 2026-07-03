@@ -55,6 +55,10 @@ export function readSessionTailEvents(input: ChatSessionTailQuery): ChatSessionT
   return readSessionTailReplay(input).events
 }
 
+export function replayChatSessionTail(input: ChatSessionTailQuery): ChatTailReplay<ChatSessionTailEvent> {
+  return readSessionTailReplay(input)
+}
+
 function readSessionTailReplay(input: ChatSessionTailQuery): ChatTailReplay<ChatSessionTailEvent> {
   const limit = input.limit ?? DEFAULT_TAIL_LIMIT
   const rows = db()
@@ -96,6 +100,12 @@ function readSessionTailReplay(input: ChatSessionTailQuery): ChatTailReplay<Chat
 
 export function readGlobalSessionTailEvents(input: ChatGlobalSessionsTailQuery): ChatGlobalSessionTailEvent[] {
   return readGlobalSessionTailReplay(input).events
+}
+
+export function replayChatGlobalSessionTail(
+  input: ChatGlobalSessionsTailQuery,
+): ChatTailReplay<ChatGlobalSessionTailEvent> {
+  return readGlobalSessionTailReplay(input)
 }
 
 function readGlobalSessionTailReplay(
@@ -197,6 +207,10 @@ export function openGlobalSessionEventTailStream(
   })
 }
 
+export function subscribeChatSessionTail(sessionId: string, subscriber: ChatTailSubscriber): () => void {
+  return subscribeSessionTail(sessionId, subscriber)
+}
+
 function subscribeSessionTail(sessionId: string, subscriber: ChatTailSubscriber): () => void {
   let subscribers = sessionSubscribers.get(sessionId)
   if (!subscribers) {
@@ -210,6 +224,13 @@ function subscribeSessionTail(sessionId: string, subscriber: ChatTailSubscriber)
       sessionSubscribers.delete(sessionId)
     }
   }
+}
+
+export function subscribeChatGlobalSessionTail(
+  workspaceId: string | null,
+  subscriber: (event: ChatGlobalSessionTailEvent) => void,
+): () => void {
+  return subscribeGlobalSessionTail(workspaceId, subscriber)
 }
 
 function subscribeGlobalSessionTail(

@@ -9,6 +9,7 @@ import type {
   DesktopChatStreamHandle,
 } from '~/lib/electron'
 import { readDesktopChatStreamBridge } from '~/lib/electron'
+import { isSyncSocketEnabled, subscribeSyncSessionRunChunks } from '~/lib/sync-socket'
 
 import type { ChatResponseRequestBody } from '../commands/chat-response-command'
 import { startChatResponse, subscribeChatSessionStream } from '../commands/chat-response-command'
@@ -85,6 +86,9 @@ export async function subscribeChatSessionStreamForSession(
   const bridge = readDesktopChatStreamBridge()
   if (bridge) {
     return await subscribeDesktopChatSessionStream(bridge, args)
+  }
+  if (isSyncSocketEnabled()) {
+    return await subscribeSyncSessionRunChunks(args)
   }
   return await subscribeHttpChatSessionStream(args)
 }

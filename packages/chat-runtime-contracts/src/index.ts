@@ -1433,3 +1433,5 @@ export interface ChatRuntime {
   healthCheck?: () => Promise<ProviderHealthStatus>
   dispose?: () => Promise<void>
 }
+
+export * from './sync-protocol'
