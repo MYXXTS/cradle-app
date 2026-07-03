@@ -72,13 +72,28 @@ export interface ChatQueueListResponse {
   items: ChatQueueItem[]
 }
 
-export interface ChatSteerTurnResponse {
+export interface ChatSteerTurnSteeredResponse {
+  mode: 'steered'
   ok: true
   sessionId: string
   runId: string
   sourceMessageId: string
   message: UIMessage
 }
+
+export interface ChatSteerTurnQueuedResponse {
+  mode: 'queued'
+  ok: true
+  sessionId: string
+  queueItem: ChatQueueItem
+}
+
+/**
+ * The server decides (based on the target runtime's `steer` capability and whether a matching
+ * active run exists) whether the request is live-steered or queued. Callers branch on `mode`
+ * rather than catching a fallback-specific error code.
+ */
+export type ChatSteerTurnResponse = ChatSteerTurnSteeredResponse | ChatSteerTurnQueuedResponse
 
 export interface PlanImplementationApprovalResult {
   message: UIMessage
@@ -147,7 +162,8 @@ const ChatQueueItemSchema = z.object({
 const ChatQueueListResponseSchema = z.object({
   items: z.array(ChatQueueItemSchema),
 })
-const ChatSteerTurnResponseSchema = z.object({
+const ChatSteerTurnSteeredResponseSchema = z.object({
+  mode: z.literal('steered'),
   ok: z.literal(true),
   sessionId: z.string(),
   runId: z.string(),
@@ -157,6 +173,16 @@ const ChatSteerTurnResponseSchema = z.object({
   ...item,
   message: item.message as UIMessage,
 }))
+const ChatSteerTurnQueuedResponseSchema = z.object({
+  mode: z.literal('queued'),
+  ok: z.literal(true),
+  sessionId: z.string(),
+  queueItem: ChatQueueItemSchema,
+})
+const ChatSteerTurnResponseSchema = z.union([
+  ChatSteerTurnSteeredResponseSchema,
+  ChatSteerTurnQueuedResponseSchema,
+])
 const PlanImplementationApprovalResponseSchema = z.object({
   message: z.unknown(),
 }).transform(item => ({
@@ -227,18 +253,6 @@ export function readJsonErrorCodeFromText(text: string): string | null {
   catch {
     return null
   }
-}
-
-export function readChatCommandErrorCode(error: unknown): string | null {
-  if (!error || typeof error !== 'object') {
-    return null
-  }
-  const code = (error as { code?: unknown }).code
-  if (typeof code === 'string') {
-    return code
-  }
-  const message = (error as { message?: unknown }).message
-  return typeof message === 'string' ? readJsonErrorCodeFromText(message) : null
 }
 
 export function buildChatResponseRequestBody(

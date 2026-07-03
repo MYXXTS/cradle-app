@@ -5,7 +5,7 @@ import type {
   RuntimeProviderTargetProfile,
   RuntimeSession,
 } from '../chat-runtime/runtime-provider-types'
-import { readProviderStateSnapshot } from '../chat-runtime-providers/provider-state-snapshot'
+import { readProviderStateSnapshot } from '../chat-runtime-providers/kit/state-snapshot'
 import type { RuntimeKind } from '../provider-contracts/types'
 import type { ProviderRuntimeBindingDirectoryWriter } from './directory'
 import {

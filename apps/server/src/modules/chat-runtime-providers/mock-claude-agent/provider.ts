@@ -22,7 +22,7 @@ import type { RuntimeKind } from '../../provider-contracts/types'
 import { createClaudeAgentChunkMapperState, mapClaudeAgentMessageToChunks } from '../claude-agent/event-to-chunk-mapper'
 import { providerChunk } from '../kit/chunk-mapper'
 import { projectTextOnlyInput } from '../kit/input-projector'
-import { readWorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
+import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 
 const RUNTIME_KIND = 'claude-agent' as RuntimeKind
 const TRAILING_SLASH_RE = /\/$/
@@ -38,7 +38,7 @@ const MOCK_CLAUDE_AGENT_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 const MOCK_CLAUDE_AGENT_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: false,

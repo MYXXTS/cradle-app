@@ -31,16 +31,17 @@ import {
 
 interface GitPanelProps {
   workspaceId: string | null | undefined
+  sessionId?: string | null
 }
 
-export function GitPanel({ workspaceId }: GitPanelProps) {
+export function GitPanel({ workspaceId, sessionId }: GitPanelProps) {
   const { t } = useTranslation('git')
   const {
     data: repositories,
     isLoading,
     isError,
     isSuccess,
-  } = useGitRepositories(workspaceId)
+  } = useGitRepositories(workspaceId, sessionId)
   const gitRepositories = repositories ?? []
 
   if (!workspaceId) {

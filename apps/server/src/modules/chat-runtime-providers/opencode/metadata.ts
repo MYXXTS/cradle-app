@@ -23,7 +23,7 @@ export const OPENCODE_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 export const OPENCODE_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: true,
   supportsLastTurnRollback: true,
   supportsRuntimeSettings: true,

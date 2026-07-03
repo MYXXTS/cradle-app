@@ -33,7 +33,7 @@ export {
 } from './runtime-catalog'
 
 const RuntimeCatalogCapabilitiesSchema = z.object({
-  supportsSteerTurn: z.boolean(),
+  steer: z.enum(['native', 'queue-fallback', 'unsupported']),
   supportsShellExecution: z.boolean(),
   supportsLastTurnRollback: z.boolean(),
   supportsRuntimeSettings: z.boolean(),

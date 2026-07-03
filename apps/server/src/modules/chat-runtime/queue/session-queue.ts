@@ -66,13 +66,29 @@ export interface SubmitSessionSteerTurnInput {
   providerTargetId?: string
 }
 
-export interface SessionSteerTurnDto {
+export interface SessionSteerTurnSteeredDto {
+  mode: 'steered'
   ok: true
   sessionId: string
   runId: string
   sourceMessageId: string
   message: UIMessage
 }
+
+export interface SessionSteerTurnQueuedDto {
+  mode: 'queued'
+  ok: true
+  sessionId: string
+  queueItem: ChatSessionQueueItemDto
+}
+
+/**
+ * Discriminated by `mode`: the server decides at request time (based on the target runtime's
+ * `steer` capability and whether a matching active run exists) whether a steer request can be
+ * live-steered or must fall back to queueing. Callers branch on `mode`, not on catching a
+ * fallback-specific error code.
+ */
+export type SessionSteerTurnDto = SessionSteerTurnSteeredDto | SessionSteerTurnQueuedDto
 
 type QueueItemRow = typeof chatSessionQueueItems.$inferSelect
 

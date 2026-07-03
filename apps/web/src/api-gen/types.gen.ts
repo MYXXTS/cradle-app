@@ -5309,6 +5309,13 @@ export type GetSessionsResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     }>;
 };
 
@@ -5335,6 +5342,8 @@ export type PostSessionsData = {
             } | null;
         };
         thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh';
+        linkedIssueId?: string | null;
+        worktreeId?: string;
         id?: string;
     };
     path?: never;
@@ -5368,6 +5377,13 @@ export type PostSessionsResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -5428,6 +5444,13 @@ export type GetSessionsByIdResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -5474,6 +5497,13 @@ export type PatchSessionsByIdResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -5516,6 +5546,13 @@ export type PostSessionsByIdArchiveResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -5556,6 +5593,13 @@ export type PostSessionsByIdReadResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -5596,6 +5640,13 @@ export type PostSessionsByIdUnreadResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -5682,6 +5733,181 @@ export type PostSessionsByIdLinkedIssueResponses = {
 };
 
 export type PostSessionsByIdLinkedIssueResponse = PostSessionsByIdLinkedIssueResponses[keyof PostSessionsByIdLinkedIssueResponses];
+
+export type PostSessionsByIdIsolationStartData = {
+    body: {
+        slug?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation/start';
+};
+
+export type PostSessionsByIdIsolationStartResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        worktree: {
+            id: string;
+            sourceWorkspaceId: string;
+            name: string;
+            path: string;
+            branch: string;
+            baseRef: string;
+            status: 'active' | 'merged' | 'abandoned';
+            createdBySessionId: string | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+        pending: boolean;
+    };
+};
+
+export type PostSessionsByIdIsolationStartResponse = PostSessionsByIdIsolationStartResponses[keyof PostSessionsByIdIsolationStartResponses];
+
+export type PostSessionsByIdIsolationActivateData = {
+    body: {
+        mode: 'migrate' | 'leave-main' | 'cancel';
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation/activate';
+};
+
+export type PostSessionsByIdIsolationActivateResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type PostSessionsByIdIsolationActivateResponse = PostSessionsByIdIsolationActivateResponses[keyof PostSessionsByIdIsolationActivateResponses];
+
+export type PostSessionsByIdIsolationCancelData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation/cancel';
+};
+
+export type PostSessionsByIdIsolationCancelResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type PostSessionsByIdIsolationCancelResponse = PostSessionsByIdIsolationCancelResponses[keyof PostSessionsByIdIsolationCancelResponses];
+
+export type PostSessionsByIdIsolationLeaveData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation/leave';
+};
+
+export type PostSessionsByIdIsolationLeaveResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type PostSessionsByIdIsolationLeaveResponse = PostSessionsByIdIsolationLeaveResponses[keyof PostSessionsByIdIsolationLeaveResponses];
+
+export type PostSessionsByIdIsolationRepairData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation/repair';
+};
+
+export type PostSessionsByIdIsolationRepairResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        worktree: {
+            id: string;
+            sourceWorkspaceId: string;
+            name: string;
+            path: string;
+            branch: string;
+            baseRef: string;
+            status: 'active' | 'merged' | 'abandoned';
+            createdBySessionId: string | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+    };
+};
+
+export type PostSessionsByIdIsolationRepairResponse = PostSessionsByIdIsolationRepairResponses[keyof PostSessionsByIdIsolationRepairResponses];
+
+export type PostSessionsByIdIsolationAttachData = {
+    body: {
+        worktreeId: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation/attach';
+};
+
+export type PostSessionsByIdIsolationAttachResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type PostSessionsByIdIsolationAttachResponse = PostSessionsByIdIsolationAttachResponses[keyof PostSessionsByIdIsolationAttachResponses];
+
+export type GetSessionsByIdIsolationData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/isolation';
+};
+
+export type GetSessionsByIdIsolationResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
+    };
+};
+
+export type GetSessionsByIdIsolationResponse = GetSessionsByIdIsolationResponses[keyof GetSessionsByIdIsolationResponses];
 
 export type GetSessionAwaitsData = {
     body?: never;
@@ -6648,10 +6874,43 @@ export type GetIssuesByIdSessionsResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     }>;
 };
 
 export type GetIssuesByIdSessionsResponse = GetIssuesByIdSessionsResponses[keyof GetIssuesByIdSessionsResponses];
+
+export type GetIssuesByIdIsolationContextData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/issues/{id}/isolation-context';
+};
+
+export type GetIssuesByIdIsolationContextResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        groups: Array<{
+            worktreeId: string;
+            name: string;
+            branch: string;
+            sessionIds: Array<string>;
+            sessionTitles: Array<string>;
+        }>;
+    };
+};
+
+export type GetIssuesByIdIsolationContextResponse = GetIssuesByIdIsolationContextResponses[keyof GetIssuesByIdIsolationContextResponses];
 
 export type PatchIssuesBulkData = {
     body: {
@@ -8035,7 +8294,10 @@ export type GetWorkspacesByWorkspaceIdGitRepositoriesData = {
     path: {
         workspaceId: string;
     };
-    query?: never;
+    query?: {
+        repo?: string;
+        sessionId?: string;
+    };
     url: '/workspaces/{workspaceId}/git/repositories';
 };
 
@@ -8069,6 +8331,7 @@ export type GetWorkspacesByWorkspaceIdGitStatusData = {
     };
     query?: {
         repo?: string;
+        sessionId?: string;
     };
     url: '/workspaces/{workspaceId}/git/status';
 };
@@ -8102,6 +8365,7 @@ export type GetWorkspacesByWorkspaceIdGitBranchesData = {
     };
     query?: {
         repo?: string;
+        sessionId?: string;
     };
     url: '/workspaces/{workspaceId}/git/branches';
 };
@@ -8155,6 +8419,7 @@ export type GetWorkspacesByWorkspaceIdGitRemotesData = {
     };
     query?: {
         repo?: string;
+        sessionId?: string;
     };
     url: '/workspaces/{workspaceId}/git/remotes';
 };
@@ -8323,6 +8588,92 @@ export type GetWorkspacesByWorkspaceIdGitBranchCompareResponses = {
 };
 
 export type GetWorkspacesByWorkspaceIdGitBranchCompareResponse = GetWorkspacesByWorkspaceIdGitBranchCompareResponses[keyof GetWorkspacesByWorkspaceIdGitBranchCompareResponses];
+
+export type GetWorkspacesByWorkspaceIdWorktreesData = {
+    body?: never;
+    path: {
+        workspaceId: string;
+    };
+    query?: never;
+    url: '/workspaces/{workspaceId}/worktrees';
+};
+
+export type GetWorkspacesByWorkspaceIdWorktreesResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        id: string;
+        sourceWorkspaceId: string;
+        name: string;
+        path: string;
+        branch: string;
+        baseRef: string;
+        status: 'active' | 'merged' | 'abandoned';
+        createdBySessionId: string | null;
+        createdAt: number;
+        updatedAt: number;
+    }>;
+};
+
+export type GetWorkspacesByWorkspaceIdWorktreesResponse = GetWorkspacesByWorkspaceIdWorktreesResponses[keyof GetWorkspacesByWorkspaceIdWorktreesResponses];
+
+export type PostWorkspacesByWorkspaceIdWorktreesData = {
+    body: {
+        sessionId: string;
+        slug?: string;
+        bindSession?: boolean;
+    };
+    path: {
+        workspaceId: string;
+    };
+    query?: never;
+    url: '/workspaces/{workspaceId}/worktrees';
+};
+
+export type PostWorkspacesByWorkspaceIdWorktreesResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        sourceWorkspaceId: string;
+        name: string;
+        path: string;
+        branch: string;
+        baseRef: string;
+        status: 'active' | 'merged' | 'abandoned';
+        createdBySessionId: string | null;
+        createdAt: number;
+        updatedAt: number;
+    };
+};
+
+export type PostWorkspacesByWorkspaceIdWorktreesResponse = PostWorkspacesByWorkspaceIdWorktreesResponses[keyof PostWorkspacesByWorkspaceIdWorktreesResponses];
+
+export type PostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupData = {
+    body: {
+        mode: 'merge-and-close' | 'abandon';
+        targetBranch?: string;
+    };
+    path: {
+        workspaceId: string;
+        worktreeId: string;
+    };
+    query?: never;
+    url: '/workspaces/{workspaceId}/worktrees/{worktreeId}/cleanup';
+};
+
+export type PostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type PostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupResponse = PostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupResponses[keyof PostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupResponses];
 
 export type GetWorkspacesByWorkspaceIdDiffReviewsData = {
     body?: never;
@@ -13942,7 +14293,7 @@ export type GetChatRuntimesResponses = {
             source: 'builtin' | 'plugin';
             pluginOwner: string | null;
             capabilities: {
-                supportsSteerTurn: boolean;
+                steer: 'native' | 'queue-fallback' | 'unsupported';
                 supportsShellExecution: boolean;
                 supportsLastTurnRollback: boolean;
                 supportsRuntimeSettings: boolean;
@@ -15223,6 +15574,7 @@ export type PostChatSessionsBySessionIdSteerResponses = {
      * Response for status 200
      */
     200: {
+        mode: string;
         ok: boolean;
         sessionId: string;
         runId: string;
@@ -15236,6 +15588,66 @@ export type PostChatSessionsBySessionIdSteerResponses = {
             }>;
             metadata?: unknown;
             [key: string]: unknown;
+        };
+    } | {
+        mode: string;
+        ok: boolean;
+        sessionId: string;
+        queueItem: {
+            id: string;
+            sessionId: string;
+            mode: string;
+            status: 'pending' | 'running' | 'cancelled' | 'completed' | 'failed';
+            text: string;
+            files: Array<{
+                type: string;
+                mediaType: string;
+                filename?: string;
+                url: string;
+                providerMetadata?: unknown;
+                [key: string]: unknown;
+            }>;
+            contextParts: Array<{
+                type: string;
+                name: string;
+                path: string;
+                scope: 'builtin' | 'legacy' | 'global' | 'repository' | 'workspace' | 'agent';
+                description: string | null;
+                position?: number;
+            } | {
+                type: string;
+                provider?: 'cradle' | 'codex';
+                pluginName: string;
+                displayName: string;
+                description: string | null;
+                iconUrl?: string | null;
+                routeSegment: string;
+                capabilities: Array<{
+                    id: string;
+                    type: string;
+                    layer: 'server' | 'web' | 'desktop';
+                    label: string | null;
+                }>;
+                mcpServers: Array<string>;
+                nativeMention?: {
+                    name: string;
+                    path: string;
+                } | null;
+                position?: number;
+            }>;
+            providerTargetId: string | null;
+            modelId: string | null;
+            thinkingEffort: string | null;
+            runtimeSettings: {
+                accessMode: 'approval-required' | 'full-access';
+                interactionMode: 'default' | 'plan';
+            };
+            position: number;
+            sourceRunId: string | null;
+            startedRunId: string | null;
+            errorText: string | null;
+            createdAt: number;
+            updatedAt: number;
         };
     };
 };
@@ -15567,6 +15979,13 @@ export type PostChatSessionsBySessionIdTitleRegenerateResponses = {
         latestUserMessageAt: number | null;
         latestAssistantMessageAt: number | null;
         unread: boolean;
+        isIsolated: boolean;
+        worktreeId: string | null;
+        worktreeBranch: string | null;
+        worktreePath: string | null;
+        worktreeHealth: string | null;
+        pendingWorktreeId: string | null;
+        isolationBoundaryRequired: boolean;
     };
 };
 
@@ -20381,6 +20800,7 @@ export type PostIssuesByIdDelegationData = {
     body: {
         agentId: string;
         providerTargetId?: string | null;
+        runInIsolation?: boolean;
     };
     path: {
         id: string;

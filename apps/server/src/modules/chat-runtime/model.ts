@@ -439,13 +439,22 @@ export const ChatRuntimeModel = {
     providerTargetId: t.Optional(t.String()),
   }),
 
-  steerResponse: t.Object({
-    ok: t.Literal(true),
-    sessionId: t.String(),
-    runId: t.String(),
-    sourceMessageId: t.String(),
-    message: uiMessageSchema,
-  }),
+  steerResponse: t.Union([
+    t.Object({
+      mode: t.Literal('steered'),
+      ok: t.Literal(true),
+      sessionId: t.String(),
+      runId: t.String(),
+      sourceMessageId: t.String(),
+      message: uiMessageSchema,
+    }),
+    t.Object({
+      mode: t.Literal('queued'),
+      ok: t.Literal(true),
+      sessionId: t.String(),
+      queueItem: queueItemSchema,
+    }),
+  ]),
 
   queueReorderBody: t.Object({
     queueItemIds: t.Array(t.String({ minLength: 1 })),

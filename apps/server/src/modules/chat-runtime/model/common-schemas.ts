@@ -47,8 +47,14 @@ export const slashCommandSchema = t.Object({
   aliases: t.Optional(t.Array(t.String())),
 })
 
+export const runtimeSteerCapabilitySchema = t.Union([
+  t.Literal('native'),
+  t.Literal('queue-fallback'),
+  t.Literal('unsupported'),
+])
+
 export const runtimeCapabilitiesSchema = t.Object({
-  supportsSteerTurn: t.Boolean(),
+  steer: runtimeSteerCapabilitySchema,
   supportsShellExecution: t.Boolean(),
   supportsLastTurnRollback: t.Boolean(),
   supportsRuntimeSettings: t.Boolean(),

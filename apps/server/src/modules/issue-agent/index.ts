@@ -26,6 +26,7 @@ export const issueAgent = new Elysia({
       issueId: params.id,
       agentId: body.agentId,
       providerTargetId: body.providerTargetId,
+      runInIsolation: body.runInIsolation,
     }), {
     detail: {
       'summary': 'Delegate issue',

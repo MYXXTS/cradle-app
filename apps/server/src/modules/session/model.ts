@@ -1,6 +1,7 @@
 import { t } from 'elysia'
 
 import { sessionRuntimeSettingsPatchSchema } from '../chat-runtime/runtime-settings-model'
+import { WorktreeModel } from '../worktree/model'
 
 const runtimeKindSchema = t.String({ minLength: 1 })
 
@@ -37,7 +38,60 @@ export const SessionModel = {
     updatedAt: t.Number(),
     latestUserMessageAt: t.Nullable(t.Number()),
     latestAssistantMessageAt: t.Nullable(t.Number()),
-    unread: t.Boolean()
+    unread: t.Boolean(),
+    isIsolated: t.Boolean(),
+    worktreeId: t.Nullable(t.String()),
+    worktreeBranch: t.Nullable(t.String()),
+    worktreePath: t.Nullable(t.String()),
+    worktreeHealth: t.Nullable(WorktreeModel.worktreeHealth),
+    pendingWorktreeId: t.Nullable(t.String()),
+    isolationBoundaryRequired: t.Boolean(),
+  }),
+
+  isolationView: t.Object({
+    isIsolated: t.Boolean(),
+    worktreeId: t.Nullable(t.String()),
+    worktreeBranch: t.Nullable(t.String()),
+    worktreePath: t.Nullable(t.String()),
+    worktreeHealth: t.Nullable(WorktreeModel.worktreeHealth),
+    pendingWorktreeId: t.Nullable(t.String()),
+    isolationBoundaryRequired: t.Boolean(),
+  }),
+
+  isolationStartBody: t.Object({
+    slug: t.Optional(t.String({ minLength: 1 })),
+  }),
+
+  isolationStartResponse: t.Object({
+    worktree: WorktreeModel.worktreeView,
+    pending: t.Boolean(),
+  }),
+
+  isolationActivateBody: t.Object({
+    mode: t.Union([
+      t.Literal('migrate'),
+      t.Literal('leave-main'),
+      t.Literal('cancel'),
+    ]),
+  }),
+
+  isolationAttachBody: t.Object({
+    worktreeId: t.String({ minLength: 1 }),
+  }),
+
+  createBody: t.Object({
+    workspaceId: t.Optional(nullableRequiredString),
+    title: t.String({ minLength: 1 }),
+    origin: t.Optional(t.String({ minLength: 1 })),
+    providerTargetId: t.Optional(t.String({ minLength: 1 })),
+    modelId: t.Optional(nullableRequiredString),
+    agentId: t.Optional(t.String({ minLength: 1 })),
+    runtimeKind: t.Optional(runtimeKindSchema),
+    runtimeSettings: t.Optional(sessionRuntimeSettingsPatchSchema),
+    thinkingEffort: t.Optional(thinkingEffortSchema),
+    linkedIssueId: t.Optional(nullableRequiredString),
+    worktreeId: t.Optional(t.String({ minLength: 1 })),
+    id: t.Optional(t.String())
   }),
 
   exportMarkdownResponse: t.Object({
@@ -52,19 +106,6 @@ export const SessionModel = {
     workspaceId: t.Optional(t.String({ minLength: 1 })),
     origin: t.Optional(t.String({ minLength: 1 })),
     archived: t.Optional(t.Boolean())
-  }),
-
-  createBody: t.Object({
-    workspaceId: t.Optional(nullableRequiredString),
-    title: t.String({ minLength: 1 }),
-    origin: t.Optional(t.String({ minLength: 1 })),
-    providerTargetId: t.Optional(t.String({ minLength: 1 })),
-    modelId: t.Optional(nullableRequiredString),
-    agentId: t.Optional(t.String({ minLength: 1 })),
-    runtimeKind: t.Optional(runtimeKindSchema),
-    runtimeSettings: t.Optional(sessionRuntimeSettingsPatchSchema),
-    thinkingEffort: t.Optional(thinkingEffortSchema),
-    id: t.Optional(t.String())
   }),
 
   updateBody: t.Object({

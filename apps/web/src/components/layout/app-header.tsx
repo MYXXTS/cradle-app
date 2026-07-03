@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { useChatSessionLayoutRecord } from '~/components/layout/use-layout-query-records'
 import { Button } from '~/components/ui/button'
 import { ResourcesPopover } from '~/features/devtool/resources/resources-popover'
+import { SessionIsolationChrome } from '~/features/session/session-isolation-chrome'
 import { cn } from '~/lib/cn'
 import { isTearoffWindow, platform } from '~/lib/electron'
 import { useActiveSurface } from '~/navigation/active-surface'
@@ -136,13 +137,19 @@ export function AppHeader({
       <div className="flex-1 min-w-0 ml-0.5 mr-1 h-full" style={{ WebkitAppRegion: isTearoffWindow ? 'drag' : 'no-drag' } as React.CSSProperties}>
         {sessionScoped
           ? (
-            <div className="flex h-full min-w-0 items-center">
+            <div className="flex h-full min-w-0 items-center gap-2">
               <div
                 className="min-w-0 truncate px-2 text-[13px] font-medium text-foreground"
                 title={sessionScopedTitle}
               >
                 {sessionScopedTitle}
               </div>
+              {scopedSessionId && (
+                <SessionIsolationChrome
+                  sessionId={scopedSessionId}
+                  workspaceId={scopedSessionLayout?.workspaceId ?? null}
+                />
+              )}
             </div>
             )
           : (

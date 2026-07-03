@@ -47,7 +47,7 @@ describe('OPENCODE_RUNTIME_CAPABILITIES', () => {
       supportsShellExecution: true,
       supportsLastTurnRollback: true,
       supportsUiSlotStates: true,
-      supportsSteerTurn: false,
+      steer: 'queue-fallback',
       supportsRuntimeSettings: true,
     })
   })

@@ -49,12 +49,14 @@ export function openHome(options: { replace?: boolean } = {}): void {
   openSurface(createHomeSurfaceDraft(), options)
 }
 
-export function openNewChat(options: { replace?: boolean } = {}): void {
+export function openNewChat(options: { replace?: boolean, issueId?: string } = {}): void {
   openSurface({
     id: 'new-chat',
     kind: 'new-chat',
     title: '新建聊天',
-    route: { to: '/chat/new' },
+    route: options.issueId
+      ? { to: '/chat/new', search: { issueId: options.issueId } }
+      : { to: '/chat/new' },
     closable: true,
   }, options)
 }

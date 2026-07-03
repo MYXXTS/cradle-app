@@ -35,6 +35,7 @@ import { requestRuntimeUserInput } from './pending-user-input'
 import type {
   ChatRuntime,
   ChatRuntimeCapabilities,
+  ChatRuntimeCapabilityDegradation,
   ChatRuntimeCatalogItem,
   ChatRuntimeHealthItem,
   ChatRuntimeMetadata,
@@ -203,9 +204,53 @@ function createRuntimeCatalogItem(input: {
     availability: metadata.availability ?? (metadata.stability === 'experimental' ? 'preview' : 'stable'),
     composer: metadata.composer ?? createDefaultRuntimeComposer(metadata),
     slots: metadata.slots ?? [],
+    degradations: mergeSteerDegradation(metadata.degradations, input.capabilities),
     capabilities: input.capabilities,
     source: input.source,
     pluginOwner: input.pluginOwner,
+  }
+}
+
+const STEER_DEGRADATION_CAPABILITY = 'steerTurn'
+
+/**
+ * Real (non-decorative) consumer of `steer`: rather than requiring every provider to hand-declare
+ * a `steerTurn` degradation entry (today none reliably do), derive it from the same
+ * `capabilities.steer` value the server uses to decide native-vs-queue-fallback behavior, so the
+ * catalog and the runtime behavior can never drift apart. A provider-declared `steerTurn` entry
+ * (if any) always wins over the derived one.
+ */
+function mergeSteerDegradation(
+  degradations: ChatRuntimeCapabilityDegradation[] | undefined,
+  capabilities: ChatRuntimeCapabilities | null,
+): ChatRuntimeCapabilityDegradation[] | undefined {
+  if (degradations?.some(degradation => degradation.capability === STEER_DEGRADATION_CAPABILITY)) {
+    return degradations
+  }
+  const derived = deriveSteerDegradation(capabilities)
+  if (!derived) {
+    return degradations
+  }
+  return degradations ? [...degradations, derived] : [derived]
+}
+
+function deriveSteerDegradation(
+  capabilities: ChatRuntimeCapabilities | null,
+): ChatRuntimeCapabilityDegradation | null {
+  if (!capabilities || capabilities.steer === 'native') {
+    return null
+  }
+  if (capabilities.steer === 'queue-fallback') {
+    return {
+      capability: STEER_DEGRADATION_CAPABILITY,
+      status: 'partial',
+      reason: 'This runtime has no native live-steer hook; steer requests are queued and applied on the next turn instead of redirecting the active turn immediately.',
+    }
+  }
+  return {
+    capability: STEER_DEGRADATION_CAPABILITY,
+    status: 'unsupported',
+    reason: 'This runtime does not support live steering or queuing a steer request.',
   }
 }
 
@@ -281,7 +326,6 @@ function assertRuntimeCapabilities(runtime: Partial<ChatRuntime>): void {
   }
 
   const booleanKeys = [
-    'supportsSteerTurn',
     'supportsShellExecution',
     'supportsLastTurnRollback',
     'supportsRuntimeSettings',
@@ -294,11 +338,14 @@ function assertRuntimeCapabilities(runtime: Partial<ChatRuntime>): void {
       throw new TypeError(`Runtime ${runtime.runtimeKind} capability ${key} must be boolean.`)
     }
   }
+  if (!['native', 'queue-fallback', 'unsupported'].includes(capabilities.steer)) {
+    throw new Error(`Runtime ${runtime.runtimeKind} has invalid steer capability.`)
+  }
   if (!['in-session', 'restart-session', 'unsupported'].includes(capabilities.sessionModelSwitch)) {
     throw new Error(`Runtime ${runtime.runtimeKind} has invalid sessionModelSwitch capability.`)
   }
 
-  assertCapabilityHook(runtime, capabilities.supportsSteerTurn, 'steerTurn')
+  assertCapabilityHook(runtime, capabilities.steer === 'native', 'steerTurn')
   assertCapabilityHook(runtime, capabilities.supportsShellExecution, 'executeShellCommand')
   assertCapabilityHook(runtime, capabilities.supportsLastTurnRollback, 'rollbackLastTurn')
   assertCapabilityHook(runtime, capabilities.supportsRuntimeSettings, 'updateRuntimeSettings')

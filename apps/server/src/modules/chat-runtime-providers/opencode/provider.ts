@@ -53,7 +53,7 @@ import { ProviderErrors, ProviderRuntimeError } from '../../chat-runtime/runtime
 import type { RuntimeKind } from '../../provider-contracts/types'
 import { providerChunk } from '../kit/chunk-mapper'
 import { requestProviderToolApproval } from '../kit/permission-bridge'
-import { readProviderStateSnapshot } from '../provider-state-snapshot'
+import { readProviderStateSnapshot } from '../kit/state-snapshot'
 import { resolveOpencodeConfig } from './config'
 import { OpencodeEventStreamProjector, readOpencodeTerminalAssistantForTurn } from './event-stream'
 import {

@@ -28,6 +28,7 @@ import {
 } from '~/components/ui/alert-dialog'
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
@@ -97,7 +98,9 @@ function copyText(value: string, successTitle: string, failureTitle: string) {
 
 export function IssueContextMenu({ issue, statuses, milestones, onOpen, children }: IssueContextMenuProps) {
   const { t } = useTranslation('kanban')
+  const { t: tIsolation } = useTranslation('session-isolation')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [runInIsolation, setRunInIsolation] = useState(false)
   const { workspaces } = useWorkspaces()
   const { agents } = useAgents()
   const updateIssue = useUpdateIssue()
@@ -164,6 +167,7 @@ export function IssueContextMenu({ issue, statuses, milestones, onOpen, children
       issueId: issue.id,
       providerTargetId: agent.providerTargetId,
       agentId: agent.id,
+      runInIsolation,
     })
   }
 
@@ -295,6 +299,14 @@ export function IssueContextMenu({ issue, statuses, milestones, onOpen, children
             {t('property.agent')}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent className="w-56">
+            <ContextMenuCheckboxItem
+              checked={runInIsolation}
+              onCheckedChange={checked => setRunInIsolation(checked === true)}
+              data-testid="issue-context-delegate-isolation"
+            >
+              {tIsolation('delegate.runInIsolation')}
+            </ContextMenuCheckboxItem>
+            <ContextMenuSeparator />
             <ContextMenuRadioGroup value={agentValue} onValueChange={handleAgentChange}>
               <ContextMenuRadioItem value="" disabled={isMutating}>
                 <UserRoundXIcon className="size-4" />

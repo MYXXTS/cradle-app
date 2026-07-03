@@ -1,15 +1,20 @@
 import {
   CloseLine as XIcon,
   PencilLine as PencilIcon,
+  ShieldLine as ShieldIcon,
 } from '@mingcute/react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { getWorkspacesByWorkspaceIdGitMergeBase } from '~/api-gen/sdk.gen'
+import { getSessionsByIdOptions } from '~/api-gen/@tanstack/react-query.gen'
 import { useRegisterLayoutSlots } from '~/components/layout/use-layout-slots'
 import { Button } from '~/components/ui/button'
 import { toastManager } from '~/components/ui/toast'
+import { IsolationBoundaryDialog } from '~/features/session/isolation-boundary-dialog'
+import { IsolationMissingDialog } from '~/features/session/isolation-missing-dialog'
+import { useSessionIsolationState, useStartSessionIsolation } from '~/features/session/use-session-isolation'
 import { readWorkspaceFileDragText } from '~/lib/workspace-drag-data'
 import { useSurfaceActive } from '~/navigation/surface-activity-context'
 import { useChatStore } from '~/store/chat'
@@ -82,6 +87,7 @@ export function ChatView({
 }: ChatViewProps) {
   const queryClient = useQueryClient()
   const { t } = useTranslation('chat')
+  const { t: tIsolation } = useTranslation('session-isolation')
   const surfaceActive = useSurfaceActive()
   const chatActive = active && surfaceActive
   const {
@@ -100,6 +106,13 @@ export function ChatView({
     reorderQueueItems,
     updateQueueItem,
   } = useChatSession(sessionId, chatActive)
+  const sessionMetaQuery = useQuery({
+    ...getSessionsByIdOptions({ path: { id: sessionId ?? '' } }),
+    enabled: chatActive && !!sessionId,
+    staleTime: 5_000,
+  })
+  const startIsolation = useStartSessionIsolation()
+  const isolationStateQuery = useSessionIsolationState(sessionId)
   const { data: awaitSummary } = useSessionAwaitSummary(sessionId, chatActive)
   const [droppedPath, setDroppedPath] = useState<{ text: string, ts: number } | null>(null)
   const [editingGoal, setEditingGoal] = useState<ChatRuntimeGoalUiSlotState | null>(null)
@@ -641,6 +654,38 @@ export function ChatView({
   const headerActions = useMemo(
     () => (
       <div className="flex items-center gap-0.5">
+        {sessionId && workspaceId && !sessionMetaQuery.data?.isIsolated && !sessionMetaQuery.data?.worktreeId && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="gap-1 text-muted-foreground"
+            title={tIsolation('chat.isolateTooltip')}
+            disabled={startIsolation.isPending}
+            data-testid="chat-isolate-action"
+            onClick={() => {
+              void startIsolation.mutateAsync({
+                sessionId,
+                workspaceId,
+                slug: sessionMetaQuery.data?.title ?? undefined,
+              }).then(() => {
+                toastManager.add({
+                  type: 'success',
+                  title: tIsolation('chat.isolateSuccess'),
+                })
+              }).catch((isolationError) => {
+                toastManager.add({
+                  type: 'error',
+                  title: tIsolation('boundary.errorTitle'),
+                  description: isolationError instanceof Error ? isolationError.message : String(isolationError),
+                })
+              })
+            }}
+          >
+            <ShieldIcon className="size-3 shrink-0" aria-hidden />
+            <span className="text-[11px]">{tIsolation('chat.isolate')}</span>
+          </Button>
+        )}
         {import.meta.env.DEV && (
           <RuntimeDiagnosticsPopover
             slots={composerRuntime.uiSlots}
@@ -649,12 +694,31 @@ export function ChatView({
         )}
       </div>
     ),
-    [composerRuntime.slotStates, composerRuntime.uiSlots],
+    [
+      composerRuntime.slotStates,
+      composerRuntime.uiSlots,
+      sessionId,
+      sessionMetaQuery.data?.isIsolated,
+      sessionMetaQuery.data?.worktreeId,
+      sessionMetaQuery.data?.pendingWorktreeId,
+      sessionMetaQuery.data?.title,
+      startIsolation,
+      tIsolation,
+      workspaceId,
+    ],
   )
 
   const layoutSlots = useMemo(() => ({ headerActions }), [headerActions])
 
   useRegisterLayoutSlots(sessionId ?? '', layoutSlots)
+
+  const showIsolationBoundary = sessionMetaQuery.data?.isolationBoundaryRequired === true
+    && status !== 'streaming'
+  const showMissingIsolation = !!(
+    isolationStateQuery.data?.worktreeId
+    && isolationStateQuery.data.worktreeHealth
+    && isolationStateQuery.data.worktreeHealth !== 'ok'
+  )
 
   return (
     <div
@@ -744,6 +808,24 @@ export function ChatView({
         onClose={closeGoalEditor}
         onSubmit={submitGoalEditor}
       />
+      {sessionId && (
+        <IsolationBoundaryDialog
+          sessionId={sessionId}
+          workspaceId={workspaceId ?? null}
+          open={showIsolationBoundary}
+          onOpenChange={() => {
+            void sessionMetaQuery.refetch()
+          }}
+        />
+      )}
+      {sessionId && (
+        <IsolationMissingDialog
+          sessionId={sessionId}
+          workspaceId={workspaceId ?? null}
+          worktreeId={isolationStateQuery.data?.worktreeId ?? null}
+          open={showMissingIsolation}
+        />
+      )}
     </div>
   )
 }

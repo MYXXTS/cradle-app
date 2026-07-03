@@ -22,7 +22,7 @@ export const STANDARD_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 export const STANDARD_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: false,

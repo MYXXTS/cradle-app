@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
@@ -8,6 +7,8 @@ import type { StatusResult } from 'simple-git'
 import simpleGit from 'simple-git'
 
 import { AppError } from '../../errors/app-error'
+import { runGitCommand } from './git-command'
+import { resolveSessionExecutionRootById } from '../worktree/service'
 import * as Workspace from '../workspace/service'
 
 export interface GitStatusView {
@@ -167,6 +168,16 @@ function getWorkspacePath(workspaceId: string): string {
   return workspacePath
 }
 
+function resolveGitCwd(workspaceId: string, sessionId?: string | null): string {
+  if (sessionId) {
+    const execution = resolveSessionExecutionRootById(sessionId)
+    if (execution?.isIsolated && execution.rootPath) {
+      return execution.rootPath
+    }
+  }
+  return getWorkspacePath(workspaceId)
+}
+
 function mapGitError(workspaceId: string, error: unknown, repositoryPath?: string): AppError {
   if (error instanceof AppError) {
     return error
@@ -181,8 +192,8 @@ function mapGitError(workspaceId: string, error: unknown, repositoryPath?: strin
   })
 }
 
-export async function getRepositories(workspaceId: string): Promise<GitRepositoryView[]> {
-  const workspacePath = getWorkspacePath(workspaceId)
+export async function getRepositories(workspaceId: string, sessionId?: string): Promise<GitRepositoryView[]> {
+  const workspacePath = sessionId ? resolveGitCwd(workspaceId, sessionId) : getWorkspacePath(workspaceId)
   const repositories = await discoverGitRepositories(workspaceId, workspacePath)
   try {
     return await Promise.all(repositories.map(async (repository) => {
@@ -205,8 +216,13 @@ export async function getRepositories(workspaceId: string): Promise<GitRepositor
   }
 }
 
-export async function getStatus(workspaceId: string, repositoryPath?: string): Promise<GitStatusView> {
-  const { repository } = await resolveRepository(workspaceId, repositoryPath)
+export async function getStatus(
+  workspaceId: string,
+  repositoryPath?: string,
+  sessionId?: string,
+): Promise<GitStatusView> {
+  const cwdOverride = sessionId ? resolveGitCwd(workspaceId, sessionId) : undefined
+  const { repository } = await resolveRepository(workspaceId, repositoryPath, cwdOverride)
   try {
     return await readStatus(repository)
   }
@@ -651,8 +667,9 @@ export async function commitFileGroups(
 async function resolveRepository(
   workspaceId: string,
   repositoryPath?: string | null,
+  cwdOverride?: string,
 ): Promise<ResolvedGitRepository> {
-  const workspacePath = getWorkspacePath(workspaceId)
+  const workspacePath = cwdOverride ?? getWorkspacePath(workspaceId)
   const repositories = await discoverGitRepositories(workspaceId, workspacePath)
   const requestedPath = normalizeRepositoryPath(workspaceId, repositoryPath)
 
@@ -866,41 +883,25 @@ function parseGitPathList(output: string): string[] {
   return output.split('\n').map(path => path.trim()).filter(Boolean)
 }
 
-async function runGitCommand(
-  cwd: string,
-  args: string[],
-  allowedExitCodes: number[] = [],
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-    const stdout: Buffer[] = []
-    const stderr: Buffer[] = []
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout.push(chunk)
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr.push(chunk)
-    })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      const output = Buffer.concat(stdout).toString('utf8')
-      const exitCode = code ?? 0
-      if (exitCode === 0 || allowedExitCodes.includes(exitCode)) {
-        resolve(output)
-        return
-      }
-
-      const errorOutput = Buffer.concat(stderr).toString('utf8').trim()
-      const message = errorOutput || `git ${args[0] ?? 'command'} exited with code ${exitCode}`
-      reject(Object.assign(new Error(message), { code: exitCode, stdout: output }))
-    })
-  })
-}
-
 function joinDiffs(diffs: string[]): string {
   return diffs
     .map(diff => diff.trimEnd())
     .filter(Boolean)
     .join('\n')
 }
+
+export {
+  addGitWorktree,
+  deleteLocalBranch,
+  getHeadSha,
+  isWorkingTreeDirty,
+  listGitWorktrees,
+  mergeBranch,
+  pruneGitWorktrees,
+  removeGitWorktree,
+  resolveGitRepoRoot,
+  resolveWorktreeAbsolutePath,
+  stashAndPopAcrossCheckouts,
+} from './worktree-ops'
+export type { GitWorktreeEntryView } from './worktree-ops'
+export { runGitCommand } from './git-command'

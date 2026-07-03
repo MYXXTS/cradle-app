@@ -2,7 +2,7 @@ import type { UIMessage } from 'ai'
 
 import { readObjectRecord } from '../../../helpers/json-record'
 import type { RuntimeGoalContinuation } from '../../chat-runtime/runtime-provider-types'
-import { readProviderStateSnapshot } from '../provider-state-snapshot'
+import { readProviderStateSnapshot } from '../kit/state-snapshot'
 import {
   isCodexCompactCommand,
   readCodexGoalCommandObjective,

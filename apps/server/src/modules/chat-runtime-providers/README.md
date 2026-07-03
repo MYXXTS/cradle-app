@@ -10,7 +10,7 @@ Runtime provider directories use a shared domain package shape when they own a r
 
 ## Files
 
-- `provider-state-snapshot.ts`: trusted provider runtime state snapshot parsing.
+- `kit/`: shared Provider Kit modules (chunk mapping, input projection, process hosting, permission bridging, state snapshot parsing, provider definition helpers). See `kit/README.md` for the real per-module adoption matrix.
 - `bounded-text-collector.ts`: bounded streaming text accumulator for diagnostics.
 - `async-event-queue.ts`: provider-agnostic async FIFO event queue for runtime streams.
 - `openai-compatible/provider.ts`: OpenAI-compatible AI SDK runtime provider.

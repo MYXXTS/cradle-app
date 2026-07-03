@@ -35,6 +35,11 @@ export default {
   'workspace.adding': 'Adding...',
   'workspace.group': 'Workspaces',
   'send.tooltip': 'Send',
+  'isolatedAction': 'New isolated chat',
+  'isolatedActionTooltip': 'Create a session in an isolated git worktree',
+  'isolatedDefaultTitle': 'Isolated chat',
+  'isolatedStartError': 'Could not start isolated chat',
+  'isolatedProviderRequired': 'Select an agent or provider first',
   'recent.title': 'Recent chats',
   'recent.untitled': 'Untitled',
 } as const

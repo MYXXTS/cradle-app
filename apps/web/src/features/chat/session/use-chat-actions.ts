@@ -12,7 +12,7 @@ import { useLayoutStore } from '~/store/layout'
 import { runtimeUiSlotStatesQueryKey } from '../capabilities/chat-capabilities'
 import { readBangCommand } from '../commands/bang-command'
 import { annotateBangCommandMessage, annotateBangResultMessage } from '../commands/bang-command-metadata'
-import { cancelChatResponse, createSideChat, enqueueChatSessionQueueItem, executeBangCommand, readChatCommandErrorCode, resolvePlanImplementationApproval, steerChatSessionTurn, submitRuntimeToolApproval, submitRuntimeUserInput } from '../commands/chat-response-command'
+import { cancelChatResponse, createSideChat, enqueueChatSessionQueueItem, executeBangCommand, resolvePlanImplementationApproval, steerChatSessionTurn, submitRuntimeToolApproval, submitRuntimeUserInput } from '../commands/chat-response-command'
 import { rollbackLastTurn as rollbackLastTurnCommand } from '../commands/rollback-last-turn-command'
 import type { RuntimeSessionStatus } from '../commands/runtime-session-status-command'
 import { runtimeSettingsQueryKey, updateSessionRuntimeSettings } from '../commands/runtime-settings-command'
@@ -37,8 +37,6 @@ import {
   readRuntimeToolApprovalRequest,
   readRuntimeUserInputRequestId,
   readSideChatCommand,
-  releaseSessionStreamingStateForTerminalRun,
-  STEER_FALLBACK_ERROR_CODES,
 } from './use-chat-session-types'
 
 interface UseChatActionsInput {
@@ -351,58 +349,25 @@ export function useChatActions(input: UseChatActionsInput) {
           contextParts: body.contextParts,
           providerTargetId: body.providerTargetId ?? undefined,
         }
-        try {
-          const steer = await steerChatSessionTurn({
-            sessionId: chatSessionId,
-            body: steerBody,
-          })
+        // Server decides steered-vs-queued (target runtime's `steer` capability, and whether a
+        // matching active run exists) and returns a `mode` discriminant, so there's no
+        // fallback-error-code catch-and-retry dance here anymore.
+        const steer = await steerChatSessionTurn({
+          sessionId: chatSessionId,
+          body: steerBody,
+        })
+        if (steer.mode === 'steered') {
           useChatStore.getState().insertLiveSteerMessage(chatSessionId, steer.message)
           scheduleSnapshotRefresh(0)
+          return
         }
-        catch (error) {
-          const errorCode = readChatCommandErrorCode(error)
-          if (!STEER_FALLBACK_ERROR_CODES.has(errorCode ?? '')) {
-            throw error
-          }
 
-          if (errorCode === 'chat_steer_no_active_run') {
-            const runtimeStatus = await queryClient.fetchQuery({
-              ...runtimeSessionStatusQueryOptions(chatSessionId),
-              staleTime: 0,
-            }).catch(() => null)
-            releaseSessionStreamingStateForTerminalRun(chatSessionId, runtimeStatus?.latestRun)
-            void queryClient.invalidateQueries({ queryKey: runtimeSessionStatusQueryKey(chatSessionId) })
-            if (
-              !runtimeStatus
-              || (runtimeStatus.status === 'idle'
-                && !runtimeStatus.activeRun
-                && runtimeStatus.queue.pending === 0
-                && runtimeStatus.queue.running === 0)
-            ) {
-              await startNewResponse()
-              return
-            }
-
-            scheduleSnapshotRefresh(0)
-            await enqueueChatSessionQueueItem({
-              sessionId: chatSessionId,
-              body,
-            })
-            refreshQueue()
-            return
-          }
-
-          await enqueueChatSessionQueueItem({
-            sessionId: chatSessionId,
-            body,
-          })
-          refreshQueue()
-          toastManager.add({
-            type: 'info',
-            title: 'Added to queue',
-            description: 'Live guidance did not match the active provider turn, so it was queued instead.',
-          })
-        }
+        refreshQueue()
+        toastManager.add({
+          type: 'info',
+          title: 'Added to queue',
+          description: 'This runtime applies guidance on the next turn instead of redirecting the active one, so it was queued instead.',
+        })
         return
       }
 

@@ -139,6 +139,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       label: runtime.label,
       description: runtime.description,
       icon: runtime.icon,
+      degradations: runtime.degradations,
     })),
     [runtimes],
   )

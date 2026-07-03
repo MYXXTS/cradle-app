@@ -6,7 +6,7 @@ import { AppError } from '../../errors/app-error'
 import { parseJsonObject } from '../../helpers/json-record'
 import { db } from '../../infra'
 import { createChildLogger } from '../../logging/logger'
-import { readProviderStateSnapshot } from '../chat-runtime-providers/provider-state-snapshot'
+import { readProviderStateSnapshot } from '../chat-runtime-providers/kit/state-snapshot'
 import {
   readRuntimeOwnedProviderTargetOwner,
   runtimeOwnsProviderTarget,
@@ -22,6 +22,7 @@ import {
 import { getProviderTarget, resolveProviderTargetForRuntime } from '../provider-targets/service'
 import * as SessionService from '../session/service'
 import * as Workspace from '../workspace/service'
+import { resolveSessionExecutionRoot, assertIsolationExecutionReady } from '../worktree/service'
 import { resolveSessionSystemPrompt } from './context/turn-context'
 import { getRuntimeRegistry } from './chat-runtime-provider-registry'
 import { runRegistry } from './run-registry'
@@ -73,10 +74,12 @@ export function getSessionRunContext(
   if (!session) {
     return null
   }
+  assertIsolationExecutionReady(session)
   const providerTargetId = input.providerTargetId ?? session.providerTargetId
   const providerTarget = providerTargetId ? { id: providerTargetId } : null
+  const execution = resolveSessionExecutionRoot(session)
   const workspacePath = session.workspaceId
-    ? Workspace.getLocalWorkspacePath(session.workspaceId)
+    ? (execution.rootPath || Workspace.getLocalWorkspacePath(session.workspaceId))
     : null
   if (session.workspaceId && !workspacePath) {
     return null

@@ -30,7 +30,7 @@ import {
 } from '../../provider-contracts/provider-base'
 import type { ProviderInputPart } from '../kit/input-projector'
 import { projectProviderInputParts } from '../kit/input-projector'
-import { readWorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
+import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 import { createBoundedTextCollector } from '../bounded-text-collector'
 import { CLAUDE_AGENT_RUNTIME_KIND } from './metadata'
 import type { ClaudeAgentPermissionBridgeState, ClaudeAgentToolApprovalRequest } from './permission-bridge'

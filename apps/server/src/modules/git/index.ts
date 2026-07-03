@@ -7,7 +7,7 @@ export const git = new Elysia({
   prefix: '/workspaces',
   detail: { tags: ['git'] },
 })
-  .get('/:workspaceId/git/repositories', ({ params }) => Git.getRepositories(params.workspaceId), {
+  .get('/:workspaceId/git/repositories', ({ params, query }) => Git.getRepositories(params.workspaceId, query.sessionId), {
     detail: {
       'summary': 'Get git repositories',
       'x-cradle-cli': {
@@ -16,9 +16,10 @@ export const git = new Elysia({
       },
     },
     params: GitModel.workspaceIdParams,
+    query: GitModel.repositoryQuery,
     response: { 200: t.Array(GitModel.repositoryView) },
   })
-  .get('/:workspaceId/git/status', ({ params, query }) => Git.getStatus(params.workspaceId, query.repo), {
+  .get('/:workspaceId/git/status', ({ params, query }) => Git.getStatus(params.workspaceId, query.repo, query.sessionId), {
     detail: {
       'summary': 'Get git status',
       'x-cradle-cli': {

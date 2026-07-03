@@ -20,16 +20,14 @@ export const ACP_RUNTIME_METADATA = {
   surfaces: ['chat', 'jarvis'],
   sortOrder: 40,
   stability: 'experimental',
+  // No hand-declared `steerTurn` degradation here: ACP has no native steer hook, but the
+  // registry auto-derives a `steer` degradation from `capabilities.steer` (see
+  // chat-runtime-provider-registry.ts), so this would otherwise duplicate/contradict that.
   degradations: [
     {
       capability: 'runtime',
       status: 'experimental',
       reason: 'ACP agent implementations vary; Cradle currently supports chat streaming and bridged tool approvals only.',
-    },
-    {
-      capability: 'steerTurn',
-      status: 'unsupported',
-      reason: 'ACP live steering is not mapped into the Chat Runtime contract.',
     },
     {
       capability: 'lastTurnRollback',
@@ -45,7 +43,7 @@ export const ACP_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 export const ACP_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: false,

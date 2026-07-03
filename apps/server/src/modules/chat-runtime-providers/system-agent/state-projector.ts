@@ -4,7 +4,7 @@
  * Position: System Agent provider package owner for providerStateSnapshot updates.
  */
 
-import { readProviderStateSnapshot } from '../provider-state-snapshot'
+import { readProviderStateSnapshot } from '../kit/state-snapshot'
 
 export function projectSystemAgentModelSnapshot(rawSnapshot: string | null | undefined, currentModelId: string): string {
   const snapshot = readProviderStateSnapshot(rawSnapshot)

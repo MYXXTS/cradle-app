@@ -1177,6 +1177,8 @@ export const zPostSessionsBody = z.object({
         'high',
         'xhigh'
     ]).optional(),
+    linkedIssueId: z.string().min(1).nullish(),
+    worktreeId: z.string().min(1).optional(),
     id: z.string().optional()
 });
 
@@ -1233,6 +1235,50 @@ export const zPostSessionsByIdLinkedIssueBody = z.object({
 });
 
 export const zPostSessionsByIdLinkedIssuePath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationStartBody = z.object({
+    slug: z.string().min(1).optional()
+});
+
+export const zPostSessionsByIdIsolationStartPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationActivateBody = z.object({
+    mode: z.enum([
+        'migrate',
+        'leave-main',
+        'cancel'
+    ])
+});
+
+export const zPostSessionsByIdIsolationActivatePath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationCancelPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationLeavePath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationRepairPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationAttachBody = z.object({
+    worktreeId: z.string().min(1)
+});
+
+export const zPostSessionsByIdIsolationAttachPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zGetSessionsByIdIsolationPath = z.object({
     id: z.string().min(1)
 });
 
@@ -1459,6 +1505,10 @@ export const zPatchIssuesByIdPath = z.object({
 });
 
 export const zGetIssuesByIdSessionsPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zGetIssuesByIdIsolationContextPath = z.object({
     id: z.string().min(1)
 });
 
@@ -1767,12 +1817,18 @@ export const zGetWorkspacesByWorkspaceIdGitRepositoriesPath = z.object({
     workspaceId: z.string().min(1)
 });
 
+export const zGetWorkspacesByWorkspaceIdGitRepositoriesQuery = z.object({
+    repo: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional()
+});
+
 export const zGetWorkspacesByWorkspaceIdGitStatusPath = z.object({
     workspaceId: z.string().min(1)
 });
 
 export const zGetWorkspacesByWorkspaceIdGitStatusQuery = z.object({
-    repo: z.string().min(1).optional()
+    repo: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional()
 });
 
 export const zGetWorkspacesByWorkspaceIdGitBranchesPath = z.object({
@@ -1780,7 +1836,8 @@ export const zGetWorkspacesByWorkspaceIdGitBranchesPath = z.object({
 });
 
 export const zGetWorkspacesByWorkspaceIdGitBranchesQuery = z.object({
-    repo: z.string().min(1).optional()
+    repo: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional()
 });
 
 export const zPostWorkspacesByWorkspaceIdGitBranchesBody = z.object({
@@ -1798,7 +1855,8 @@ export const zGetWorkspacesByWorkspaceIdGitRemotesPath = z.object({
 });
 
 export const zGetWorkspacesByWorkspaceIdGitRemotesQuery = z.object({
-    repo: z.string().min(1).optional()
+    repo: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional()
 });
 
 export const zGetWorkspacesByWorkspaceIdGitGraphPath = z.object({
@@ -1856,6 +1914,30 @@ export const zGetWorkspacesByWorkspaceIdGitBranchCompareQuery = z.object({
     repo: z.string().min(1).optional(),
     baseRef: z.string().min(1),
     headRef: z.string().min(1)
+});
+
+export const zGetWorkspacesByWorkspaceIdWorktreesPath = z.object({
+    workspaceId: z.string().min(1)
+});
+
+export const zPostWorkspacesByWorkspaceIdWorktreesBody = z.object({
+    sessionId: z.string().min(1),
+    slug: z.string().min(1).optional(),
+    bindSession: z.boolean().optional()
+});
+
+export const zPostWorkspacesByWorkspaceIdWorktreesPath = z.object({
+    workspaceId: z.string().min(1)
+});
+
+export const zPostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupBody = z.object({
+    mode: z.enum(['merge-and-close', 'abandon']),
+    targetBranch: z.string().min(1).optional()
+});
+
+export const zPostWorkspacesByWorkspaceIdWorktreesByWorktreeIdCleanupPath = z.object({
+    workspaceId: z.string().min(1),
+    worktreeId: z.string().min(1)
 });
 
 export const zGetWorkspacesByWorkspaceIdDiffReviewsPath = z.object({
@@ -3602,7 +3684,8 @@ export const zGetIssuesByIdDelegationPath = z.object({
 
 export const zPostIssuesByIdDelegationBody = z.object({
     agentId: z.string().min(1),
-    providerTargetId: z.string().nullish()
+    providerTargetId: z.string().nullish(),
+    runInIsolation: z.boolean().optional()
 });
 
 export const zPostIssuesByIdDelegationPath = z.object({

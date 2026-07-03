@@ -19,7 +19,7 @@ import { buildModelMessages, executeAiSdkTurn } from '../../chat-runtime-engine/
 import { createLanguageModel, detectApiFormat } from '../../chat-runtime-engine/providers'
 import { lookupContextWindow } from '../../model-registry/model-info-registry'
 import { readTrustedOpenAICompatibleConfig, readTrustedUniversalConfig } from '../../provider-contracts/provider-base'
-import { readProviderStateSnapshot } from '../provider-state-snapshot'
+import { readProviderStateSnapshot } from '../kit/state-snapshot'
 import {
   STANDARD_RUNTIME_CAPABILITIES,
   STANDARD_RUNTIME_KIND,

@@ -79,7 +79,11 @@ import type { TurnExecutorDeps } from './run/turn-executor'
 import { executeRun as executeRunWithDeps } from './run/turn-executor'
 import type { ActiveRun } from './run-registry'
 import { runRegistry } from './run-registry'
-import type { ChatRuntimeSettingsPatch, ChatThinkingEffort } from './runtime-provider-types'
+import type {
+  ChatRuntimeSettingsPatch,
+  ChatThinkingEffort,
+  RuntimeGoalContinuationOptions,
+} from './runtime-provider-types'
 import {
   assertProviderBoundRunContext,
   assertRunnableSession,
@@ -145,8 +149,17 @@ export type { CreateSideChatInput, SideChatSessionDto } from './side-chat/create
 
 const chatLogger = createChildLogger({ module: 'chat-runtime' })
 
-function shouldContinueBlockedCodexGoals(): boolean {
-  return isAppFeatureFlagEnabled('continueBlockedCodexGoals')
+/**
+ * Composition root is the one place allowed to know about concrete provider feature flags.
+ * `continueBlockedCodexGoals` is Codex-specific today (it's the only runtime that implements
+ * `ChatRuntime.goalContinuation` and interprets `includeBlockedGoals`), but every orchestrator
+ * interface downstream (`TurnExecutorDeps`, `RuntimeSessionStatusDeps`) only ever sees the
+ * generic `RuntimeGoalContinuationOptions` bag, never the flag name.
+ */
+function readRuntimeGoalContinuationOptions(): RuntimeGoalContinuationOptions {
+  return {
+    includeBlockedGoals: isAppFeatureFlagEnabled('continueBlockedCodexGoals'),
+  }
 }
 
 const activeRunStream = createActiveRunStreamController({
@@ -286,7 +299,7 @@ const turnExecutorDeps: TurnExecutorDeps = {
   scheduleRuntimeGoalContinuation: input =>
     scheduleRuntimeGoalContinuation(input, runtimeGoalContinuationDeps),
   pendingQueueItemCount: sessionId => listPendingQueueRows(sessionId).length,
-  readContinueBlockedCodexGoals: shouldContinueBlockedCodexGoals,
+  readRuntimeGoalContinuationOptions,
   warn: (message, payload) => chatLogger.warn(message, payload),
   error: (message, payload) => chatLogger.error(message, payload),
 }
@@ -310,7 +323,7 @@ export async function getRuntimeSessionStatus(
 ): Promise<ChatRuntimeSessionStatusDto> {
   return getRuntimeSessionStatusFromStatusApi(sessionId, {
     releaseTerminalPersistedActiveRunForSession,
-    readContinueBlockedCodexGoals: shouldContinueBlockedCodexGoals,
+    readRuntimeGoalContinuationOptions,
     scheduleRuntimeGoalContinuation: input =>
       scheduleRuntimeGoalContinuation(input, runtimeGoalContinuationDeps),
   })
@@ -437,6 +450,7 @@ export async function submitSessionSteerTurn(
 ): Promise<SessionSteerTurnDto> {
   return submitSessionSteerTurnFromInteraction(input, {
     finalizeInterruptedPersistedStreamingSessionIfIdle,
+    scheduleSessionQueueDrain: sessionId => scheduleSessionQueueDrain(sessionId, queueDrainDeps),
     warn: (message, payload) => chatLogger.warn(message, payload),
   })
 }

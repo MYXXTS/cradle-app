@@ -26,6 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu'
+import { Checkbox } from '~/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { AgentAvatar } from '~/features/agent-runtime/agent-avatar'
 import { useAgents } from '~/features/agent-runtime/use-agents'
@@ -606,8 +607,10 @@ function AgentDelegatePicker({
 }) {
   const { agents } = useAgents()
   const { t } = useTranslation('kanban')
+  const { t: tIsolation } = useTranslation('session-isolation')
   const delegateIssue = useDelegateIssue()
   const undelegateIssue = useUndelegateIssue()
+  const [runInIsolation, setRunInIsolation] = useState(false)
   const agentCandidates = agents.filter(agent => !!agent.providerTargetId)
   const delegatedAgent = findDelegatedAgent(issue, agentCandidates)
   const selectedValue = delegatedAgent ? `agent:${delegatedAgent.id}` : ''
@@ -633,6 +636,7 @@ function AgentDelegatePicker({
       issueId: issue.id,
       agentId: agent.id,
       providerTargetId: agent.providerTargetId,
+      runInIsolation,
     })
   }
 
@@ -669,6 +673,21 @@ function AgentDelegatePicker({
         <span className="truncate">{delegatedAgent?.name ?? t('agent.none')}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <Checkbox
+            id={`issue-delegate-isolation-${issue.id}`}
+            checked={runInIsolation}
+            onCheckedChange={(checked) => setRunInIsolation(checked === true)}
+            data-testid="issue-delegate-isolation"
+          />
+          <label
+            htmlFor={`issue-delegate-isolation-${issue.id}`}
+            className="cursor-pointer text-[12px] text-muted-foreground"
+          >
+            {tIsolation('delegate.runInIsolation')}
+          </label>
+        </div>
+        <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={selectedValue} onValueChange={handleAgentChange}>
           <DropdownMenuRadioItem value="" data-testid="issue-agent-option-none">
             <UserRoundXIcon className="size-4 !text-muted-foreground" aria-hidden="true" />

@@ -24,6 +24,7 @@ import { ChangesPanel, GitPanel } from '~/features/git'
 import { IssueAsidePanel } from '~/features/kanban/issue-aside-panel'
 import { useLinkedIssue } from '~/features/kanban/use-kanban'
 import { AwaitPanel } from '~/features/session-await/await-panel'
+import { useSessionIsolationState } from '~/features/session/use-session-isolation'
 import { FileTree } from '~/features/workspace/file-tree'
 import { getLocalWorkspacePath, type Workspace } from '~/features/workspace/types'
 import { cn } from '~/lib/cn'
@@ -151,6 +152,7 @@ type ActiveRightAsideProps = Omit<RightAsideProps, 'active'>
 interface RightAsidePanelContentProps {
   tabId: string
   sessionId: string | null
+  gitSessionId: string | null
   workspaceId: string | null
   workspacePath: string | null
   issueEmptyLabel: string
@@ -162,6 +164,7 @@ interface RightAsidePanelContentProps {
 function RightAsidePanelContent({
   tabId,
   sessionId,
+  gitSessionId,
   workspaceId,
   workspacePath,
   issueEmptyLabel,
@@ -186,7 +189,7 @@ function RightAsidePanelContent({
   if (tabId === 'git') {
     return (
       <div className="flex flex-1 flex-col overflow-hidden" data-testid="right-aside-panel-git">
-        <GitPanel workspaceId={workspaceId} />
+        <GitPanel workspaceId={workspaceId} sessionId={gitSessionId} />
       </div>
     )
   }
@@ -200,6 +203,7 @@ function RightAsidePanelContent({
         <ChangesPanel
           workspaceId={workspaceId}
           workspacePath={workspacePath}
+          sessionId={gitSessionId}
         />
       </div>
     )
@@ -357,6 +361,8 @@ function ActiveRightAside({
     staleTime: 60_000,
   })
   const workspaceId = explicitWorkspaceId ?? sessionMeta?.workspaceId ?? null
+  const { data: isolationState } = useSessionIsolationState(sessionId)
+  const gitSessionId = isolationState?.isIsolated ? sessionId : null
 
   // Derive workspace details from workspaceId
   const { data: workspace } = useQuery({
@@ -548,6 +554,7 @@ function ActiveRightAside({
             <RightAsidePanelContent
               tabId={resolvedActiveTab}
               sessionId={sessionId}
+              gitSessionId={gitSessionId}
               workspaceId={workspaceId}
               workspacePath={workspacePath}
               issueEmptyLabel={t('rightAside.issue.empty')}

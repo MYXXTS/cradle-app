@@ -1,5 +1,5 @@
 import { AppError } from '../../errors/app-error'
-import { readProviderStateSnapshot } from '../chat-runtime-providers/provider-state-snapshot'
+import { readProviderStateSnapshot } from '../chat-runtime-providers/kit/state-snapshot'
 import type { RuntimeKind } from '../provider-contracts/types'
 import { getRuntimeRegistry } from './chat-runtime-provider-registry'
 import { resolveSessionSystemPrompt } from './context/turn-context'

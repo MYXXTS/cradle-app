@@ -34,6 +34,7 @@ export const IssueAgentModel = {
   delegateBody: t.Object({
     agentId: t.String({ minLength: 1 }),
     providerTargetId: t.Optional(t.Nullable(t.String())),
+    runInIsolation: t.Optional(t.Boolean()),
   }),
 
   continuationBody: t.Object({

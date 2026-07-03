@@ -56,7 +56,7 @@ import { createDedupeKey, OBSERVABILITY_CODES } from '../../observability/contra
 import { readTrustedCodexConfig } from '../../provider-contracts/provider-base'
 import { createBoundedTextCollector } from '../bounded-text-collector'
 import { requestProviderToolApproval } from '../kit/permission-bridge'
-import { readWorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
+import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 import type {
   CodexAppServerCapabilityManifest,
   CodexAppServerInvokeInput,

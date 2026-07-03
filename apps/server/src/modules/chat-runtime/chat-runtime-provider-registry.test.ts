@@ -71,7 +71,7 @@ describe('runtime capability validation', () => {
         providerKinds: ['openai-compatible'],
       },
       capabilities: {
-        supportsSteerTurn: false,
+        steer: 'queue-fallback',
         supportsShellExecution: false,
         supportsLastTurnRollback: false,
         supportsRuntimeSettings: false,
@@ -109,7 +109,7 @@ describe('runtime capability validation', () => {
 
   it('requires rollbackLastTurn when last-turn rollback support is declared', () => {
     const capabilities = {
-      supportsSteerTurn: false,
+      steer: 'queue-fallback',
       supportsShellExecution: false,
       supportsLastTurnRollback: true,
       supportsRuntimeSettings: false,

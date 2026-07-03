@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia'
 import { z } from 'zod'
 
 import { resolveActorContext } from '../../http/actor-context'
+import * as Worktree from '../worktree/service'
 import { IssueModel } from './model'
 import * as Issue from './service'
 
@@ -134,6 +135,25 @@ export const issue = new Elysia({
     },
     params: IssueModel.idParams,
     response: { 200: t.Array(IssueModel.linkedSession) },
+  })
+  .get('/:id/isolation-context', ({ params }) => ({
+    groups: Worktree.getIssueIsolationContext(params.id),
+  }), {
+    detail: {
+      summary: 'Get issue isolation context groups',
+    },
+    params: IssueModel.idParams,
+    response: {
+      200: t.Object({
+        groups: t.Array(t.Object({
+          worktreeId: t.String(),
+          name: t.String(),
+          branch: t.String(),
+          sessionIds: t.Array(t.String()),
+          sessionTitles: t.Array(t.String()),
+        })),
+      }),
+    },
   })
   .post('/', ({ body, request }) => Issue.createIssue(body, resolveActorContext(request)), {
     detail: {

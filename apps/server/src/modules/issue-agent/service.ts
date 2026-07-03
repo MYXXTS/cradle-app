@@ -9,6 +9,7 @@ import * as AgentInteraction from '../agent-interaction-runtime/service'
 import * as ChatRuntime from '../chat-runtime/runtime'
 import * as Issue from '../issue/service'
 import * as Session from '../session/service'
+import * as Worktree from '../worktree/service'
 import * as WorkflowRules from '../workflow-rules/service'
 
 // ── types ──
@@ -328,7 +329,10 @@ async function cancelChatSessionContinuationWork(chatSessionId: string): Promise
 
 // ── run session ──
 
-async function runSession(agentSessionId: string): Promise<void> {
+async function runSession(
+  agentSessionId: string,
+  options: { runInIsolation?: boolean } = {},
+): Promise<void> {
   try {
     const session = requireAgentSession(agentSessionId)
     if (!session.agentId) {
@@ -356,6 +360,14 @@ async function runSession(agentSessionId: string): Promise<void> {
     })
 
     AgentInteraction.attachChatSession({ agentSessionId, chatSessionId: chatSession.id })
+
+    if (options.runInIsolation) {
+      await Worktree.startSessionIsolation({
+        sessionId: chatSession.id,
+        slug: issue.title,
+      })
+    }
+
     AgentInteraction.updateSessionStatus(agentSessionId, 'active')
     AgentInteraction.createActivity({
       agentSessionId,
@@ -474,6 +486,36 @@ export async function enqueueContinuation(input: {
       text
     })
 
+    // The server may auto-fall-back a 'steer' request to queueing (see submitSessionSteerTurn's
+    // `mode` discriminant) when the target runtime has no native steer hook or no matching active
+    // run — mirror that outcome in the recorded activity/watcher instead of assuming it steered.
+    if (steer.mode === 'queued') {
+      startContinuationWatcher({
+        agentSessionId: session.id,
+        chatSessionId: session.chatSessionId,
+        since: steer.queueItem.createdAt
+      })
+
+      AgentInteraction.createActivity({
+        agentSessionId: session.id,
+        type: 'prompt',
+        body: text,
+        signal: 'continuation.queued',
+        signalMetadata: {
+          chatSessionId: session.chatSessionId,
+          continuationId: steer.queueItem.id,
+          mode: 'queue'
+        }
+      })
+
+      return {
+        ok: true,
+        chatSessionId: session.chatSessionId,
+        continuationId: steer.queueItem.id,
+        mode: 'queue'
+      }
+    }
+
     AgentInteraction.createActivity({
       agentSessionId: session.id,
       type: 'prompt',
@@ -529,6 +571,7 @@ export async function delegateIssue(input: {
   issueId: string
   agentId: string
   providerTargetId?: string | null
+  runInIsolation?: boolean
 }): Promise<IssueAgentSessionView> {
   requireIssue(input.issueId)
   const agent = requireDelegationAgent(input.agentId)
@@ -581,7 +624,7 @@ export async function delegateIssue(input: {
     signalMetadata: { providerTargetId: agent.providerTargetId, agentId: agent.id }
   })
 
-  void runSession(session.id)
+  void runSession(session.id, { runInIsolation: input.runInIsolation })
 
   return { ...session, isCurrentDelegation: true }
 }

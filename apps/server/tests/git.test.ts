@@ -8,6 +8,14 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import {
+  addGitWorktree,
+  getHeadSha,
+  isWorkingTreeDirty,
+  listGitWorktrees,
+  removeGitWorktree,
+  stashAndPopAcrossCheckouts,
+} from '../src/modules/git/worktree-ops'
 
 interface GitStatus {
   repositoryPath: string
@@ -92,10 +100,10 @@ function runGit(dir: string, args: string[]): string {
 
 function initGitRepository(dir: string): void {
   try {
-    runGit(dir, ['init', '--initial-branch=main'])
+    runGit(dir, ['init', '--initial-branch=main', '--template='])
   }
  catch {
-    runGit(dir, ['init'])
+    runGit(dir, ['init', '--template='])
     runGit(dir, ['symbolic-ref', 'HEAD', 'refs/heads/main'])
   }
 
@@ -421,5 +429,42 @@ describe('git capability', () => {
       rmSync(dataDir, { recursive: true, force: true })
       rmSync(plainWorkspaceRoot, { recursive: true, force: true })
     }
+  })
+
+  it('creates, lists, and removes git worktrees with stash migration', async () => {
+    const repoRoot = mkdtempSync(join(process.cwd(), '.test-git-worktree-'))
+    createGitWorkspaceFixture(repoRoot)
+
+    const worktreePath = join(repoRoot, '.cradle', 'worktrees', 'abc12345-test')
+    const branch = 'cradle/wt/abc12345-test'
+    const baseRef = await getHeadSha(repoRoot)
+
+    await addGitWorktree({
+      repoPath: repoRoot,
+      worktreePath,
+      branch,
+      baseRef,
+    })
+
+    const entries = await listGitWorktrees(repoRoot)
+    expect(entries.some(entry => entry.path === worktreePath && entry.branch === branch)).toBe(true)
+
+    writeFileSync(join(repoRoot, 'dirty.txt'), 'dirty on main\n', 'utf8')
+    expect(await isWorkingTreeDirty(repoRoot)).toBe(true)
+
+    const migration = await stashAndPopAcrossCheckouts({
+      mainRepoPath: repoRoot,
+      worktreePath,
+      message: 'cradle-test-migration',
+    })
+    expect(migration.conflict).toBe(false)
+    expect(await isWorkingTreeDirty(repoRoot)).toBe(false)
+    expect(await isWorkingTreeDirty(worktreePath)).toBe(true)
+
+    await removeGitWorktree({ repoPath: repoRoot, worktreePath, force: true })
+    const afterRemove = await listGitWorktrees(repoRoot)
+    expect(afterRemove.some(entry => entry.path === worktreePath)).toBe(false)
+
+    rmSync(repoRoot, { recursive: true, force: true })
   })
 })

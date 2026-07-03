@@ -14,6 +14,7 @@ import kanban from './kanban'
 import newChat from './new-chat'
 import onboarding from './onboarding'
 import search from './search'
+import sessionIsolation from './session-isolation'
 import settings from './settings'
 import skills from './skills'
 import systemAgent from './system-agent'
@@ -37,6 +38,7 @@ const resources = {
   'new-chat': newChat,
   onboarding,
   search,
+  'session-isolation': sessionIsolation,
   settings,
   skills,
   'system-agent': systemAgent,

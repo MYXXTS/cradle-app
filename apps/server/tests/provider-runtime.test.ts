@@ -63,7 +63,7 @@ function createTestRuntime() {
       providerKinds: ['openai-compatible'],
     },
     capabilities: {
-      supportsSteerTurn: false,
+      steer: 'queue-fallback',
       supportsShellExecution: false,
       supportsLastTurnRollback: false,
       supportsRuntimeSettings: false,

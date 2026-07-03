@@ -728,8 +728,16 @@ export function createEmptyRuntimePresentation(
   }
 }
 
+/**
+ * `'native'`: the runtime implements `steerTurn` and can redirect an in-flight run.
+ * `'queue-fallback'`: the runtime has no native steer; steer requests are transparently
+ * enqueued instead (queueing is generic/session-level and available to every runtime).
+ * `'unsupported'`: neither native steer nor queue fallback is available for this runtime.
+ */
+export type ChatRuntimeSteerCapability = 'native' | 'queue-fallback' | 'unsupported'
+
 export interface ChatRuntimeCapabilities {
-  readonly supportsSteerTurn: boolean
+  readonly steer: ChatRuntimeSteerCapability
   readonly supportsShellExecution: boolean
   readonly supportsLastTurnRollback: boolean
   readonly supportsRuntimeSettings: boolean

@@ -10,8 +10,8 @@ import type { RuntimeCrewAgentItem, RuntimeCrewCallItem, RuntimeCrewUiSlotState,
 import { readObjectRecord as readRecord } from '../../../helpers/json-record'
 import type { ClaudeAgentCapturedPlan, ClaudeAgentCapturedTodos } from './event-to-chunk-mapper'
 import type { TodoPluginItem, TodoPluginStatus } from './tools/todo-plugin-state'
-import type { WorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
-import { readWorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
+import type { WorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
+import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 
 interface ClaudeAgentPlanSnapshot {
   threadId: string

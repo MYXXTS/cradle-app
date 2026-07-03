@@ -986,10 +986,15 @@ export function useDelegateIssue() {
       issueId: string
       agentId: string
       providerTargetId?: string | null
+      runInIsolation?: boolean
     }) => {
       const { data } = await postIssuesByIdDelegation({
         path: { id: vars.issueId },
-        body: { providerTargetId: vars.providerTargetId, agentId: vars.agentId },
+        body: {
+          providerTargetId: vars.providerTargetId,
+          agentId: vars.agentId,
+          runInIsolation: vars.runInIsolation,
+        },
       })
       return data === null ? null : (AgentSessionSchema.parse(data) satisfies AgentSession)
     },

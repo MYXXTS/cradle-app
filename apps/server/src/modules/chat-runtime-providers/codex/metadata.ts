@@ -22,7 +22,7 @@ export const CODEX_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 export const CODEX_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: true,
+  steer: 'native',
   supportsShellExecution: true,
   supportsLastTurnRollback: true,
   supportsRuntimeSettings: true,

@@ -5,6 +5,7 @@ import { index, int, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sq
 import { agents } from './identity'
 import { issues } from './issue'
 import { providerTargets } from './provider-target'
+import { worktrees } from './worktree'
 import { createdAt, textPk, timestamps, workspaces } from './shared'
 
 export const sessions = sqliteTable('sessions', {
@@ -25,6 +26,10 @@ export const sessions = sqliteTable('sessions', {
   configJson: text('config_json').notNull().default('{}'),
   linkedIssueId: text('linked_issue_id')
     .references(() => issues.id, { onDelete: 'set null' }),
+  worktreeId: text('worktree_id')
+    .references(() => worktrees.id, { onDelete: 'set null' }),
+  pendingWorktreeId: text('pending_worktree_id')
+    .references(() => worktrees.id, { onDelete: 'set null' }),
   pinned: int('pinned').notNull().default(0),
   archivedAt: int('archived_at'),
   lastReadAt: int('last_read_at'),
@@ -36,6 +41,8 @@ export const sessions = sqliteTable('sessions', {
   byOrigin: index('sessions_origin_idx').on(table.origin),
   byProviderTarget: index('sessions_provider_target_id_idx').on(table.providerTargetId),
   byLinkedIssue: index('sessions_linked_issue_id_idx').on(table.linkedIssueId),
+  byWorktree: index('sessions_worktree_id_idx').on(table.worktreeId),
+  byPendingWorktree: index('sessions_pending_worktree_id_idx').on(table.pendingWorktreeId),
   byArchived: index('sessions_archived_at_idx').on(table.archivedAt),
 }))
 

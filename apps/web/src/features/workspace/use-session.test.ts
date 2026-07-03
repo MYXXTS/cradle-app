@@ -32,6 +32,13 @@ function createSessionRow(overrides: Partial<SessionRow> & Pick<SessionRow, 'id'
     latestUserMessageAt: null,
     latestAssistantMessageAt: null,
     unread: false,
+    isIsolated: false,
+    worktreeId: null,
+    worktreeBranch: null,
+    worktreePath: null,
+    worktreeHealth: null,
+    pendingWorktreeId: null,
+    isolationBoundaryRequired: false,
     ...rest,
   }
 }

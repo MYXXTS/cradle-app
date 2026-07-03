@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { FileUIPart } from 'ai'
 
 import { AppError } from '../../../errors/app-error'
-import { readProviderStateSnapshot } from '../../chat-runtime-providers/provider-state-snapshot'
+import { readProviderStateSnapshot } from '../../chat-runtime-providers/kit/state-snapshot'
 import {
   appendSideConversationHistory,
   readSideConversation

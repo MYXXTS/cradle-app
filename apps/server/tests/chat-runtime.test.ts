@@ -115,7 +115,7 @@ const TEST_CODEX_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 const TEST_CODEX_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: false,
@@ -1040,7 +1040,7 @@ class TestLiveSteerSnapshotRuntime implements ChatRuntime {
   readonly metadata = TEST_CODEX_RUNTIME_METADATA
   readonly capabilities = {
     ...TEST_CODEX_RUNTIME_CAPABILITIES,
-    supportsSteerTurn: true
+    steer: 'native'
   } satisfies ChatRuntimeCapabilities
 
   readonly streamInputs: StreamTurnInput[] = []
@@ -3565,7 +3565,7 @@ describe('chat runtime capability', () => {
     }
   })
 
-  it('rejects live steer when its provider target differs from the active run', async () => {
+  it('auto-falls back to queueing a live steer when its provider target differs from the active run', async () => {
     const dataDir = makeTempDir('cradle-data-')
     const workspaceRoot = makeTempDir('cradle-workspace-')
     const previousDataDir = process.env.CRADLE_DATA_DIR
@@ -3648,21 +3648,23 @@ describe('chat runtime capability', () => {
           })
         })
       )
-      expect(steerRes.status).toBe(409)
+      expect(steerRes.status).toBe(200)
       expect(await steerRes.json()).toEqual(
         expect.objectContaining({
-          code: 'chat_steer_context_mismatch'
+          mode: 'queued',
+          ok: true,
+          sessionId: 'session-live-steer-snapshot'
         })
       )
       expect(runtime.steerInputs).toHaveLength(0)
-      expect(await listChatQueue(app, 'session-live-steer-snapshot')).toEqual([])
+      expect(await listChatQueue(app, 'session-live-steer-snapshot')).toHaveLength(1)
 
       runtime.release()
       await runChunksPromise
 
       await waitForCondition(() => {
-        expect(runtime.streamInputs).toHaveLength(1)
-      }, 'snapshot-mismatched steer item to stay out of queue drain')
+        expect(runtime.streamInputs).toHaveLength(2)
+      }, 'snapshot-mismatched steer item to drain onto the next run')
       expect(runtime.steerInputs).toHaveLength(0)
       expect(await listChatQueue(app, 'session-live-steer-snapshot')).toEqual([])
     } finally {
@@ -6136,12 +6138,29 @@ describe('chat runtime capability', () => {
           body: JSON.stringify({ text: 'Steer next run', modelId: 'gpt-4o-mini' })
         })
       )
-      expect(steerRes.status).toBe(409)
-      expect(await steerRes.json()).toEqual(
+      expect(steerRes.status).toBe(200)
+      const steerResult = (await steerRes.json()) as { mode: string, queueItem: ChatQueueItemView }
+      expect(steerResult).toEqual(
         expect.objectContaining({
-          code: 'chat_steer_not_supported'
+          mode: 'queued',
+          ok: true,
+          sessionId: 'session-chat-queue'
         })
       )
+      expect(steerResult.queueItem).toEqual(
+        expect.objectContaining({ mode: 'queue', status: 'pending', text: 'Steer next run' })
+      )
+
+      // This test exercises the pre-existing multi-item queue mechanics (reorder/cancel/drain)
+      // below, which predate steer's auto-fallback; cancel the auto-queued steer item so those
+      // assertions keep exercising exactly the two items they were written against.
+      const cancelSteerQueueItemRes = await app.handle(
+        new Request(
+          `http://localhost/chat/sessions/session-chat-queue/queue/${encodeURIComponent(steerResult.queueItem.id)}`,
+          { method: 'DELETE' }
+        )
+      )
+      expect(cancelSteerQueueItemRes.status).toBe(200)
 
       let visibleQueue = await listChatQueue(app, 'session-chat-queue')
       expect(

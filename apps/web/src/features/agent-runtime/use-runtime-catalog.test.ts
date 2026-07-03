@@ -62,7 +62,7 @@ describe('listRuntimeCatalogForSurface', () => {
 
   it('preserves server-owned capability governance fields', () => {
     const capabilities: RuntimeCatalogItem['capabilities'] = {
-      supportsSteerTurn: true,
+      steer: 'native',
       supportsShellExecution: false,
       supportsLastTurnRollback: false,
       supportsRuntimeSettings: true,

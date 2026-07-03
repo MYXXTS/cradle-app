@@ -5,7 +5,7 @@ import type { UIMessage } from 'ai'
 
 import { AppError } from '../../../errors/app-error'
 import { createChildLogger } from '../../../logging/logger'
-import { readProviderStateSnapshot } from '../../chat-runtime-providers/provider-state-snapshot'
+import { readProviderStateSnapshot } from '../../chat-runtime-providers/kit/state-snapshot'
 import {
   registerSideConversation,
   reserveSideConversationHostLease

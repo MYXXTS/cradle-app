@@ -25,13 +25,29 @@ export { getWorkspacesByWorkspaceIdGitDiffQueryKey as gitDiffQueryKey }
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
-function gitRepositoryQuery(repositoryPath: string | null | undefined) {
-  return repositoryPath ? { query: { repo: repositoryPath } } : {}
+function gitRepositoryQuery(
+  repositoryPath: string | null | undefined,
+  sessionId?: string | null,
+) {
+  const query: { repo?: string, sessionId?: string } = {}
+  if (repositoryPath) {
+    query.repo = repositoryPath
+  }
+  if (sessionId) {
+    query.sessionId = sessionId
+  }
+  return Object.keys(query).length > 0 ? { query } : {}
 }
 
-export function useGitRepositories(workspaceId: string | null | undefined) {
+export function useGitRepositories(
+  workspaceId: string | null | undefined,
+  sessionId?: string | null,
+) {
   return useQuery({
-    ...getWorkspacesByWorkspaceIdGitRepositoriesOptions({ path: { workspaceId: workspaceId! } }),
+    ...getWorkspacesByWorkspaceIdGitRepositoriesOptions({
+      path: { workspaceId: workspaceId! },
+      ...gitRepositoryQuery(null, sessionId),
+    }),
     ...queryRefreshPolicies.active,
     enabled: !!workspaceId,
     retry: false,
@@ -41,11 +57,12 @@ export function useGitRepositories(workspaceId: string | null | undefined) {
 export function useGitStatus(
   workspaceId: string | null | undefined,
   repositoryPath?: string | null,
+  sessionId?: string | null,
 ) {
   return useQuery({
     ...getWorkspacesByWorkspaceIdGitStatusOptions({
       path: { workspaceId: workspaceId! },
-      ...gitRepositoryQuery(repositoryPath),
+      ...gitRepositoryQuery(repositoryPath, sessionId),
     }),
     ...queryRefreshPolicies.active,
     enabled: !!workspaceId,
@@ -56,11 +73,12 @@ export function useGitStatus(
 export function useGitFileStatuses(
   workspaceId: string | null | undefined,
   repositoryPath?: string | null,
+  sessionId?: string | null,
 ) {
   return useQuery({
     ...getWorkspacesByWorkspaceIdGitStatusOptions({
       path: { workspaceId: workspaceId! },
-      ...gitRepositoryQuery(repositoryPath),
+      ...gitRepositoryQuery(repositoryPath, sessionId),
     }),
     ...queryRefreshPolicies.active,
     enabled: !!workspaceId,

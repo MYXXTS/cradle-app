@@ -1,4 +1,5 @@
 import type { RuntimeIconDescriptor } from '~/components/common/provider-icons'
+import type { RuntimeCatalogCapabilityDegradation } from '~/features/agent-runtime/runtime-catalog'
 import type { ModelDescriptor, RuntimeKind } from '~/features/agent-runtime/types'
 
 import type { ThinkingOption } from './provider-model-menu'
@@ -19,6 +20,7 @@ export interface RuntimeKindOption {
   description?: string
   icon?: RuntimeIconDescriptor
   iconKey?: string
+  degradations?: RuntimeCatalogCapabilityDegradation[]
 }
 
 export type ThinkingCapabilityTier = 'none' | 'standard' | 'extended'

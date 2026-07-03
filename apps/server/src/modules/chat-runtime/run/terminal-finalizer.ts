@@ -15,6 +15,7 @@ import type { ChatMessageStatus } from './stream-chunks'
 import { readTerminalStatus } from './stream-chunks'
 import { isChatStreamTraceEnabled, recordChatStreamTrace } from '../stream-trace'
 import { attachBinding } from '../runtime-session-context'
+import { evaluateIsolationBoundary } from '../../worktree/service'
 import type { ActiveRun, TerminalChatMessageStatus } from '../run-registry'
 import type { ChatRuntimeProfile } from './profile'
 import {
@@ -111,6 +112,12 @@ export function createTerminalRunFinalizer(deps: TerminalRunFinalizerDeps) {
         }
       })
     }
+    void evaluateIsolationBoundary(activeRun.sessionId).catch((error) => {
+      deps.error('failed to evaluate isolation boundary after run terminal', {
+        sessionId: activeRun.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
     return true
   }
 

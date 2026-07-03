@@ -19,10 +19,10 @@ import type {
   RuntimeToolActivityStatus,
 } from '../../../chat-runtime/runtime-provider-types'
 import type { TokenUsage } from '../../../chat-runtime-engine/ai-sdk-engine'
-import type { WorkspaceProviderStateSnapshot } from '../../provider-state-snapshot'
+import type { WorkspaceProviderStateSnapshot } from '../../kit/state-snapshot'
 import {
   readWorkspaceProviderStateSnapshot,
-} from '../../provider-state-snapshot'
+} from '../../kit/state-snapshot'
 import type { CodexAppServerMessage } from '../app-server/client'
 import { isCodexAppServerToolApprovalRequest } from '../app-server/server-request-methods'
 import type { Turn } from '../app-server-protocol/v2/Turn'

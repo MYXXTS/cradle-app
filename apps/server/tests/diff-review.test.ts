@@ -28,7 +28,7 @@ const TEST_DIFF_REVIEW_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 const TEST_DIFF_REVIEW_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: false,

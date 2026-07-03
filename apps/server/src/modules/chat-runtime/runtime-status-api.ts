@@ -15,7 +15,7 @@ import {
   type RuntimeGoalContinuationScheduleInput,
 } from './run/runtime-goal-continuation'
 import { readDeltaChunkTextLength, type ChatMessageStatus } from './run/stream-chunks'
-import type { ChatRuntimeSettings } from './runtime-provider-types'
+import type { ChatRuntimeSettings, RuntimeGoalContinuationOptions } from './runtime-provider-types'
 import { DEFAULT_RUNTIME_SETTINGS, readSessionRuntimeSettings } from './runtime-settings'
 import { isProviderTargetAvailable } from './runtime-session-context'
 import { runRegistry, type ActiveRun } from './run-registry'
@@ -91,7 +91,12 @@ export interface ChatRuntimeSessionStatusDto {
 
 export interface RuntimeSessionStatusDeps {
   releaseTerminalPersistedActiveRunForSession: (sessionId: string) => Promise<boolean>
-  readContinueBlockedCodexGoals: () => boolean
+  /**
+   * Generic goal-continuation degradation options (see `RuntimeGoalContinuation` on
+   * `ChatRuntime`). This orchestrator layer must not know which runtime kind, if any,
+   * actually interprets `includeBlockedGoals` — that mapping lives at the composition root.
+   */
+  readRuntimeGoalContinuationOptions: () => RuntimeGoalContinuationOptions
   scheduleRuntimeGoalContinuation: (input: RuntimeGoalContinuationScheduleInput) => void
 }
 
@@ -204,15 +209,13 @@ export async function getRuntimeSessionStatus(
     ? listPendingRuntimeUserInputSummaries({ sessionId, runId: activeRun.runId })
     : []
   const providerTargetAvailable = activeRun ? true : isProviderTargetAvailable(providerTargetId)
-  const continueBlockedGoals = deps.readContinueBlockedCodexGoals()
+  const goalContinuationOptions = deps.readRuntimeGoalContinuationOptions()
   const runtime = binding ? getRuntimeRegistry().get(binding.runtimeKind) : undefined
   const hasActiveGoal =
     hasContinuableRuntimeGoal({
       runtime,
       binding,
-      options: {
-        includeBlockedGoals: continueBlockedGoals
-      }
+      options: goalContinuationOptions
     }) && providerTargetAvailable
   const status: RuntimeSessionStatusKind = activeRun
     ? activeRun.cancelRequested
@@ -228,9 +231,7 @@ export async function getRuntimeSessionStatus(
       sessionId,
       providerTargetId: providerTargetId ?? undefined,
       modelId: modelId ?? undefined,
-      options: {
-        includeBlockedGoals: continueBlockedGoals
-      }
+      options: goalContinuationOptions
     })
   }
 

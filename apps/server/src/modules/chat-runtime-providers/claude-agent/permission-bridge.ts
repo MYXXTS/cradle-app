@@ -137,6 +137,9 @@ async function handleAskUserQuestionViaCanUseTool(input: {
   }
 }
 
+const CLAUDE_AGENT_PLAN_MODE_DENIAL_MESSAGE
+  = 'Cradle is in plan mode. Submit or revise the plan before running implementation tools.'
+
 async function handleClaudeAgentToolPermissionRequest(input: {
   deps: ProviderContext
   runtimeInput: StreamTurnInput | GetCapabilitiesInput
@@ -147,30 +150,12 @@ async function handleClaudeAgentToolPermissionRequest(input: {
   options: ClaudeAgentCanUseToolOptions
   emitToolApprovalRequest?: (request: ClaudeAgentToolApprovalRequest) => void
 }): Promise<PermissionResult> {
-  if (input.permissionMode === 'bypassPermissions') {
-    return allowClaudeAgentTool(input.toolInput)
-  }
-
-  if (input.runtimeSettings?.interactionMode === 'plan') {
-    return {
-      behavior: 'deny',
-      message: 'Cradle is in plan mode. Submit or revise the plan before running implementation tools.',
-    }
-  }
-
   if (!input.deps.requestToolApproval || !('runId' in input.runtimeInput)) {
     return {
       behavior: 'deny',
       message: 'Chat Runtime does not expose pending tool approval handling for this Claude Agent request.',
     }
   }
-
-  input.emitToolApprovalRequest?.({
-    toolCallId: input.options.toolUseID,
-    toolName: input.toolName,
-    toolInput: input.toolInput,
-    agentId: readClaudeAgentPermissionAgentId(input.options),
-  })
 
   const resolution = await requestProviderToolApproval({
     deps: input.deps,
@@ -192,6 +177,32 @@ async function handleClaudeAgentToolPermissionRequest(input: {
         displayName: input.options.displayName,
         description: input.options.description,
         agentID: input.options.agentID,
+      },
+    },
+    policy: {
+      // Claude-specific pre-checks that decide the outcome without ever reaching the user:
+      // an SDK-level bypass-permissions session should auto-approve, and Cradle's own plan
+      // mode should auto-deny implementation tools regardless of what the SDK would otherwise ask.
+      resolveOverride: () => {
+        if (input.permissionMode === 'bypassPermissions') {
+          return { requestId: input.options.toolUseID, approved: true }
+        }
+        if (input.runtimeSettings?.interactionMode === 'plan') {
+          return {
+            requestId: input.options.toolUseID,
+            approved: false,
+            reason: CLAUDE_AGENT_PLAN_MODE_DENIAL_MESSAGE,
+          }
+        }
+        return null
+      },
+      onBeforeDispatch: () => {
+        input.emitToolApprovalRequest?.({
+          toolCallId: input.options.toolUseID,
+          toolName: input.toolName,
+          toolInput: input.toolInput,
+          agentId: readClaudeAgentPermissionAgentId(input.options),
+        })
       },
     },
   })

@@ -34,7 +34,7 @@ export const CLAUDE_AGENT_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 export const CLAUDE_AGENT_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: true,
+  steer: 'native',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: true,

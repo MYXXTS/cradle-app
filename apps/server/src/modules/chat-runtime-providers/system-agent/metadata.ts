@@ -29,7 +29,7 @@ export const SYSTEM_AGENT_RUNTIME_ACTOR = {
 } satisfies RuntimeDefaultActorDescriptor
 
 export const SYSTEM_AGENT_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: false,
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: false,

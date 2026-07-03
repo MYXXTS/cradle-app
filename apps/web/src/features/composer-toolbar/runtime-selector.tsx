@@ -1,8 +1,9 @@
-import { DownSmallLine as ChevronDownIcon, RobotLine as BotIcon } from '@mingcute/react'
+import { DownSmallLine as ChevronDownIcon, InformationLine as InfoIcon, RobotLine as BotIcon } from '@mingcute/react'
 
 import { RuntimeIcon } from '~/components/common/provider-icons'
 import { Button } from '~/components/ui/button'
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from '~/components/ui/menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
 import type { RuntimeKind } from '~/features/agent-runtime/types'
 import { BROWSER_NATIVE_SURFACE_OCCLUSION_PROPS } from '~/features/browser/native-surface-occlusion'
 import { cn } from '~/lib/cn'
@@ -15,6 +16,16 @@ function getRuntimeLabel(option: RuntimeKindOption | undefined, value: RuntimeKi
 
 function getRuntimeDescription(option: RuntimeKindOption): string {
   return option.description ?? option.value
+}
+
+/**
+ * The only current UI consumer of `ChatRuntimeCapabilityDegradation`: surfaces the auto-derived
+ * `steerTurn` degradation (see chat-runtime-provider-registry.ts) as a small inline hint so users
+ * understand why a "steer" reply on this runtime gets queued instead of redirecting the run
+ * immediately, instead of only finding out from a runtime error.
+ */
+function getSteerDegradation(option: RuntimeKindOption) {
+  return option.degradations?.find(degradation => degradation.capability === 'steerTurn')
 }
 
 function RuntimeOptionIcon({
@@ -85,21 +96,34 @@ export function RuntimeSelector({
         sideOffset={4}
         {...(occludeNativeBrowserSurface ? BROWSER_NATIVE_SURFACE_OCCLUSION_PROPS : {})}
       >
-        {options.map(opt => (
-          <MenuItem
-            key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={cn(value === opt.value && 'font-medium')}
-          >
-            <RuntimeOptionIcon option={opt} className="size-3.5" />
-            <div className="flex flex-col">
-              <span>{getRuntimeLabel(opt, opt.value)}</span>
-              <span className="text-[11px] text-muted-foreground">
-                {getRuntimeDescription(opt)}
-              </span>
-            </div>
-          </MenuItem>
-        ))}
+        {options.map((opt) => {
+          const steerDegradation = getSteerDegradation(opt)
+          return (
+            <MenuItem
+              key={opt.value}
+              onClick={() => onChange(opt.value)}
+              className={cn(value === opt.value && 'font-medium')}
+            >
+              <RuntimeOptionIcon option={opt} className="size-3.5" />
+              <div className="flex flex-col">
+                <span>{getRuntimeLabel(opt, opt.value)}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {getRuntimeDescription(opt)}
+                </span>
+              </div>
+              {steerDegradation && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(
+                      <InfoIcon className="ml-auto size-3 shrink-0 text-muted-foreground/70" />
+                    )}
+                  />
+                  <TooltipContent side="right">{steerDegradation.reason}</TooltipContent>
+                </Tooltip>
+              )}
+            </MenuItem>
+          )
+        })}
       </MenuPopup>
     </Menu>
   )

@@ -237,7 +237,6 @@ export const SNAPSHOT_SYNC_DEBOUNCE_MS = 75
 export const QUEUE_DRAIN_SYNC_DELAY_MS = 150
 export const EMPTY_QUEUE_ITEMS: ChatQueueItem[] = []
 export const BANG_COMMAND_DRIVER_PREFIX = 'bang-command'
-export const STEER_FALLBACK_ERROR_CODES = new Set(['chat_steer_context_mismatch', 'chat_steer_no_active_run'])
 export const CODEX_PLAN_IMPLEMENTATION_PROMPT_PREFIX = 'PLEASE IMPLEMENT THIS PLAN:'
 export const CODEX_PLAN_IMPLEMENTATION_APPROVAL_PREFIX = 'implement-plan:'
 

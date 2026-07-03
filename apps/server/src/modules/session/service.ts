@@ -37,6 +37,8 @@ import {
   resolveProviderTarget
 } from '../provider-targets/service'
 import * as Workspace from '../workspace/service'
+import { attachSessionToWorktree } from '../worktree/service'
+import { readSessionIsolation } from '../worktree/service'
 
 export type SessionStatus = 'idle' | 'streaming' | 'error'
 export type SessionView = Session & {
@@ -46,6 +48,13 @@ export type SessionView = Session & {
   latestUserMessageAt: number | null
   latestAssistantMessageAt: number | null
   unread: boolean
+  isIsolated: boolean
+  worktreeId: string | null
+  worktreeBranch: string | null
+  worktreePath: string | null
+  worktreeHealth: 'ok' | 'missing' | 'stale' | null
+  pendingWorktreeId: string | null
+  isolationBoundaryRequired: boolean
 }
 
 type SessionRuntimeSettingsCreatePatch = ChatRuntimeSettingsPatch & {
@@ -66,6 +75,7 @@ const SessionCreateInputSchema = z.object({
   runtimeSettings: z.unknown().optional(),
   agentId: z.string().nullable().optional(),
   linkedIssueId: z.string().nullable().default(null),
+  worktreeId: z.string().nullable().optional(),
   configJson: z.string().optional()
 })
 
@@ -246,6 +256,7 @@ function toSessionView(
   latestUserMessageAt: number | null = null,
   latestAssistantMessageAt: number | null = null
 ): SessionView {
+  const isolation = readSessionIsolation(session)
   return {
     ...session,
     providerTargetId: session.providerTargetId,
@@ -256,7 +267,14 @@ function toSessionView(
     latestAssistantMessageAt,
     unread:
       latestAssistantMessageAt !== null &&
-      (session.lastReadAt === null || latestAssistantMessageAt > session.lastReadAt)
+      (session.lastReadAt === null || latestAssistantMessageAt > session.lastReadAt),
+    isIsolated: isolation.isIsolated,
+    worktreeId: isolation.worktreeId,
+    worktreeBranch: isolation.worktreeBranch,
+    worktreePath: isolation.worktreePath,
+    worktreeHealth: isolation.worktreeHealth,
+    pendingWorktreeId: isolation.pendingWorktreeId,
+    isolationBoundaryRequired: isolation.isolationBoundaryRequired,
   }
 }
 
@@ -530,6 +548,7 @@ export function create(input: {
   runtimeSettings?: SessionRuntimeSettingsCreatePatch
   agentId?: string | null
   linkedIssueId?: string | null
+  worktreeId?: string | null
   configJson?: string
 }): SessionView {
   const parsed = SessionCreateInputSchema.parse(input)
@@ -578,12 +597,24 @@ export function create(input: {
       runtimeKind: resolved.runtimeKind,
       agentId: resolved.agentId,
       configJson,
-      linkedIssueId: parsed.linkedIssueId
+      linkedIssueId: parsed.linkedIssueId,
+      worktreeId: parsed.worktreeId ?? null,
     })
     .returning()
     .get()
 
-  return toSessionView(created, readSessionModelPreference(created.configJson), 'idle')
+  if (parsed.worktreeId) {
+    attachSessionToWorktree({
+      sessionId: created.id,
+      worktreeId: parsed.worktreeId,
+    })
+  }
+
+  const finalRow = parsed.worktreeId
+    ? db().select().from(sessions).where(eq(sessions.id, created.id)).get() ?? created
+    : created
+
+  return toSessionView(finalRow, readSessionModelPreference(finalRow.configJson), 'idle')
 }
 
 function resolveSessionWorkspaceId(input: { workspaceId?: string | null }): string | null {

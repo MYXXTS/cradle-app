@@ -26,7 +26,7 @@ describe('chat runtime route composition', () => {
         }
         slots: Array<{ id: string, name: string }>
         capabilities: {
-          supportsSteerTurn: boolean
+          steer: string
           sessionModelSwitch: string
         } | null
         degradations?: Array<{ capability: string, status: string }>
@@ -43,7 +43,7 @@ describe('chat runtime route composition', () => {
         thinking: 'per-model',
       }),
       capabilities: expect.objectContaining({
-        supportsSteerTurn: false,
+        steer: 'queue-fallback',
         sessionModelSwitch: 'in-session',
       }),
       stability: 'stable',

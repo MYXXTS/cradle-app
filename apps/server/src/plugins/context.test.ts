@@ -315,7 +315,7 @@ describe('server plugin context lifecycle', () => {
         providerKinds: ['openai-compatible'],
       } satisfies ChatRuntimeMetadata,
       capabilities: {
-        supportsSteerTurn: false,
+        steer: 'queue-fallback',
         supportsShellExecution: false,
         supportsLastTurnRollback: false,
         supportsRuntimeSettings: false,

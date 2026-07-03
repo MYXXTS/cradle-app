@@ -32,6 +32,7 @@ import type { ActiveRun } from '../run-registry'
 import type {
   ChatRuntimeSettings,
   ChatThinkingEffort,
+  RuntimeGoalContinuationOptions,
   RuntimeProviderTargetProfile
 } from '../runtime-provider-types'
 import type { SerializedChatError } from './errors'
@@ -100,7 +101,12 @@ export interface TurnExecutorDeps {
   scheduleQueueDrain(sessionId: string): void
   scheduleRuntimeGoalContinuation(input: RuntimeGoalContinuationScheduleInput): void
   pendingQueueItemCount(sessionId: string): number
-  readContinueBlockedCodexGoals(): boolean
+  /**
+   * Generic goal-continuation degradation options (see `RuntimeGoalContinuation` on
+   * `ChatRuntime`). Orchestrator code must not know which runtime kind, if any, actually
+   * interprets `includeBlockedGoals` — that mapping lives entirely at the composition root.
+   */
+  readRuntimeGoalContinuationOptions(): RuntimeGoalContinuationOptions
   warn(message: string, payload: Record<string, unknown>): void
   error(message: string, payload: Record<string, unknown>): void
 }
@@ -416,9 +422,7 @@ function completeRun(
       binding && isProviderTargetAvailable(binding.providerTargetId)
     ),
     pendingQueueItemCount: deps.pendingQueueItemCount(activeRun.sessionId),
-    options: {
-      includeBlockedGoals: deps.readContinueBlockedCodexGoals()
-    }
+    options: deps.readRuntimeGoalContinuationOptions()
   })
   if (shouldFinalizeDiagnostics) {
     deps.finalizeSnapshot(activeRun, finalChunk, {
@@ -452,9 +456,7 @@ function completeRun(
       sessionId: activeRun.sessionId,
       providerTargetId: activeRun.providerTargetId,
       modelId: actualModelId ?? undefined,
-      options: {
-        includeBlockedGoals: deps.readContinueBlockedCodexGoals()
-      }
+      options: deps.readRuntimeGoalContinuationOptions()
     })
   }
 }

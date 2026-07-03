@@ -3,9 +3,16 @@ import { randomUUID } from 'node:crypto'
 import type { UIMessage } from 'ai'
 
 import { AppError } from '../../../errors/app-error'
+import { getRuntimeRegistry } from '../chat-runtime-provider-registry'
+import { enqueueSessionQueueItem } from '../queue/api'
+import type {
+  ChatSessionQueueItemDto,
+  EnqueueSessionQueueItemInput,
+  SessionSteerTurnDto,
+  SubmitSessionSteerTurnInput
+} from '../queue/session-queue'
 import { serializeChatError } from '../run/errors'
 import { runRegistry } from '../run-registry'
-import type { SessionSteerTurnDto, SubmitSessionSteerTurnInput } from '../queue/session-queue'
 import {
   assertRuntimeCompatibleTarget,
   getSessionRunContext
@@ -15,7 +22,37 @@ import { createUserMessage } from '../ui-message'
 
 export interface SubmitSessionSteerTurnDeps {
   finalizeInterruptedPersistedStreamingSessionIfIdle(sessionId: string): Promise<void>
+  scheduleSessionQueueDrain(sessionId: string): void
   warn(message: string, payload: Record<string, unknown>): void
+}
+
+/**
+ * Enqueue the steer request as a regular queue item instead of live-steering. Used both when the
+ * target runtime's `steer` capability is `'queue-fallback'`/`'unsupported'`... no: `'unsupported'`
+ * rejects outright before this is called; this path handles `'queue-fallback'` runtimes and
+ * `'native'` runtimes with no matching active run to steer.
+ */
+async function enqueueSteerRequestAsQueueItem(
+  input: SubmitSessionSteerTurnInput,
+  deps: SubmitSessionSteerTurnDeps
+): Promise<SessionSteerTurnDto> {
+  const enqueueInput: EnqueueSessionQueueItemInput = {
+    sessionId: input.sessionId,
+    text: input.text,
+    files: input.files,
+    contextParts: input.contextParts,
+    providerTargetId: input.providerTargetId
+  }
+  const queueItem: ChatSessionQueueItemDto = await enqueueSessionQueueItem(enqueueInput, {
+    finalizeInterruptedPersistedStreamingSessionIfIdle: deps.finalizeInterruptedPersistedStreamingSessionIfIdle,
+    scheduleSessionQueueDrain: deps.scheduleSessionQueueDrain
+  })
+  return {
+    mode: 'queued',
+    ok: true,
+    sessionId: input.sessionId,
+    queueItem
+  }
 }
 
 export async function submitSessionSteerTurn(
@@ -35,29 +72,6 @@ export async function submitSessionSteerTurn(
   }
 
   await deps.finalizeInterruptedPersistedStreamingSessionIfIdle(input.sessionId)
-  const runId = runRegistry.getActiveRunIdForSession(input.sessionId)
-  if (!runId) {
-    throw new AppError({
-      code: 'chat_steer_no_active_run',
-      status: 409,
-      message: 'Chat steer requires an active run',
-      details: { sessionId: input.sessionId }
-    })
-  }
-
-  const activeRun = runRegistry.getActiveRun(runId)
-  if (
-    !activeRun?.runtime.capabilities.supportsSteerTurn ||
-    !activeRun.runtime.steerTurn ||
-    activeRun.terminalStatus
-  ) {
-    throw new AppError({
-      code: 'chat_steer_not_supported',
-      status: 409,
-      message: 'Active chat run does not support live steering',
-      details: { sessionId: input.sessionId, runId }
-    })
-  }
 
   const context = getSessionRunContext(input.sessionId, {
     providerTargetId: input.providerTargetId
@@ -72,14 +86,33 @@ export async function submitSessionSteerTurn(
   }
   assertRuntimeCompatibleTarget(context, input.providerTargetId)
 
-  const requestedProviderTargetId = input.providerTargetId?.trim() || null
-  if (requestedProviderTargetId && requestedProviderTargetId !== activeRun.providerTargetId) {
+  const runtimeKind = context.session.runtimeKind ?? 'standard'
+  const runtime = getRuntimeRegistry().get(runtimeKind)
+  if (!runtime || runtime.capabilities.steer === 'unsupported') {
     throw new AppError({
-      code: 'chat_steer_context_mismatch',
+      code: 'chat_steer_not_supported',
       status: 409,
-      message: 'Live steer request does not match the active run context',
-      details: { sessionId: input.sessionId, runId }
+      message: 'Chat runtime does not support live steering or queueing a steer request',
+      details: { sessionId: input.sessionId, runtimeKind }
     })
+  }
+
+  const runId = runRegistry.getActiveRunIdForSession(input.sessionId)
+  const activeRun = runId ? runRegistry.getActiveRun(runId) : undefined
+  const requestedProviderTargetId = input.providerTargetId?.trim() || null
+  const steerHook = activeRun?.runtime.steerTurn
+  const hasMatchingActiveRun =
+    !!activeRun &&
+    !activeRun.terminalStatus &&
+    !!steerHook &&
+    (!requestedProviderTargetId || requestedProviderTargetId === activeRun.providerTargetId)
+
+  // Server-side auto-fallback (doc §3.4): the client never branches on a fallback error code.
+  // `queue-fallback` runtimes always queue; `native` runtimes queue only when there's no active
+  // run they can actually steer (not started yet, already finished, or targeting a different
+  // provider context) rather than rejecting the request outright.
+  if (runtime.capabilities.steer === 'queue-fallback' || !activeRun || !steerHook || !hasMatchingActiveRun) {
+    return await enqueueSteerRequestAsQueueItem(input, deps)
   }
 
   const sourceMessageId = activeRun.messageId
@@ -89,7 +122,7 @@ export async function submitSessionSteerTurn(
     { mode: 'steer', sourceMessageId, splitParts }
   )
   try {
-    await activeRun.runtime.steerTurn({
+    await steerHook({
       runtimeSession: activeRun.runtimeSession,
       profile: context.profile,
       message: steerMessage
@@ -98,14 +131,14 @@ export async function submitSessionSteerTurn(
     deps.warn('runtime live steer failed', {
       error,
       sessionId: input.sessionId,
-      runId,
+      runId: activeRun.runId,
       runtimeKind: activeRun.runtimeSession.runtimeKind
     })
     throw new AppError({
       code: 'chat_steer_rejected',
       status: 409,
       message: 'Runtime rejected live steer',
-      details: { sessionId: input.sessionId, runId, error: serializeChatError(error).text }
+      details: { sessionId: input.sessionId, runId: activeRun.runId, error: serializeChatError(error).text }
     })
   }
 
@@ -119,16 +152,17 @@ export async function submitSessionSteerTurn(
     deps.warn('runtime live steer was applied but history persistence failed', {
       error,
       sessionId: input.sessionId,
-      runId,
+      runId: activeRun.runId,
       runtimeKind: activeRun.runtimeSession.runtimeKind
     })
     throw error
   }
 
   return {
+    mode: 'steered',
     ok: true,
     sessionId: input.sessionId,
-    runId,
+    runId: activeRun.runId,
     sourceMessageId,
     message: steerMessage
   }

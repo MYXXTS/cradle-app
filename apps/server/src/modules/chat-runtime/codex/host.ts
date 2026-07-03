@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { AppError } from '../../../errors/app-error'
 import { db } from '../../../infra'
 import { createChildLogger } from '../../../logging/logger'
-import { readProviderStateSnapshot } from '../../chat-runtime-providers/provider-state-snapshot'
+import { readProviderStateSnapshot } from '../../chat-runtime-providers/kit/state-snapshot'
 import type {
   CodexAppServerInvokeInput as ProviderCodexAppServerInvokeInput,
   CodexAppServerInvokeResponse,

@@ -54,11 +54,12 @@ function formatErrorDescription(error: unknown): string {
 interface ChangesPanelProps {
   workspaceId: string | null | undefined
   workspacePath?: string | null
+  sessionId?: string | null
 }
 
-export function ChangesPanel({ workspaceId, workspacePath }: ChangesPanelProps) {
+export function ChangesPanel({ workspaceId, workspacePath, sessionId }: ChangesPanelProps) {
   const [viewMode, setViewMode] = useState<ChangesViewMode>('type')
-  const { data: repositories, isLoading, isError, isSuccess } = useGitRepositories(workspaceId)
+  const { data: repositories, isLoading, isError, isSuccess } = useGitRepositories(workspaceId, sessionId)
   const gitRepositories = repositories ?? []
   const changedFileCount = gitRepositories.reduce((total, repository) => total + repository.files.length, 0)
   const openWorkspaceDiffTab = useBrowserPanelStore(state => state.openWorkspaceDiffTab)

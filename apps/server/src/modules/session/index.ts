@@ -2,6 +2,8 @@ import { Elysia, t } from 'elysia'
 
 import { AppError } from '../../errors/app-error'
 import * as Issue from '../issue/service'
+import { WorktreeModel } from '../worktree/model'
+import * as Worktree from '../worktree/service'
 import { SessionModel } from './model'
 import * as Session from './service'
 
@@ -197,4 +199,96 @@ export const session = new Elysia({
     },
     params: SessionModel.idParams,
     response: { 200: t.Object({ ok: t.Literal(true) }) }
+  })
+  .post('/:id/isolation/start', async ({ params, body }) => {
+    return await Worktree.startSessionIsolation({
+      sessionId: params.id,
+      slug: body.slug,
+    })
+  }, {
+    detail: {
+      summary: 'Start session isolation',
+      'x-cradle-cli': { command: ['session', 'isolation', 'start'] },
+    },
+    params: SessionModel.idParams,
+    body: SessionModel.isolationStartBody,
+    response: { 200: SessionModel.isolationStartResponse },
+  })
+  .post('/:id/isolation/activate', async ({ params, body }) => {
+    await Worktree.activateSessionIsolation({
+      sessionId: params.id,
+      mode: body.mode,
+    })
+    return { ok: true as const }
+  }, {
+    detail: {
+      summary: 'Activate pending session isolation',
+      'x-cradle-cli': { command: ['session', 'isolation', 'activate'] },
+    },
+    params: SessionModel.idParams,
+    body: SessionModel.isolationActivateBody,
+    response: { 200: t.Object({ ok: t.Literal(true) }) },
+  })
+  .post('/:id/isolation/cancel', async ({ params }) => {
+    await Worktree.activateSessionIsolation({
+      sessionId: params.id,
+      mode: 'cancel',
+    })
+    return { ok: true as const }
+  }, {
+    detail: {
+      summary: 'Cancel pending session isolation',
+      'x-cradle-cli': { command: ['session', 'isolation', 'cancel'] },
+    },
+    params: SessionModel.idParams,
+    response: { 200: t.Object({ ok: t.Literal(true) }) },
+  })
+  .post('/:id/isolation/leave', ({ params }) => {
+    Worktree.leaveSessionIsolation(params.id)
+    return { ok: true as const }
+  }, {
+    detail: {
+      summary: 'Leave isolated execution for session',
+      'x-cradle-cli': { command: ['session', 'isolation', 'leave'] },
+    },
+    params: SessionModel.idParams,
+    response: { 200: t.Object({ ok: t.Literal(true) }) },
+  })
+  .post('/:id/isolation/repair', async ({ params }) => {
+    const worktree = await Worktree.repairSessionWorktree(params.id)
+    return { worktree }
+  }, {
+    detail: {
+      summary: 'Recreate missing isolated checkout for session',
+      'x-cradle-cli': { command: ['session', 'isolation', 'repair'] },
+    },
+    params: SessionModel.idParams,
+    response: { 200: t.Object({ worktree: WorktreeModel.worktreeView }) },
+  })
+  .post('/:id/isolation/attach', ({ params, body }) => {
+    Worktree.attachSessionToWorktree({
+      sessionId: params.id,
+      worktreeId: body.worktreeId,
+    })
+    return { ok: true as const }
+  }, {
+    detail: {
+      summary: 'Attach session to existing worktree',
+    },
+    params: SessionModel.idParams,
+    body: SessionModel.isolationAttachBody,
+    response: { 200: t.Object({ ok: t.Literal(true) }) },
+  })
+  .get('/:id/isolation', async ({ params }) => {
+    const session = Worktree.getSessionForIsolation(params.id)
+    if (!session) {
+      throw new AppError({ code: 'session_not_found', status: 404, message: 'Session not found' })
+    }
+    return await Worktree.readSessionIsolationAsync(session)
+  }, {
+    detail: {
+      summary: 'Get session isolation state',
+    },
+    params: SessionModel.idParams,
+    response: { 200: SessionModel.isolationView },
   })

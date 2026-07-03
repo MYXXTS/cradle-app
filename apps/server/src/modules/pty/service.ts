@@ -13,6 +13,7 @@ import { reportRuntimeSessionTitle } from '../chat-runtime/title-service'
 import { runtimeUsesAgentTerminalLaunch } from '../provider-contracts/runtime-compatibility'
 import * as SessionService from '../session/service'
 import * as Workspace from '../workspace/service'
+import { resolveSessionExecutionRootById } from '../worktree/service'
 import { captureCodexCliSession } from './codex-session-capture'
 import type { PtyClientEvent } from './protocol'
 import type { PtyRuntimeRole } from './pty.runtime'
@@ -158,9 +159,21 @@ function getTerminalContext(sessionId: string): TerminalSessionContext | null {
     return null
   }
 
-  const workspacePath = session.workspaceId
-    ? Workspace.getLocalWorkspacePath(session.workspaceId)
-    : null
+  const execution = resolveSessionExecutionRootById(sessionId)
+  if (execution?.worktreeId && !execution.isIsolated) {
+    throw new AppError({
+      code: 'worktree_unavailable',
+      status: 409,
+      message: 'Isolated checkout is unavailable. Repair or leave isolation before opening a terminal.',
+      details: {
+        sessionId,
+        worktreeId: execution.worktreeId,
+        worktreeHealth: execution.worktreeHealth ?? 'missing',
+      },
+    })
+  }
+  const workspacePath = execution?.rootPath
+    || (session.workspaceId ? Workspace.getLocalWorkspacePath(session.workspaceId) : null)
   if (!workspacePath) {
     return null
   }

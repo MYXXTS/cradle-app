@@ -48,6 +48,7 @@ import { skills } from './modules/skills'
 import { testReset } from './modules/test-reset'
 import { usage } from './modules/usage'
 import { workflowRules } from './modules/workflow-rules'
+import { worktree } from './modules/worktree'
 import { workspace } from './modules/workspace'
 
 interface CreateServerAppOptions {
@@ -152,6 +153,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(skills)
   app.use(workflowRules)
   app.use(git)
+  app.use(worktree)
   app.use(diffReview)
   app.use(acp)
   app.use(chatRuntimeGlobalEventRoutes)

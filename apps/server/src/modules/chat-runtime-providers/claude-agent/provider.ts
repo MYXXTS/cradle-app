@@ -51,7 +51,7 @@ import { readTrustedClaudeAgentConfig } from '../../provider-contracts/provider-
 import { AsyncEventQueue } from '../async-event-queue'
 import { createBoundedTextCollector } from '../bounded-text-collector'
 import { providerChunk } from '../kit/chunk-mapper'
-import { readWorkspaceProviderStateSnapshot } from '../provider-state-snapshot'
+import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 import { ClaudeAgentInputStream, emptyClaudeAgentInput } from './async-input-stream'
 import { projectClaudeAgentCompactState, projectClaudeAgentContextUsage } from './context-usage-projector'
 import type { ClaudeAgentCapturedCrewCall, ClaudeAgentChunkMapperState } from './event-to-chunk-mapper'

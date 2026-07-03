@@ -44,6 +44,7 @@ export const GitModel = {
 
   repositoryQuery: t.Object({
     repo: t.Optional(t.String({ minLength: 1 })),
+    sessionId: t.Optional(t.String({ minLength: 1 })),
   }),
 
   diffQuery: t.Object({
