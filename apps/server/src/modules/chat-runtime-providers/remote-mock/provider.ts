@@ -1,12 +1,10 @@
-import type { UIMessageChunk } from 'ai'
 import type { RemoteAgentTurnEvent } from '@cradle/remote-agent-protocol'
+import type { UIMessageChunk } from 'ai'
 import { z } from 'zod'
 
 import type {
   CancelTurnInput,
   ChatRuntime,
-  ChatRuntimeCapabilities,
-  ChatRuntimeMetadata,
   ProviderContext,
   ResumeChatSessionInput,
   RuntimeProviderTargetProfile,
@@ -20,30 +18,13 @@ import {
   ProviderRuntimeError,
   requireRuntimeProviderTargetProfile,
 } from '../../chat-runtime/runtime-provider-types'
-import type { RuntimeKind } from '../../provider-contracts/types'
 import * as RemoteHosts from '../../remote-hosts/service'
-
-const RUNTIME_KIND = 'remote-mock' as RuntimeKind
-const DEFAULT_REMOTE_RUNTIME_KIND = 'mock-remote'
-
-const REMOTE_MOCK_RUNTIME_METADATA = {
-  label: 'Remote Mock',
-  description: 'Development runtime that streams through cradle-agentd.',
-  providerKinds: ['universal'],
-  iconKey: 'terminal',
-  surfaces: ['chat'],
-  sortOrder: 90,
-} satisfies ChatRuntimeMetadata
-
-const REMOTE_MOCK_RUNTIME_CAPABILITIES = {
-  supportsSteerTurn: true,
-  supportsShellExecution: false,
-  supportsLastTurnRollback: false,
-  supportsRuntimeSettings: false,
-  supportsUiSlotStates: false,
-  supportsDynamicCapabilities: false,
-  sessionModelSwitch: 'restart-session',
-} satisfies ChatRuntimeCapabilities
+import {
+  DEFAULT_REMOTE_RUNTIME_KIND,
+  REMOTE_MOCK_RUNTIME_CAPABILITIES,
+  REMOTE_MOCK_RUNTIME_KIND,
+  REMOTE_MOCK_RUNTIME_METADATA,
+} from './presentation'
 
 const remoteMockConfigSchema = z.object({
   remoteHostId: z.string().trim().min(1),
@@ -75,7 +56,7 @@ export function createRemoteMockProvider(_ctx: ProviderContext): ChatRuntime {
 }
 
 export class RemoteMockProvider implements ChatRuntime {
-  readonly runtimeKind = RUNTIME_KIND
+  readonly runtimeKind = REMOTE_MOCK_RUNTIME_KIND
   readonly metadata = REMOTE_MOCK_RUNTIME_METADATA
   readonly capabilities = REMOTE_MOCK_RUNTIME_CAPABILITIES
 
@@ -106,7 +87,7 @@ export class RemoteMockProvider implements ChatRuntime {
 
     return {
       ...input.runtimeSession,
-      runtimeKind: RUNTIME_KIND,
+      runtimeKind: REMOTE_MOCK_RUNTIME_KIND,
       providerStateSnapshot: JSON.stringify({
         ...snapshot,
         remote: snapshot.remote ?? null,
@@ -257,7 +238,7 @@ export class RemoteMockProvider implements ChatRuntime {
         id: input.chatSessionId,
         chatSessionId: input.chatSessionId,
         providerTargetId: input.profile.providerTargetId,
-        runtimeKind: RUNTIME_KIND,
+        runtimeKind: REMOTE_MOCK_RUNTIME_KIND,
         providerSessionId: result.agent.agentId,
         providerStateSnapshot: JSON.stringify(snapshot),
       }
@@ -275,7 +256,7 @@ function readRemoteMockConfig(profile: RuntimeProviderTargetProfile): RemoteMock
   catch (error) {
     throw new ProviderRuntimeError(
       ProviderErrors.requestFailed(
-        RUNTIME_KIND,
+        REMOTE_MOCK_RUNTIME_KIND,
         'readConfig',
         `Remote mock provider target config is invalid: ${error instanceof Error ? error.message : String(error)}`,
       ),
@@ -328,7 +309,7 @@ function toProviderRuntimeError(error: unknown, method: string): ProviderRuntime
     return error
   }
   const detail = error instanceof Error ? error.message : String(error)
-  return new ProviderRuntimeError(ProviderErrors.requestFailed(RUNTIME_KIND, method, detail), {
+  return new ProviderRuntimeError(ProviderErrors.requestFailed(REMOTE_MOCK_RUNTIME_KIND, method, detail), {
     cause: error,
   })
 }
