@@ -20,6 +20,4 @@ Runtime provider directories use a shared domain package shape when they own a r
 - `claude-agent/`: Claude Agent SDK provider package using metadata, input, async stream, event-to-chunk, state, subagent, tool envelope, and test modules.
 - `codex/`: Codex app-server provider package with a thin top-level facade and owner directories for app-server boundary, runtime config, Cradle projections, turn orchestration, and tool envelope mapping.
 - `mock-claude-agent/provider.ts`: mock Claude Agent provider for local diagnostics.
-- `remote-mock/provider.ts`: remote cradle-agentd mock provider kept under the Phase 4 provider-kit acceptance budget.
-- `remote-mock/presentation.ts`: remote mock runtime descriptor metadata, including goal slot and settings schema coverage for descriptor-driven UI validation.
 - `system-agent/`: jar-core System Agent provider package using metadata, runtime context, input, model-registry bridge, event-to-chunk, state, and provider facade modules.

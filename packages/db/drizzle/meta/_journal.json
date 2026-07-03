@@ -120,6 +120,13 @@
       "when": 1783028643516,
       "tag": "0016_plain_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1783058538709,
+      "tag": "0017_talented_arachne",
+      "breakpoints": true
     }
   ]
 }
