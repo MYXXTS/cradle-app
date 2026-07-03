@@ -6,6 +6,7 @@ const nonBlankString = t.String({ minLength: 1, pattern: '.*\\S.*' })
 const remoteHostTransport = t.Union([
   t.Literal('ssh'),
   t.Literal('direct-url'),
+  t.Literal('relay'),
 ])
 const sshAuth = t.Union([
   t.Literal('default'),
@@ -16,6 +17,14 @@ const cradleServerConnectionState = t.Union([
   t.Literal('connected'),
   t.Literal('offline'),
 ])
+
+const relayConfig = t.Object({
+  relayServerId: t.Optional(nullableString),
+  relayUrl: t.Optional(nullableString),
+  roomId: t.Optional(nullableString),
+  pinnedHostPubkey: t.Optional(nullableString),
+  controllerKeyRef: t.Optional(nullableString),
+}, { additionalProperties: false })
 
 const sshProfile = t.Object({
   hostName: nonBlankString,
@@ -32,6 +41,7 @@ const connectionConfig = t.Object({
   sshExecutable: t.Optional(nonBlankString),
   sshArgs: t.Optional(t.Array(t.String())),
   connectTimeoutMs: t.Optional(t.Integer({ minimum: 1, maximum: 120_000 })),
+  relay: t.Optional(relayConfig),
 }, { additionalProperties: false })
 
 const cradleServerCapability = t.Object({
@@ -195,5 +205,9 @@ export const RemoteHostsModel = {
 
   ok: t.Object({
     ok: t.Literal(true),
+  }, { additionalProperties: false }),
+
+  relayClaimBody: t.Object({
+    pairingString: nonBlankString,
   }, { additionalProperties: false }),
 } as const

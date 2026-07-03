@@ -7,6 +7,14 @@ import { z } from 'zod'
 
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
+import { upsertSecret, readSecret } from '../secrets/service'
+import { mintRelayToken } from '../relay-servers/relay-token-service'
+import { resolveRelayUrl as resolveRelayServerUrl } from '../relay-servers/service'
+import { generateRelayKeyPair, publicKeyFromPrivate, relayPublicKeyFingerprint } from '../relay-transport/crypto'
+import {
+  startRelayControllerTransport,
+  type RelayControllerTransportHandle,
+} from '../relay-transport/controller-transport'
 import {
   buildRemoteCradleSshLaunchConfig,
   startRemoteCradleServerTunnel,
@@ -37,7 +45,7 @@ export interface UpdateRemoteHostInput {
   capabilities?: RemoteHostCapabilitiesInput
 }
 
-export type RemoteHostTransport = 'ssh' | 'direct-url'
+export type RemoteHostTransport = 'ssh' | 'direct-url' | 'relay'
 
 export interface RemoteHostSshProfileInput {
   hostName: string
@@ -55,6 +63,22 @@ export interface RemoteHostSshProfile {
   identityFilePath: string | null
 }
 
+export interface RemoteHostRelayConfigInput {
+  relayServerId?: string | null
+  relayUrl?: string | null
+  roomId?: string | null
+  pinnedHostPubkey?: string | null
+  controllerKeyRef?: string | null
+}
+
+export interface RemoteHostRelayConfig {
+  relayServerId: string | null
+  relayUrl: string | null
+  roomId: string | null
+  pinnedHostPubkey: string | null
+  controllerKeyRef: string | null
+}
+
 export interface RemoteHostConnectionConfigInput {
   transport?: RemoteHostTransport
   baseUrl?: string
@@ -62,6 +86,7 @@ export interface RemoteHostConnectionConfigInput {
   sshExecutable?: string
   sshArgs?: string[]
   connectTimeoutMs?: number
+  relay?: RemoteHostRelayConfigInput
 }
 
 export interface RemoteHostCradleServerCapabilityInput {
@@ -127,8 +152,22 @@ interface RemoteHostConnectionPatch {
 }
 
 const nonBlankStringSchema = z.string().trim().min(1)
-const transportSchema = z.enum(['ssh', 'direct-url'])
+const transportSchema = z.enum(['ssh', 'direct-url', 'relay'])
 const sshAuthSchema = z.enum(['default', 'identityFile'])
+
+const relayConfigSchema = z.object({
+  relayServerId: nonBlankStringSchema.nullable().optional(),
+  relayUrl: nonBlankStringSchema.nullable().optional(),
+  roomId: nonBlankStringSchema.nullable().optional(),
+  pinnedHostPubkey: nonBlankStringSchema.nullable().optional(),
+  controllerKeyRef: nonBlankStringSchema.nullable().optional(),
+}).passthrough().transform(relay => ({
+  relayServerId: relay.relayServerId ?? null,
+  relayUrl: relay.relayUrl ?? null,
+  roomId: relay.roomId ?? null,
+  pinnedHostPubkey: relay.pinnedHostPubkey ?? null,
+  controllerKeyRef: relay.controllerKeyRef ?? null,
+}))
 
 const sshProfileSchema = z.object({
   hostName: nonBlankStringSchema,
@@ -166,6 +205,7 @@ const connectionConfigSchema = z.object({
   sshExecutable: nonBlankStringSchema.optional(),
   sshArgs: z.array(z.string()).optional(),
   connectTimeoutMs: z.number().int().positive().max(120_000).optional(),
+  relay: relayConfigSchema.optional(),
 }).passthrough().superRefine((config, ctx) => {
   const transport = config.transport ?? 'ssh'
   if (transport === 'ssh' && !config.ssh) {
@@ -180,6 +220,13 @@ const connectionConfigSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['baseUrl'],
       message: 'baseUrl is required when transport is direct-url.',
+    })
+  }
+  if (transport === 'relay' && !config.relay) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['relay'],
+      message: 'relay is required when transport is relay.',
     })
   }
 }).transform(config => ({
@@ -413,6 +460,10 @@ async function connectRemoteHostCradleServerInner(hostId: string): Promise<Remot
     if (connectionConfig.transport === 'direct-url') {
       baseUrl = normalizeBaseUrl(connectionConfig.baseUrl ?? '')
     }
+    else if (connectionConfig.transport === 'relay') {
+      tunnel = await startRelayControllerTunnel(host, connectionConfig)
+      baseUrl = tunnel.localBaseUrl
+    }
     else {
       tunnel = await startSshCradleTunnel(host, connectionConfig, capabilities)
       baseUrl = tunnel.localBaseUrl
@@ -430,7 +481,7 @@ async function connectRemoteHostCradleServerInner(hostId: string): Promise<Remot
         return
       }
       record.tunnelExited = true
-      record.lastError = `ssh tunnel exited with code ${exit.code ?? 'null'} signal ${exit.signal ?? 'null'}`
+      record.lastError = `tunnel exited with code ${exit.code ?? 'null'} signal ${exit.signal ?? 'null'}`
     })
     connections.set(hostId, record)
     await fetchRemoteCradleServerHealth(record)
@@ -473,6 +524,256 @@ async function startSshCradleTunnel(
     remotePort: capabilities.cradleServer.remotePort,
     readyTimeoutMs: connectionConfig.connectTimeoutMs ?? 10_000,
   })
+}
+
+// ── Relay transport ──
+
+const RELAY_CONTROLLER_KEY_SECRET_KIND = 'system-relay-controller-key'
+
+/**
+ * Claim a relay pairing: input the pairing string shown by the host, perform
+ * the first E2E handshake, verify the host's public key fingerprint (MITM
+ * check), then pin both pubkeys and the roomId into the remote-host config.
+ * After claiming, `connectRemoteHostCradleServer` reconnects with no pairing
+ * code (pinned-pubkey reconnect).
+ */
+export async function claimRemoteHostRelay(
+  hostId: string,
+  pairingString: string,
+): Promise<RemoteCradleServerConnectionView> {
+  const host = requireRemoteHost(hostId)
+  const connectionConfig = parseConnectionConfig(host.connectionConfigJson)
+  if (connectionConfig.transport !== 'relay' || !connectionConfig.relay) {
+    throw new AppError({
+      code: 'remote_host_not_relay',
+      status: 409,
+      message: 'Remote host transport is not relay.',
+      details: { hostId },
+    })
+  }
+  const relayUrl = resolveRelayUrl(connectionConfig.relay)
+  const { pairingCode, hostKeyFingerprint } = parsePairingString(pairingString)
+
+  // Step 1: look up the roomId for this pairing code (no controller token yet).
+  const claimToken = mintRelayToken({
+    subject: `controller:${hostId}`,
+    purpose: 'pairing_claim',
+    ttlMs: 5 * 60 * 1000,
+  })
+  const lookup = await callPairingClaim(relayUrl, {
+    pairingClaimToken: claimToken.token,
+    pairingCode,
+    controllerToken: '',
+  })
+  const roomId = lookup.roomId
+
+  // Controller keypair: reuse if we already have one, else generate + persist.
+  const existingKeyRef = connectionConfig.relay.controllerKeyRef
+  let controllerPrivateKeyBase64: string
+  let controllerPublicKeyBase64: string
+  let controllerKeyRef: string
+  if (existingKeyRef) {
+    controllerPrivateKeyBase64 = readSecret(existingKeyRef)
+    controllerPublicKeyBase64 = publicKeyFromPrivate(controllerPrivateKeyBase64)
+    controllerKeyRef = existingKeyRef
+  }
+  else {
+    const keypair = generateRelayKeyPair()
+    controllerKeyRef = `relay-controller-key:${hostId}`
+    upsertSecret({
+      id: controllerKeyRef,
+      kind: RELAY_CONTROLLER_KEY_SECRET_KIND,
+      label: `Relay controller key (${host.displayName})`,
+      secret: keypair.privateKeyBase64,
+    })
+    controllerPrivateKeyBase64 = keypair.privateKeyBase64
+    controllerPublicKeyBase64 = keypair.publicKeyBase64
+  }
+
+  // Step 2: mint a controller ws token (now we know the roomId) and claim.
+  const controllerWs = mintRelayToken({
+    subject: `controller:${hostId}`,
+    role: 'controller',
+    purpose: 'ws',
+    roomId,
+    ttlMs: 5 * 60 * 1000,
+  })
+  await callPairingClaim(relayUrl, {
+    pairingClaimToken: claimToken.token,
+    pairingCode,
+    controllerToken: controllerWs.token,
+  })
+
+  // Step 3: run the first handshake to learn + verify the host pubkey.
+  const handle = await startRelayControllerTransport({
+    hostId,
+    relayUrl,
+    roomId,
+    wsToken: controllerWs.token,
+    controllerPrivateKeyBase64,
+    controllerPublicKeyBase64,
+    pairingCode,
+    readyTimeoutMs: connectionConfig.connectTimeoutMs ?? 15_000,
+  })
+
+  const hostPubkey = handle.hostPublicKeyBase64
+  await handle.close()
+  if (!hostPubkey) {
+    throw new AppError({
+      code: 'relay_pairing_no_host_key',
+      status: 502,
+      message: 'Relay handshake completed but no host public key was learned.',
+      details: { hostId },
+    })
+  }
+  if (relayPublicKeyFingerprint(hostPubkey) !== hostKeyFingerprint) {
+    throw new AppError({
+      code: 'relay_pairing_fingerprint_mismatch',
+      status: 400,
+      message: 'Host public key fingerprint does not match the pairing string. Possible relay tampering.',
+      details: { hostId },
+    })
+  }
+
+  // Step 4: pin the host pubkey, roomId, and controller key reference.
+  const pinnedConfig: RemoteHostRelayConfig = {
+    ...connectionConfig.relay,
+    relayUrl,
+    roomId,
+    pinnedHostPubkey: hostPubkey,
+    controllerKeyRef,
+  }
+  const updated = parseConnectionConfig(JSON.stringify({ ...connectionConfig, relay: pinnedConfig }))
+  db()
+    .update(remoteHosts)
+    .set({
+      connectionConfigJson: JSON.stringify(updated),
+      updatedAt: currentUnixSeconds(),
+    })
+    .where(eq(remoteHosts.id, hostId))
+    .run()
+
+  return {
+    hostId,
+    state: 'idle',
+    localBaseUrl: null,
+    lastError: null,
+  }
+}
+
+/** Open a relay controller tunnel using the pinned host pubkey (reconnect). */
+async function startRelayControllerTunnel(
+  host: RemoteHost,
+  connectionConfig: RemoteHostConnectionConfig,
+): Promise<RemoteCradleServerTunnelHandle> {
+  const relay = connectionConfig.relay
+  if (!relay) {
+    throw new AppError({
+      code: 'remote_cradle_server_relay_required',
+      status: 400,
+      message: 'Relay configuration is required when transport is relay.',
+      details: { hostId: host.id },
+    })
+  }
+  const relayUrl = resolveRelayUrl(relay)
+  if (!relay.roomId || !relay.pinnedHostPubkey || !relay.controllerKeyRef) {
+    throw new AppError({
+      code: 'remote_cradle_server_relay_not_paired',
+      status: 409,
+      message: 'Relay host has not been paired yet. Call the relay claim endpoint first.',
+      details: { hostId: host.id },
+    })
+  }
+  const controllerPrivateKey = readSecret(relay.controllerKeyRef)
+  const controllerPublicKey = publicKeyFromPrivate(controllerPrivateKey)
+  const wsToken = mintRelayToken({
+    subject: `controller:${host.id}`,
+    role: 'controller',
+    purpose: 'ws',
+    roomId: relay.roomId,
+    ttlMs: 60 * 1000,
+  })
+  return await startRelayControllerTransport({
+    hostId: host.id,
+    relayUrl,
+    roomId: relay.roomId,
+    wsToken: wsToken.token,
+    controllerPrivateKeyBase64: controllerPrivateKey,
+    controllerPublicKeyBase64: controllerPublicKey,
+    pinnedHostPubkey: relay.pinnedHostPubkey,
+    readyTimeoutMs: connectionConfig.connectTimeoutMs ?? 15_000,
+  }) as RemoteCradleServerTunnelHandle
+}
+
+function resolveRelayUrl(relay: RemoteHostRelayConfig): string {
+  if (relay.relayUrl) {
+    return relay.relayUrl.replace(/\/+$/, '')
+  }
+  if (relay.relayServerId) {
+    return resolveRelayServerUrl(relay.relayServerId)
+  }
+  throw new AppError({
+    code: 'relay_url_required',
+    status: 400,
+    message: 'relayUrl or relayServerId is required for relay transport.',
+  })
+}
+
+function parsePairingString(pairingString: string): { pairingCode: string, hostKeyFingerprint: string } {
+  const trimmed = pairingString.trim()
+  const hashIndex = trimmed.lastIndexOf('#')
+  if (hashIndex <= 0 || hashIndex >= trimmed.length - 1) {
+    throw new AppError({
+      code: 'relay_pairing_string_invalid',
+      status: 400,
+      message: 'Pairing string must be `<pairingCode>#<hostKeyFingerprint>`.',
+    })
+  }
+  return {
+    pairingCode: trimmed.slice(0, hashIndex),
+    hostKeyFingerprint: trimmed.slice(hashIndex + 1),
+  }
+}
+
+interface PairingClaimResponse {
+  roomId: string
+  controllerToken?: string
+  expiresAt: string
+}
+
+async function callPairingClaim(
+  relayUrl: string,
+  body: { pairingClaimToken: string, pairingCode: string, controllerToken: string },
+): Promise<PairingClaimResponse> {
+  const url = new URL('/pairing/claim', `${relayUrl.replace(/\/+$/, '')}/`)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${body.pairingClaimToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ pairingCode: body.pairingCode, controllerToken: body.controllerToken }),
+      signal: AbortSignal.timeout(10_000),
+    })
+  }
+  catch (error) {
+    throw new AppError({
+      code: 'relay_pairing_claim_unreachable',
+      status: 502,
+      message: `Could not reach relayd /pairing/claim: ${error instanceof Error ? error.message : String(error)}`,
+    })
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new AppError({
+      code: 'relay_pairing_claim_failed',
+      status: 502,
+      message: `relayd /pairing/claim returned ${response.status}: ${text}`,
+    })
+  }
+  return await response.json() as PairingClaimResponse
 }
 
 async function fetchRemoteCradleServerHealth(record: RemoteHostConnectionRecord): Promise<RemoteCradleServerHealthPayload> {

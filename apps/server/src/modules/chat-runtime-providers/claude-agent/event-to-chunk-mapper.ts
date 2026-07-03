@@ -1003,11 +1003,15 @@ function isCapturedExitPlanModeError(
   return toolName !== undefined
     && isClaudeAgentExitPlanModeToolName(toolName)
     && state.capturedExitPlanToolCallIds.has(toolCallId)
-    && (
-      errorText === CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE
-      || errorText === 'Exit plan mode?'
-      || errorText === 'Error: Exit plan mode?'
-    )
+    && isCapturedExitPlanModeErrorText(errorText)
+}
+
+function isCapturedExitPlanModeErrorText(errorText: string): boolean {
+  const normalizedErrorText = errorText.startsWith('Error: ')
+    ? errorText.slice('Error: '.length)
+    : errorText
+  return normalizedErrorText === CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE
+    || normalizedErrorText === 'Exit plan mode?'
 }
 
 function appendToolInputText(

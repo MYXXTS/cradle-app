@@ -10,6 +10,11 @@ Only this module writes the relay server registry and owns relay token signing s
 Other modules may read it to resolve relay URLs or mint relay tokens, but they should not duplicate
 default-selection, lifecycle, or HMAC secret semantics.
 
+The `relay-transport` module is the main consumer: host enrollment and
+controller claim flows ask this module to mint `pairing_start`, `pairing_claim`,
+`room_start`, and WebSocket tokens. The token HMAC secret must match the relayd
+process that both Cradle Servers use.
+
 ## Built-in Local Relayd
 
 `local-relayd-supervisor.ts` owns the local development relayd process launched by Cradle Server.
@@ -36,6 +41,12 @@ from both sides.
 The built-in HMAC secret fallback is non-production only. Production deployments must set
 `CRADLE_RELAY_HMAC_SECRET` on Cradle Server and `CRADLE_RELAYD_DEV_HMAC_SECRET` (or
 `CRADLE_RELAY_HMAC_SECRET`) for relayd.
+
+relayd supports `POST /rooms/host-session` so a host connector can
+idempotently recreate or renew its room after relayd restarts or an idle room
+expires. Active rooms are renewed while peers remain connected, so a long-lived
+relay transport tunnel is not disconnected just because the original room TTL
+passes.
 
 ## Routes
 

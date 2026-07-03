@@ -34,6 +34,7 @@
     "@lobehub/icons-static-png": "^1.90.0",
     "@mingcute/react": "^1.4.1",
     "@monaco-editor/react": "^4.7.0",
+    "@paper-design/shaders-react": "^0.0.76",
     "@pierre/diffs": "^1.2.2",
     "@pierre/trees": "1.0.0-beta.3",
     "@radix-ui/react-accordion": "^1.2.15",

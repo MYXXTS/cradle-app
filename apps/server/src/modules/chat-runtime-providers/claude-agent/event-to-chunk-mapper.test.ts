@@ -299,7 +299,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
             type: 'tool_result',
             tool_use_id: 'toolu_plan_1',
             is_error: true,
-            content: 'Cradle captured the proposed plan. Stop here and wait for the user to refine or implement it in a later turn.',
+            content: 'Error: Cradle captured the proposed plan. Stop here and wait for the user to refine or implement it in a later turn.',
           },
         ],
       },

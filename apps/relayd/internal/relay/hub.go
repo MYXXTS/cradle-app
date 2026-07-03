@@ -203,6 +203,9 @@ func (h *Hub) register(role token.Role, claims token.Claims, ws *websocket.Conn)
 		logger:   h.logger,
 	}
 	state.lastSeenUnix.Store(h.now().UnixNano())
+	// Renew the room's TTL on every (re)connect so a reconnecting peer never
+	// finds its room expired — long-lived tunnels survive host/controller restarts.
+	room.expiresAt = h.now().Add(h.cfg.RoomTTL)
 	if role == RoleHost {
 		room.host = state
 		if h.cfg.Metrics != nil {
@@ -307,20 +310,33 @@ func (h *Hub) expireLocked(now time.Time) int {
 		if now.Before(room.expiresAt) {
 			continue
 		}
+		// Don't expire a room that still has an active peer — extend its TTL
+		// instead. A long-lived relay tunnel can outlive the original RoomTTL;
+		// tearing it down while peers are connected would force a full
+		// re-pairing. Idle rooms (no peers) expire as normal.
+		if room.host != nil || room.controller != nil {
+			room.expiresAt = now.Add(h.cfg.RoomTTL)
+			continue
+		}
 		delete(h.rooms, roomID)
 		removed++
-		if room.host != nil {
-			room.host.close(websocket.StatusNormalClosure, "room expired")
-		}
-		if room.controller != nil {
-			room.controller.close(websocket.StatusNormalClosure, "room expired")
-		}
 	}
 	if removed > 0 && h.cfg.Metrics != nil {
 		h.cfg.Metrics.ActiveRooms.Add(-int64(removed))
 		h.cfg.Metrics.RoomExpirations.Add(int64(removed))
 	}
 	return removed
+}
+
+// renewRoom extends a room's expiry by RoomTTL from now. Called from the
+// heartbeat loop of each connected peer so an active room's TTL is continuously
+// refreshed while at least one peer is alive.
+func (h *Hub) renewRoom(roomID string, now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if room, ok := h.rooms[roomID]; ok {
+		room.expiresAt = now.Add(h.cfg.RoomTTL)
+	}
 }
 
 func (c *connState) readLoop(ctx context.Context, cancel context.CancelFunc) error {
@@ -407,6 +423,9 @@ func (c *connState) heartbeatLoop(ctx context.Context, cancel context.CancelFunc
 				return
 			}
 			c.lastSeenUnix.Store(time.Now().UnixNano())
+			// Refresh the room's TTL while this peer is alive and responding to
+			// pings, so an active relay tunnel is never expired out from under it.
+			c.hub.renewRoom(c.roomID, c.hub.now())
 		}
 	}
 }

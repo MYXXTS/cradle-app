@@ -134,6 +134,13 @@
       "when": 1783100000000,
       "tag": "0018_session_worktrees",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1783081531849,
+      "tag": "0019_cloudy_serpent_society",
+      "breakpoints": true
     }
   ]
 }

@@ -39,6 +39,7 @@ import { providerTargets } from './modules/provider-targets'
 import { registerPtyRoutes } from './modules/pty'
 import { registerSyncGatewayRoutes } from './modules/sync-gateway'
 import { relayServers } from './modules/relay-servers'
+import { relayTransport } from './modules/relay-transport'
 import { remoteHosts } from './modules/remote-hosts'
 import { search } from './modules/search'
 import { secrets } from './modules/secrets'
@@ -133,6 +134,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(profiles)
   app.use(providerTargets)
   app.use(relayServers)
+  app.use(relayTransport)
   app.use(remoteHosts)
   app.use(externalIssueSources)
   app.use(externalProviderSources)
@@ -183,7 +185,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     startBackgroundTasks = process.env.NODE_ENV !== 'test'
   } = options
   const [
-    { shutdownInfra },
+    { shutdownInfra, getServerConfig },
     { flushAllActiveRunSnapshots, recoverPersistedRunProjections },
     { shutdownTraceStreams },
     { cleanup: chronicleCleanup },
@@ -196,7 +198,8 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     conversationBridgeSupervisor,
     { destroyWorkspaceFileIndexes },
     localRelaydSupervisor,
-    { startOpencodeServer, stopOpencodeServer }
+    { startOpencodeServer, stopOpencodeServer },
+    { initHostConnectorService, getHostConnectorService }
   ] = await Promise.all([
     import('./infra'),
     import('./modules/chat-runtime/runtime'),
@@ -211,13 +214,23 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     import('./modules/conversation-bridge/runtime-supervisor'),
     import('./modules/workspace/files'),
     import('./modules/relay-servers/local-relayd-supervisor'),
-    import('./modules/chat-runtime-providers/opencode/runtime-context')
+    import('./modules/chat-runtime-providers/opencode/runtime-context'),
+    import('./modules/relay-transport/host-connector')
   ])
   if (recoverPersistedRunsOnCreate) {
     recoverPersistedRunProjections()
   }
 
   const app = await createServerContractApp({ includeRuntimeHttpPlugins: true })
+
+  // Initialize the always-on relay host-connector (connects to the host's own
+  // HTTP port to bridge controller tunnels). The local target is this server's
+  // own listen port — stream_open from a controller lands here.
+  const serverConfig = getServerConfig()
+  const hostConnector = initHostConnectorService({
+    localServerHost: '127.0.0.1',
+    localServerPort: serverConfig.port,
+  })
 
   // Plugin system — discover and activate server plugins
   await activateServerPlugins(app)
@@ -231,6 +244,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     () => providerRuntimeHostManager.shutdown(),
     () => stopOpencodeServer(),
     () => localRelaydSupervisor.stopManagedLocalRelayd(),
+    () => getHostConnectorService()?.stopAll(),
     () => chronicleService.stopActivityPipelineScheduler(),
     () => chronicleService.stopSlackBackgroundSync(),
     () => chronicleCleanup(),
@@ -271,6 +285,14 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     })
     void conversationBridgeSupervisor.startEnabledConversationBridgeConnections()
     void localRelaydSupervisor.startManagedLocalRelayd()
+    // Start the always-on relay host-connector for any existing enrollments.
+    // Each enrollment maintains its own /ws/host connection with backoff.
+    try {
+      hostConnector.startAll()
+    }
+    catch (error) {
+      console.error('[relay-host-connector] startAll failed:', error)
+    }
   }
 
   return app

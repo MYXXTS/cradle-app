@@ -1,7 +1,11 @@
 import { existsSync } from 'node:fs'
 
+import { worktrees } from '@cradle/db'
 import type { Worktree } from '@cradle/db'
+import { eq } from 'drizzle-orm'
 
+import { currentUnixSeconds } from '../../helpers/time'
+import { db } from '../../infra'
 import { listGitWorktrees, resolveGitRepoRoot } from '../git/worktree-ops'
 import * as Workspace from '../workspace/service'
 
@@ -39,7 +43,11 @@ export async function reconcileWorktreeRecord(worktree: Worktree): Promise<Workt
       return 'missing'
     }
     if (match.branch && match.branch !== worktree.branch) {
-      return 'stale'
+      db().update(worktrees).set({
+        branch: match.branch,
+        updatedAt: currentUnixSeconds(),
+      }).where(eq(worktrees.id, worktree.id)).run()
+      return 'ok'
     }
     return 'ok'
   }

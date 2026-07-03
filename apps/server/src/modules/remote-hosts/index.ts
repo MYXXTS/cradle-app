@@ -101,6 +101,17 @@ export const remoteHosts = new Elysia({
     params: RemoteHostsModel.hostIdParams,
     response: { 200: RemoteHostsModel.cradleServerHealth },
   })
+  .post('/:hostId/relay/claim', ({ params, body }) => RemoteHosts.claimRemoteHostRelay(params.hostId, body.pairingString), {
+    detail: {
+      'summary': 'Claim a relay pairing for a remote host',
+      'x-cradle-cli': {
+        command: ['remote-host', 'relay', 'claim'],
+      },
+    },
+    params: RemoteHostsModel.hostIdParams,
+    body: RemoteHostsModel.relayClaimBody,
+    response: { 200: RemoteHostsModel.cradleServerConnection },
+  })
   .get('/:hostId/cradle-server/workspaces', async ({ params }) => ({
     workspaces: await RemoteHosts.listRemoteCradleWorkspaces(params.hostId),
   }), {
