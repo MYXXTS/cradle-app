@@ -1,5 +1,6 @@
 export type * from '@cradle/chat-runtime-contracts'
 export {
+  cradleToolKinds,
   createEmptyRuntimePresentation,
   ProviderErrors,
   providerKinds,

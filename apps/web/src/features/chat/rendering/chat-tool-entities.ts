@@ -1,3 +1,5 @@
+import type { CradleToolKind } from '@cradle/chat-runtime-contracts'
+import { cradleToolKinds } from '@cradle/chat-runtime-contracts'
 import type { UIMessage } from 'ai'
 
 const BUILTIN_TOOL_CALL_INPUT_PAYLOAD_TYPE = 'cradle.builtin-tool-call.input.v1'
@@ -8,6 +10,7 @@ type MessagePart = UIMessage['parts'][number]
 export interface BuiltinToolCallIdentity {
   identifier: string
   apiName: string
+  kind: CradleToolKind
 }
 
 export interface BuiltinToolCallInputPayload extends BuiltinToolCallIdentity {
@@ -19,6 +22,13 @@ export interface BuiltinToolCallResultPayload extends BuiltinToolCallIdentity {
   type: typeof BUILTIN_TOOL_CALL_RESULT_PAYLOAD_TYPE
   args?: unknown
   result: unknown
+}
+
+/** Defaults to `'generic'` for payloads persisted before `kind` existed. */
+function readCradleToolKind(value: unknown): CradleToolKind {
+  return typeof value === 'string' && (cradleToolKinds as readonly string[]).includes(value)
+    ? (value as CradleToolKind)
+    : 'generic'
 }
 
 export function isToolLikePart(part: MessagePart): part is MessagePart & {
@@ -59,6 +69,7 @@ export function readBuiltinToolCallInputPayload(value: unknown): BuiltinToolCall
     type: BUILTIN_TOOL_CALL_INPUT_PAYLOAD_TYPE,
     identifier: value.identifier,
     apiName: value.apiName,
+    kind: readCradleToolKind(value.kind),
     args: value.args,
   }
 }
@@ -74,6 +85,7 @@ export function readBuiltinToolCallResultPayload(value: unknown): BuiltinToolCal
     type: BUILTIN_TOOL_CALL_RESULT_PAYLOAD_TYPE,
     identifier: value.identifier,
     apiName: value.apiName,
+    kind: readCradleToolKind(value.kind),
     ...(value.args === undefined ? {} : { args: value.args }),
     result: value.result,
   }
@@ -85,6 +97,7 @@ export function readBuiltinToolCallIdentity(input: unknown, output: unknown): Bu
     return {
       identifier: inputPayload.identifier,
       apiName: inputPayload.apiName,
+      kind: inputPayload.kind,
     }
   }
 
@@ -93,6 +106,7 @@ export function readBuiltinToolCallIdentity(input: unknown, output: unknown): Bu
     return {
       identifier: resultPayload.identifier,
       apiName: resultPayload.apiName,
+      kind: resultPayload.kind,
     }
   }
 

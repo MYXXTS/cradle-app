@@ -183,6 +183,31 @@ export interface RuntimeSlashCommand {
 export const RUNTIME_CODE_REVIEW_COMMAND_ACTION_ID = 'cradle.runtime.codeReview'
 export const RUNTIME_USAGE_COMMAND_ACTION_ID = 'cradle.runtime.usage'
 
+/**
+ * Cradle-owned canonical tool-call vocabulary. Every chat-runtime provider must
+ * classify its own native tool calls into one of these kinds before the call
+ * reaches persistence or the frontend — providers own the mapping, Cradle owns
+ * the vocabulary. See `chat-runtime-providers/tools/README.md`.
+ */
+export const cradleToolKinds = [
+  'file-read',
+  'file-diff',
+  'notebook-diff',
+  'terminal',
+  'search',
+  'web',
+  'subagent',
+  'task-control',
+  'todo',
+  'plan',
+  'plan-implementation',
+  'question',
+  'mcp',
+  'worktree',
+  'generic',
+] as const
+export type CradleToolKind = (typeof cradleToolKinds)[number]
+
 export type RuntimeUiSlotSurface =
   | 'slashCommand'
   | 'toolbarPicker'

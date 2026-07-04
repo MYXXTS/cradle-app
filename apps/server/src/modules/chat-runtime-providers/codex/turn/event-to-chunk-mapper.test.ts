@@ -128,6 +128,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'codex',
           apiName: 'image_generation',
+          kind: 'generic',
           args: {
             status: 'in_progress',
             revisedPrompt: 'A calm interface',
@@ -157,6 +158,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.result.v1',
           identifier: 'codex',
           apiName: 'image_generation',
+          kind: 'generic',
           args: {
             status: 'in_progress',
             revisedPrompt: 'A calm interface',
@@ -207,6 +209,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'codex',
           apiName: 'command_execution',
+          kind: 'terminal',
           args: {
             command: 'cat package.json',
             cwd: '/repo',
@@ -235,6 +238,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
         type: 'cradle.builtin-tool-call.result.v1',
         identifier: 'codex',
         apiName: 'command_execution',
+        kind: 'terminal',
         args: {
           command: 'cat package.json',
           cwd: '/repo',
@@ -283,6 +287,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
         type: 'cradle.builtin-tool-call.result.v1',
         identifier: 'codex',
         apiName: 'command_execution',
+        kind: 'terminal',
         args: {
           command: 'cat package.json',
           cwd: '/repo',
@@ -330,6 +335,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'codex',
           apiName: 'github/search',
+          kind: 'mcp',
           args: { query: 'cradle' },
         },
       },
@@ -363,6 +369,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
         type: 'cradle.builtin-tool-call.result.v1',
         identifier: 'codex',
         apiName: 'github/search',
+        kind: 'mcp',
         args: { query: 'cradle' },
         result: {
           server: 'github',
@@ -409,6 +416,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'codex',
           apiName: 'sleep',
+          kind: 'generic',
           args: { durationMs: 750, durationSeconds: 0.75 },
         },
       },
@@ -432,6 +440,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
         type: 'cradle.builtin-tool-call.result.v1',
         identifier: 'codex',
         apiName: 'sleep',
+        kind: 'generic',
         args: { durationMs: 750, durationSeconds: 0.75 },
         result: { durationMs: 750, durationSeconds: 0.75 },
       },
@@ -460,6 +469,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'codex',
           apiName: 'sub_agent_activity',
+          kind: 'generic',
           args: {
             kind: 'interacted',
             agentThreadId: 'agent-thread-1',
@@ -490,6 +500,7 @@ describe('mapCodexAppServerNotificationToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'codex',
           apiName: 'review_mode_entered',
+          kind: 'generic',
           args: { review: 'Review requested' },
         },
       },

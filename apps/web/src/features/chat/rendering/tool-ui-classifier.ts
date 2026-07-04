@@ -1,6 +1,6 @@
+import type { CradleToolKind } from '@cradle/chat-runtime-contracts'
 import { formatCompactBytes } from '~/lib/number-format'
 
-import type { BuiltinToolCallIdentity } from './chat-tool-entities'
 import {
   readBuiltinToolCallIdentity,
   readBuiltinToolCallInputPayload,
@@ -16,22 +16,12 @@ export type ToolState
     | 'output-error'
     | 'output-denied'
 
-export type ToolUiKind
-  = | 'file-read'
-    | 'file-diff'
-    | 'notebook-diff'
-    | 'terminal'
-    | 'search'
-    | 'web'
-    | 'subagent'
-    | 'task-control'
-    | 'todo'
-    | 'plan'
-    | 'plan-implementation'
-    | 'question'
-    | 'mcp'
-    | 'worktree'
-    | 'generic'
+/**
+ * Cradle's canonical tool-call vocabulary, computed server-side per provider
+ * (see `chat-runtime-providers/tools/README.md`) and carried on the builtin
+ * tool-call envelope. Re-exported here so existing UI code keeps its name.
+ */
+export type ToolUiKind = CradleToolKind
 
 interface BaseRenderableToolPart {
   type: string
@@ -924,7 +914,7 @@ export function describeToolCall(part: RenderableToolPart): ToolUiDescriptor {
   const toolName = builtinIdentity?.apiName ?? part.toolName ?? part.type
   const input = readToolInputPayload(part.input, part.argumentsText)
   const output = readToolPayload(part.output)
-  const kind = builtinIdentity ? classifyCanonicalToolKind(builtinIdentity) : 'generic'
+  const kind = builtinIdentity?.kind ?? 'generic'
   const displayName = formatToolName(toolName)
   const target = readToolTarget(kind, input, output)
   return {
@@ -1170,67 +1160,6 @@ export function normalizeToolName(toolName: string): string {
     .replace(FUNCTIONS_PREFIX_PATTERN, '')
     .replace(TOOL_NAME_SEPARATOR_PATTERN, '_')
     .toLowerCase()
-}
-
-function classifyCanonicalToolKind(identity: BuiltinToolCallIdentity): ToolUiKind {
-  const key = `${identity.identifier}/${identity.apiName}`
-  switch (key) {
-    case 'claude-code/Bash':
-    case 'claude-code/Monitor':
-    case 'codex/command_execution':
-    case 'codex/approval.command_execution':
-      return 'terminal'
-
-    case 'claude-code/Read':
-      return 'file-read'
-
-    case 'claude-code/Edit':
-    case 'claude-code/Write':
-    case 'codex/file_change':
-    case 'codex/approval.file_change':
-      return 'file-diff'
-
-    case 'claude-code/Glob':
-    case 'claude-code/Grep':
-    case 'claude-code/ToolSearch':
-      return 'search'
-
-    case 'claude-code/WebFetch':
-    case 'claude-code/WebSearch':
-    case 'codex/web_search':
-      return 'web'
-
-    case 'claude-code/Agent':
-    case 'claude-code/Workflow':
-    case 'codex/collab_agent':
-      return 'subagent'
-
-    case 'claude-code/TaskGet':
-    case 'claude-code/TaskOutput':
-    case 'claude-code/TaskStop':
-      return 'task-control'
-
-    case 'claude-code/TaskCreate':
-    case 'claude-code/TaskList':
-    case 'claude-code/TaskUpdate':
-    case 'claude-code/TodoWrite':
-      return 'todo'
-
-    case 'claude-code/EnterPlanMode':
-    case 'claude-code/ExitPlanMode':
-    case 'codex/plan':
-      return 'plan'
-
-    case 'claude-code/plan_implementation':
-    case 'codex/plan_implementation':
-      return 'plan-implementation'
-
-    case 'claude-code/askUserQuestion':
-      return 'question'
-
-    default:
-      return 'generic'
-  }
 }
 
 export function classifyToolKind(_toolName: string, _input: ToolPayload, _output: ToolPayload): ToolUiKind {
@@ -1598,8 +1527,9 @@ function readQuestionCount(input: ToolPayload, output: ToolPayload): number | nu
 }
 
 function readMcpSummary(output: ToolPayload): string | null {
-  if (output.contents.length > 0) {
-    return `${output.contents.length} content block${output.contents.length === 1 ? '' : 's'}`
+  const blocks = output.contentBlocks.length > 0 ? output.contentBlocks : output.contents
+  if (blocks.length > 0) {
+    return `${blocks.length} content block${blocks.length === 1 ? '' : 's'}`
   }
   return output.rawText ? 'Tool result' : null
 }

@@ -12,10 +12,20 @@ import {
 } from '../../tools/tool-call-payload'
 import { OpencodeToolIdentifier } from './identity'
 
+/**
+ * Opencode has not been migrated to the full Cradle tool architecture yet (see
+ * `chat-runtime-providers/tools/README.md`); every call classifies as `'generic'`,
+ * matching current frontend behavior until that migration happens.
+ */
+function classifyOpencodeToolKind(): 'generic' {
+  return 'generic'
+}
+
 export function buildOpencodeToolInput(part: ToolPart) {
   return createBuiltinToolCallInputPayload({
     identifier: OpencodeToolIdentifier,
     apiName: part.tool,
+    kind: classifyOpencodeToolKind(),
     args: part.state.input,
   })
 }
@@ -24,6 +34,7 @@ export function buildOpencodeToolOutput(part: ToolPart) {
   return createBuiltinToolCallResultPayload({
     identifier: OpencodeToolIdentifier,
     apiName: part.tool,
+    kind: classifyOpencodeToolKind(),
     args: part.state.input,
     result: projectToolResult(part),
   })
@@ -33,6 +44,7 @@ export function buildOpencodePermissionInput(permission: Permission) {
   return createBuiltinToolCallInputPayload({
     identifier: OpencodeToolIdentifier,
     apiName: 'approval.permissions',
+    kind: classifyOpencodeToolKind(),
     args: {
       id: permission.id,
       type: permission.type,
@@ -56,6 +68,7 @@ export function buildOpencodePermissionOutput(input: {
   return createBuiltinToolCallResultPayload({
     identifier: OpencodeToolIdentifier,
     apiName: 'approval.permissions',
+    kind: classifyOpencodeToolKind(),
     args: {
       id: input.permission.id,
       type: input.permission.type,

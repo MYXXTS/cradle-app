@@ -53,6 +53,16 @@ export function hasHeroContent(
         ?? output.rawText
         ?? input.rawText
       )
+    case 'mcp':
+      return !!(
+        output.contentBlocks.length > 0
+        || output.contents.length > 0
+        || output.error
+        || output.rawText
+        || output.outputText
+        || output.contentText
+        || output.text
+      )
     default:
       return (
         output.rawText !== null

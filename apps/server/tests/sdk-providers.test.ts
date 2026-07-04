@@ -12,11 +12,15 @@ import { addHostMcpServer, removeHostMcpServer } from '../src/plugins/mcp-regist
 
 const sdkMocks = vi.hoisted(() => ({
   claudeQuery: vi.fn(),
+  getSubagentMessages: vi.fn(),
   getSessionInfo: vi.fn(),
+  listSubagents: vi.fn(),
 }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  getSubagentMessages: sdkMocks.getSubagentMessages,
   getSessionInfo: sdkMocks.getSessionInfo,
+  listSubagents: sdkMocks.listSubagents,
   query: sdkMocks.claudeQuery,
 }))
 
@@ -150,8 +154,10 @@ async function createProfileAndSession(app: ElysiaApp, input: {
 describe('sdk-backed providers in unified chat runtime', () => {
   beforeEach(() => {
     sdkMocks.claudeQuery.mockReset()
+    sdkMocks.getSubagentMessages.mockReset()
     sdkMocks.getSessionInfo.mockReset()
     sdkMocks.getSessionInfo.mockResolvedValue(undefined)
+    sdkMocks.listSubagents.mockReset()
   })
 
   afterEach(() => {
@@ -879,6 +885,191 @@ describe('sdk-backed providers in unified chat runtime', () => {
       expect(toolPart).toBeTruthy()
       expect(JSON.stringify(assistant?.message)).not.toContain('Working before task metadata arrives')
       expect(JSON.stringify(assistant?.message)).not.toContain('Late task completed')
+    }
+    finally {
+      shutdownInfra()
+      rmSync(dataDir, { recursive: true, force: true })
+      rmSync(workspaceRoot, { recursive: true, force: true })
+      if (previousDataDir === undefined) {
+        delete process.env.CRADLE_DATA_DIR
+      }
+      else {
+        process.env.CRADLE_DATA_DIR = previousDataDir
+      }
+      if (previousSecret === undefined) {
+        delete process.env.CRADLE_CREDENTIAL_SECRET
+      }
+      else {
+        process.env.CRADLE_CREDENTIAL_SECRET = previousSecret
+      }
+    }
+  })
+
+  it('merges Claude subagent tool uses with later results in provider thread projection', async () => {
+    const dataDir = makeTempDir('cradle-data-')
+    const workspaceRoot = makeTempDir('cradle-workspace-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    const previousSecret = process.env.CRADLE_CREDENTIAL_SECRET
+    process.env.CRADLE_DATA_DIR = dataDir
+    process.env.CRADLE_CREDENTIAL_SECRET = 'sdk-provider-secret'
+
+    sdkMocks.claudeQuery.mockImplementation(() => makeAsyncSequence([
+      {
+        type: 'assistant',
+        session_id: 'claude-subagent-split-session',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'call_parent_a', name: 'Agent', input: { description: 'Explore preferences', subagent_type: 'Explore' } },
+          ],
+        },
+      },
+      {
+        type: 'assistant',
+        session_id: 'claude-subagent-split-session',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'call_parent_b', name: 'Agent', input: { description: 'Explore diff-review', subagent_type: 'Explore' } },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        session_id: 'claude-subagent-split-session',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 'call_parent_b', content: 'diff-review result', is_error: false },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        session_id: 'claude-subagent-split-session',
+        message: {
+          content: [
+            { type: 'tool_result', tool_use_id: 'call_parent_a', content: 'preferences result', is_error: false },
+          ],
+        },
+      },
+      {
+        type: 'result',
+        session_id: 'claude-subagent-split-session',
+        usage: { input_tokens: 21, output_tokens: 9 },
+      },
+    ]))
+    sdkMocks.listSubagents.mockResolvedValue(['agent-explore'])
+    sdkMocks.getSubagentMessages.mockResolvedValue([
+      {
+        type: 'assistant',
+        uuid: 'subagent-tool-use-a',
+        timestamp: '2026-07-04T01:00:00.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'call_child_a', name: 'Bash', input: { command: 'rg preferences apps/server/src/modules/preferences' } },
+          ],
+        },
+      },
+      {
+        type: 'assistant',
+        uuid: 'subagent-tool-use-b',
+        timestamp: '2026-07-04T01:00:01.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'call_child_b', name: 'Read', input: { file_path: '/Users/wibus/dev/cradle-app/apps/server/src/modules/diff-review/service.ts' } },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        uuid: 'subagent-tool-result-b',
+        timestamp: '2026-07-04T01:00:02.000Z',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'call_child_b', content: 'service.ts contents', is_error: false },
+          ],
+        },
+      },
+      {
+        type: 'user',
+        uuid: 'subagent-tool-result-a',
+        timestamp: '2026-07-04T01:00:03.000Z',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'call_child_a', content: 'preferences/model.ts\npreferences/service.ts', is_error: false },
+          ],
+        },
+      },
+    ])
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new Request(input).url
+      if (url === 'https://api.anthropic.com/v1/models') {
+        return new Response(JSON.stringify({
+          data: [{ id: 'claude-sonnet-4-20250514', display_name: 'Claude Sonnet 4' }],
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (url === 'https://models.dev/api.json') {
+        return new Response(JSON.stringify({ anthropic: { models: {} } }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+
+    let app: Awaited<ReturnType<typeof createServerApp>> | undefined
+
+    try {
+      app = await createServerApp()
+      db().insert(workspaces).values({
+        id: 'workspace-subagent-split',
+        name: 'Workspace Subagent Split',
+        locatorJson: JSON.stringify({ hostId: 'local', path: workspaceRoot }),
+        path: workspaceRoot,
+      }).run()
+
+      await createProfileAndSession(app, {
+        workspaceId: 'workspace-subagent-split',
+        providerKind: 'claude-agent',
+        profileId: 'profile-claude-subagent-split',
+        sessionId: 'session-claude-subagent-split',
+        config: { model: 'claude-sonnet-4-20250514' },
+        secret: 'sk-ant-subagent-split',
+      })
+
+      const runRes = await app.handle(new Request('http://localhost/chat/sessions/session-claude-subagent-split/response', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'Dispatch split subagents' }),
+      }))
+      expect(runRes.status).toBe(200)
+      await collectSseChunks(runRes)
+      await waitForMessageStatus(app, 'session-claude-subagent-split', 'complete')
+
+      const threadRes = await app.handle(new Request('http://localhost/chat/sessions/session-claude-subagent-split/provider-threads/agent-explore/turns'))
+      expect(threadRes.status).toBe(200)
+      const projection = await threadRes.json() as { turns: Array<{ id: string, items: unknown[] }>, messages: UIMessage[] }
+      expect(projection.messages).toHaveLength(2)
+      expect(projection.turns).toHaveLength(2)
+
+      const toolParts = projection.messages.map(message => message.parts[0])
+      expect(toolParts).toEqual([
+        expect.objectContaining({ type: 'tool-Bash', toolCallId: 'call_child_a', state: 'output-available' }),
+        expect.objectContaining({ type: 'tool-Read', toolCallId: 'call_child_b', state: 'output-available' }),
+      ])
+      expect(JSON.stringify(toolParts[0])).toContain('preferences/model.ts')
+      expect(JSON.stringify(toolParts[1])).toContain('service.ts contents')
+      expect(projection.messages.flatMap(message => message.parts)).toHaveLength(2)
+      expect(projection.turns.map(turn => turn.items)).toEqual([
+        expect.arrayContaining([
+          expect.objectContaining({ message: expect.objectContaining({ uuid: 'subagent-tool-use-a' }) }),
+          expect.objectContaining({ message: expect.objectContaining({ uuid: 'subagent-tool-result-a' }) }),
+        ]),
+        expect.arrayContaining([
+          expect.objectContaining({ message: expect.objectContaining({ uuid: 'subagent-tool-use-b' }) }),
+          expect.objectContaining({ message: expect.objectContaining({ uuid: 'subagent-tool-result-b' }) }),
+        ]),
+      ])
     }
     finally {
       shutdownInfra()

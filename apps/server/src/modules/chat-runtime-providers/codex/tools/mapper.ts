@@ -1,3 +1,4 @@
+import type { CradleToolKind } from '../../../chat-runtime/runtime-provider-types'
 import type { BuiltinToolCallInputPayload, BuiltinToolCallResultPayload } from '../../tools/tool-call-payload'
 import {
   createBuiltinToolCallInputPayload,
@@ -113,10 +114,38 @@ export function readCodexToolName(item: CodexAppServerItem): string {
   }
 }
 
+/**
+ * Classifies a Codex tool call into Cradle's canonical vocabulary. Codex has not been
+ * migrated to the full Cradle tool architecture yet (see `chat-runtime-providers/tools/README.md`),
+ * so this only covers the api names the frontend previously classified, plus real MCP tool
+ * calls (`item.type === 'mcpToolCall'`) which are always classified as `'mcp'`; everything
+ * else — including dynamic tool calls — stays `'generic'` until that migration happens.
+ */
+const CODEX_TOOL_KINDS: Record<string, CradleToolKind> = {
+  'command_execution': 'terminal',
+  'approval.command_execution': 'terminal',
+  'file_change': 'file-diff',
+  'approval.file_change': 'file-diff',
+  'web_search': 'web',
+  'collab_agent': 'subagent',
+  'plan': 'plan',
+  'plan_implementation': 'plan-implementation',
+  'mcp.elicitation': 'mcp',
+}
+
+export function classifyCodexToolKind(apiName: string, itemType?: string): CradleToolKind {
+  if (itemType === 'mcpToolCall') {
+    return 'mcp'
+  }
+  return CODEX_TOOL_KINDS[apiName] ?? 'generic'
+}
+
 export function buildCodexToolInput(item: CodexAppServerItem): BuiltinToolCallInputPayload {
+  const apiName = readCodexToolName(item)
   return createBuiltinToolCallInputPayload({
     identifier: CodexToolIdentifier,
-    apiName: readCodexToolName(item),
+    apiName,
+    kind: classifyCodexToolKind(apiName, item.type),
     args: buildCodexToolArgs(item),
   })
 }
@@ -127,9 +156,11 @@ export function buildCodexToolOutput(
   bufferedCommand?: string,
   args?: unknown,
 ): BuiltinToolCallResultPayload {
+  const apiName = readCodexToolName(item)
   return createBuiltinToolCallResultPayload({
     identifier: CodexToolIdentifier,
-    apiName: readCodexToolName(item),
+    apiName,
+    kind: classifyCodexToolKind(apiName, item.type),
     args: args ?? buildCodexToolArgsWithBufferedCommand(item, bufferedCommand),
     result: buildCodexToolResult(item, bufferedCommandOutput, bufferedCommand),
   })
@@ -287,9 +318,11 @@ export function buildCodexToolResult(
 }
 
 export function buildCodexServerRequestToolInput(request: CodexAppServerServerRequestItem): BuiltinToolCallInputPayload {
+  const apiName = readCodexServerRequestToolName(request.method)
   return createBuiltinToolCallInputPayload({
     identifier: CodexToolIdentifier,
-    apiName: readCodexServerRequestToolName(request.method),
+    apiName,
+    kind: classifyCodexToolKind(apiName),
     args: request.params ?? {},
   })
 }
@@ -298,9 +331,11 @@ export function buildCodexServerRequestToolOutput(
   request: CodexAppServerServerRequestItem,
   result: unknown,
 ): BuiltinToolCallResultPayload {
+  const apiName = readCodexServerRequestToolName(request.method)
   return createBuiltinToolCallResultPayload({
     identifier: CodexToolIdentifier,
-    apiName: readCodexServerRequestToolName(request.method),
+    apiName,
+    kind: classifyCodexToolKind(apiName),
     args: request.params ?? {},
     result,
   })
