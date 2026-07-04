@@ -13,6 +13,7 @@ import {
   FilterLine as ListFilterIcon,
   FolderLine as FolderClosedIcon,
   FolderOpenLine as FolderOpenIcon,
+  GitBranchLine as WorktreeIcon,
   GitCompareLine as FileDiffIcon,
   LoadingLine,
   MailLine as MailIcon,
@@ -138,6 +139,7 @@ import { chatSelectors, useChatStore } from '~/store/chat'
 import { useSettingsOverlayStore } from '~/store/settings-overlay'
 import { useTitleRegenerationStore } from '~/store/title-regeneration'
 
+import { SESSION_DRAG_MIME_TYPE } from './session-drag-data'
 import type { WorkspaceSession } from './use-session'
 import { isManualSession, sessionsQueryKey, updateSessionReadState, useAllSessions } from './use-session'
 import type { CreateWorkspaceInput, WorkspaceRecognition } from './use-workspace'
@@ -1690,7 +1692,7 @@ const SessionItem = memo(
 
     const handleDragStart = useCallback(
       (e: React.DragEvent) => {
-        e.dataTransfer.setData('application/x-cradle-session', session.id)
+        e.dataTransfer.setData(SESSION_DRAG_MIME_TYPE, session.id)
         e.dataTransfer.effectAllowed = 'move'
         recordDragPosition(e.nativeEvent)
         dragWasTornOffRef.current = false
@@ -1862,16 +1864,35 @@ const SessionItem = memo(
               />
               {trailingIndicator}
             </button>
-            <button
-              type="button"
-              className="relative z-10 mr-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/50 opacity-0 hover:bg-accent/80 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
-              onClick={handleOpenButtonMenu}
-              aria-haspopup="menu"
-              aria-label={t('session.aria.menu')}
-              data-testid={`session-menu-trigger-${session.id}`}
-            >
-              <MoreHorizontalIcon className="size-3" aria-hidden="true" />
-            </button>
+            <div className="group/menu relative z-10 mr-0.5 size-6 shrink-0">
+              {session.worktreeId
+                ? (
+                  <span
+                    className="pointer-events-none absolute inset-0 grid place-items-center text-muted-foreground/70 opacity-100 group-hover:opacity-0 group-focus-within/menu:opacity-0"
+                    title={
+                      session.worktreeBranch
+                        ? t('session.aria.isolatedBranch', { branch: session.worktreeBranch })
+                        : t('session.aria.isolated')
+                    }
+                    aria-label={t('session.aria.isolated')}
+                    role="img"
+                    data-testid={`session-isolated-indicator-${session.id}`}
+                  >
+                    <WorktreeIcon className="size-3.5" aria-hidden="true" />
+                  </span>
+                )
+                : null}
+              <button
+                type="button"
+                className="absolute inset-0 grid place-items-center rounded-md text-muted-foreground/50 opacity-0 hover:bg-accent/80 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
+                onClick={handleOpenButtonMenu}
+                aria-haspopup="menu"
+                aria-label={t('session.aria.menu')}
+                data-testid={`session-menu-trigger-${session.id}`}
+              >
+                <MoreHorizontalIcon className="size-3" aria-hidden="true" />
+              </button>
+            </div>
           </>
         )}
       </div>

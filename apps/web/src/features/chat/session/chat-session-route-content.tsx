@@ -71,7 +71,14 @@ function ChatSessionLayoutSlots({
   return null
 }
 
-export function ChatSessionRouteContent({ sessionId }: { sessionId: string }) {
+export function ChatSessionRouteContent({
+  sessionId,
+  onTitleChange,
+}: {
+  sessionId: string
+  /** Notified whenever the resolved session title changes (e.g. to drive a dockview pane tab label). */
+  onTitleChange?: (title: string) => void
+}) {
   'use no memo'
 
   const active = useSurfaceActive()
@@ -112,8 +119,10 @@ export function ChatSessionRouteContent({ sessionId }: { sessionId: string }) {
     if (!hasLoadedSession) {
       return
     }
-    updateSurfaceTitle(surfaceId, sessionTitle || CHAT_SESSION_FALLBACK_LABEL)
-  }, [hasLoadedSession, sessionTitle, surfaceId, updateSurfaceTitle])
+    const title = sessionTitle || CHAT_SESSION_FALLBACK_LABEL
+    updateSurfaceTitle(surfaceId, title)
+    onTitleChange?.(title)
+  }, [hasLoadedSession, sessionTitle, surfaceId, updateSurfaceTitle, onTitleChange])
 
   const workspaceId = session?.workspaceId ?? null
   const agentId = session?.agentId ?? null

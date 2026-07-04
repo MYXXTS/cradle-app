@@ -7,7 +7,9 @@ import { AppLayout } from '~/components/layout/app-layout'
 import { AppSidebar, AppSidebarSheet } from '~/components/layout/app-sidebar'
 import { useSidebarSheetMode } from '~/components/layout/layout-responsive'
 import { useSyncLayoutSlotScope } from '~/components/layout/use-layout-slots'
+import { useSuppressNativeBrowserSurface } from '~/features/browser/native-surface-suppression'
 import { WhatsNewTrigger } from '~/features/changelog/whats-new-trigger'
+import { useChatSplitFocusedSessionId, useChatSplitWorkspaceStore } from '~/features/chat/split-workspace/chat-split-workspace-store'
 import { useDesktopTrayActionBridge } from '~/features/desktop-tray/use-desktop-tray-action-bridge'
 import { CredentialSetupDialog } from '~/features/onboarding/credential-setup-dialog'
 import { useOnboardingStore } from '~/features/onboarding/onboarding-store'
@@ -244,11 +246,25 @@ function MainAppRuntime() {
       layoutSlotScope.validSurfaceIdsKey ? layoutSlotScope.validSurfaceIdsKey.split('\0') : [],
     [layoutSlotScope.validSurfaceIdsKey],
   )
-  const validSlotIds = useMemo(
-    () => (layoutSlotScope.validSlotIdsKey ? layoutSlotScope.validSlotIdsKey.split('\0') : []),
-    [layoutSlotScope.validSlotIdsKey],
+
+  // A chat surface split into multiple dockview panes registers layout slots
+  // (aside/panel) per pane session id, not just the primary (URL) session —
+  // extend the valid scope so the currently focused pane's chrome resolves,
+  // and follow that pane instead of always the primary one.
+  const activeSurfaceId = activeSurface?.id ?? null
+  const activeSplitPaneSessionIds = useChatSplitWorkspaceStore(
+    useShallow(state => (activeSurfaceId ? state.workspaces[activeSurfaceId]?.paneSessionIds : undefined)),
   )
-  const activeSlotId = layoutSlotIdForSurface(activeSurface)
+  const focusedSplitSessionId = useChatSplitFocusedSessionId(activeSurfaceId)
+
+  const validSlotIds = useMemo(() => {
+    const base = layoutSlotScope.validSlotIdsKey ? layoutSlotScope.validSlotIdsKey.split('\0') : []
+    if (!activeSplitPaneSessionIds || activeSplitPaneSessionIds.length <= 1) {
+      return base
+    }
+    return Array.from(new Set([...base, ...activeSplitPaneSessionIds]))
+  }, [layoutSlotScope.validSlotIdsKey, activeSplitPaneSessionIds])
+  const activeSlotId = focusedSplitSessionId ?? layoutSlotIdForSurface(activeSurface)
 
   useSyncLayoutSlotScope(activeSlotId, validSlotIds)
 
@@ -340,6 +356,7 @@ function GlobalCommandPaletteHost() {
   const open = useGlobalSearchStore(s => s.open)
   const initialQuery = useGlobalSearchStore(s => s.initialQuery)
   const setOpen = useGlobalSearchStore(s => s.setOpen)
+  useSuppressNativeBrowserSurface(open)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -389,6 +406,7 @@ function KeyBindingsOverlayHost() {
   'use no memo'
 
   const open = useKeyBindingsOverlayStore(s => s.open)
+  useSuppressNativeBrowserSurface(open)
   const shortcutGestureRef = useRef<{
     held: boolean
     lastRepeatAt: number | null

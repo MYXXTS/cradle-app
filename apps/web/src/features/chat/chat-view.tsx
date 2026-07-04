@@ -1,7 +1,7 @@
 import {
   CloseLine as XIcon,
+  GitBranchLine as WorktreeIcon,
   PencilLine as PencilIcon,
-  ShieldLine as ShieldIcon,
 } from '@mingcute/react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -654,7 +654,7 @@ export function ChatView({
   const headerActions = useMemo(
     () => (
       <div className="flex items-center gap-0.5">
-        {sessionId && workspaceId && !sessionMetaQuery.data?.isIsolated && !sessionMetaQuery.data?.worktreeId && (
+        {sessionId && workspaceId && !sessionMetaQuery.data?.isIsolated && !sessionMetaQuery.data?.worktreeId && !sessionMetaQuery.data?.pendingWorktreeId && (
           <Button
             type="button"
             variant="ghost"
@@ -682,7 +682,7 @@ export function ChatView({
               })
             }}
           >
-            <ShieldIcon className="size-3 shrink-0" aria-hidden />
+            <WorktreeIcon className="size-3 shrink-0" aria-hidden />
             <span className="text-[11px]">{tIsolation('chat.isolate')}</span>
           </Button>
         )}

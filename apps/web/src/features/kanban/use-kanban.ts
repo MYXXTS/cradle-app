@@ -431,6 +431,13 @@ const IssueLinkedSessionSchema = z
     latestUserMessageAt: z.number().nullable(),
     latestAssistantMessageAt: z.number().nullable(),
     unread: z.boolean(),
+    isIsolated: z.boolean(),
+    worktreeId: z.string().nullable(),
+    worktreeBranch: z.string().nullable(),
+    worktreePath: z.string().nullable(),
+    worktreeHealth: z.string().nullable(),
+    pendingWorktreeId: z.string().nullable(),
+    isolationBoundaryRequired: z.boolean(),
   })
   .passthrough()
 const LinkedIssueRefSchema = z

@@ -5,7 +5,7 @@ import {
   ServerLine as ServerIcon,
   WifiLine as WifiIcon,
 } from '@mingcute/react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '~/components/ui/badge'
@@ -19,7 +19,7 @@ import {
   writeCustomServerUrl,
 } from '~/lib/server-endpoint-preferences'
 
-import { ProxySettingsGroup } from './network-settings'
+import { InboundAccessSettingsGroup, ProxySettingsGroup } from './network-settings'
 import { SettingsGroup, SettingsPage } from './settings-container'
 import { SettingsRow } from './settings-row'
 
@@ -36,22 +36,26 @@ const externalGuideSteps = [
   'serverEndpoint.externalGuide.step.reload',
 ] as const
 
+function resetServerEndpointOverride(): void {
+  clearCustomServerUrl()
+  window.location.reload()
+}
+
 export function ServerEndpointSettings() {
   const { t } = useTranslation('settings')
-  const defaultUrl = useMemo(() => getDefaultServerUrl(), [])
-  const customUrl = useMemo(() => readCustomServerUrl(), [])
+  const [defaultUrl] = useState(() => getDefaultServerUrl())
+  const [customUrl] = useState(() => readCustomServerUrl())
   const [draftUrl, setDraftUrl] = useState(customUrl ?? defaultUrl)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [testStatus, setTestStatus] = useState<TestStatus>({ kind: 'idle' })
 
-  const normalizedDraft = useMemo(() => {
-    try {
-      return normalizeServerEndpointUrl(draftUrl)
-    }
-    catch {
-      return null
-    }
-  }, [draftUrl])
+  let normalizedDraft: string | null
+  try {
+    normalizedDraft = normalizeServerEndpointUrl(draftUrl)
+  }
+  catch {
+    normalizedDraft = null
+  }
   const savedUrl = customUrl ?? defaultUrl
   const canSave = draftUrl.trim().length > 0 && (normalizedDraft === null || normalizedDraft !== savedUrl)
 
@@ -76,11 +80,6 @@ export function ServerEndpointSettings() {
     window.location.reload()
   }
 
-  function reset(): void {
-    clearCustomServerUrl()
-    window.location.reload()
-  }
-
   async function testConnection(): Promise<void> {
     if (validateDraft()) {
       return
@@ -91,6 +90,7 @@ export function ServerEndpointSettings() {
     const timeout = window.setTimeout(() => controller.abort(), 4_000)
     setTestStatus({ kind: 'checking' })
 
+    let nextStatus: TestStatus
     try {
       const response = await fetch(new URL('/health', url), {
         cache: 'no-store',
@@ -98,18 +98,17 @@ export function ServerEndpointSettings() {
       })
 
       if (!response.ok) {
-        setTestStatus({ kind: 'error', message: t('serverEndpoint.test.httpError', { status: response.status }) })
-        return
+        nextStatus = { kind: 'error', message: t('serverEndpoint.test.httpError', { status: response.status }) }
       }
-
-      setTestStatus({ kind: 'success', message: t('serverEndpoint.test.success') })
+      else {
+        nextStatus = { kind: 'success', message: t('serverEndpoint.test.success') }
+      }
     }
     catch {
-      setTestStatus({ kind: 'error', message: t('serverEndpoint.test.unreachable') })
+      nextStatus = { kind: 'error', message: t('serverEndpoint.test.unreachable') }
     }
-    finally {
-      window.clearTimeout(timeout)
-    }
+    window.clearTimeout(timeout)
+    setTestStatus(nextStatus)
   }
 
   return (
@@ -168,7 +167,7 @@ export function ServerEndpointSettings() {
                   ? t('serverEndpoint.action.testing')
                   : t('serverEndpoint.action.test')}
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={reset} disabled={!customUrl}>
+              <Button type="button" variant="outline" size="sm" onClick={resetServerEndpointOverride} disabled={!customUrl}>
                 <RotateCcwIcon data-icon="inline-start" aria-hidden="true" />
                 {t('serverEndpoint.action.reset')}
               </Button>
@@ -185,6 +184,8 @@ export function ServerEndpointSettings() {
           </div>
         </SettingsRow>
       </SettingsGroup>
+
+      <InboundAccessSettingsGroup />
 
       <ProxySettingsGroup />
 

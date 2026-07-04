@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { ChatSessionRouteContent } from '~/features/chat/session/chat-session-route-content'
+import { ChatSplitWorkspace } from '~/features/chat/split-workspace/chat-split-workspace'
 
 export const Route = createFileRoute('/chat/$sessionId')({
   component: ChatSessionRoute,
@@ -8,5 +8,5 @@ export const Route = createFileRoute('/chat/$sessionId')({
 
 function ChatSessionRoute() {
   const { sessionId } = Route.useParams()
-  return <ChatSessionRouteContent sessionId={sessionId} />
+  return <ChatSplitWorkspace sessionId={sessionId} />
 }

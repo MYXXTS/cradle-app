@@ -44,6 +44,14 @@ export interface WorkspaceSession {
    * they don't compete with the user's own conversations.
    */
   origin: string
+  /**
+   * Whether this session runs in an isolated git worktree (i.e. it has a
+   * worktree checkout attached). Surfaced in the sidebar as a fork indicator
+   * on the row so isolated sessions are recognizable at a glance.
+   */
+  isIsolated: boolean
+  worktreeId: string | null
+  worktreeBranch: string | null
 }
 
 /**
@@ -284,6 +292,9 @@ function asWorkspaceSession(session: GetSessionsResponse[number]): WorkspaceSess
       normalizedLatestAssistantMessageAt ?? 0,
     ),
     origin: typeof session.origin === 'string' && session.origin ? session.origin : 'manual',
+    isIsolated: session.isIsolated === true,
+    worktreeId: nullableString(session.worktreeId),
+    worktreeBranch: nullableString(session.worktreeBranch),
   }
 }
 

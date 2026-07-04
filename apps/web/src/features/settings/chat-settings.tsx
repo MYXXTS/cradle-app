@@ -90,6 +90,9 @@ function normalizeArchivedSession(session: {
   latestAssistantMessageAt?: number | unknown | null
   unread?: boolean | unknown
   origin?: string | unknown | null
+  isIsolated?: boolean | unknown
+  worktreeId?: string | unknown | null
+  worktreeBranch?: string | unknown | null
 }): WorkspaceSession {
   const latestUserMessageAt = typeof session.latestUserMessageAt === 'number' ? session.latestUserMessageAt : null
   const latestAssistantMessageAt = typeof session.latestAssistantMessageAt === 'number' ? session.latestAssistantMessageAt : null
@@ -113,6 +116,9 @@ function normalizeArchivedSession(session: {
     unread: session.unread === true,
     listActivityAt: latestUserMessageAt ?? session.createdAt,
     origin: typeof session.origin === 'string' && session.origin ? session.origin : 'manual',
+    isIsolated: session.isIsolated === true,
+    worktreeId: typeof session.worktreeId === 'string' ? session.worktreeId : null,
+    worktreeBranch: typeof session.worktreeBranch === 'string' ? session.worktreeBranch : null,
   }
 }
 

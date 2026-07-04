@@ -1,3 +1,4 @@
+import { closeFocusedChatSplitPane } from '~/features/chat/split-workspace/chat-split-close'
 import { router } from '~/router'
 import { useSettingsOverlayStore } from '~/store/settings-overlay'
 
@@ -244,6 +245,11 @@ export function closeSurfaceById(surfaceId: string): void {
 export function closeActiveSurface(): void {
   const activeSurfaceId = readActiveSurfaceId()
   if (!activeSurfaceId) {
+    return
+  }
+  // VSCode-style Cmd+W: close the focused split pane first, only closing the
+  // whole tab once the surface is back down to its single primary pane.
+  if (closeFocusedChatSplitPane(activeSurfaceId)) {
     return
   }
   closeSurfaceById(activeSurfaceId)

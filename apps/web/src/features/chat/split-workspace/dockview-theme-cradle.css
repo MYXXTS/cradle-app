@@ -1,0 +1,82 @@
+/*
+ * Maps dockview's theme contract onto Cradle's own design tokens so the split
+ * view reads as a native part of the app chrome instead of an embedded
+ * third-party widget. Values automatically follow light/dark mode because
+ * they reference the same runtime custom properties as the rest of the app
+ * (see apps/web/src/styles.css).
+ */
+.dockview-theme-cradle {
+  --dv-tabs-and-actions-container-font-size: 11px;
+  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tab-font-size: 11px;
+  --dv-border-radius: var(--radius-md);
+  --dv-tab-border-radius: var(--radius-sm);
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: var(--radius-md);
+  --dv-tab-margin: 2px 0 2px 2px;
+  --dv-spacing-padding: 0px;
+  --dv-tab-close-icon-size: 12px;
+
+  --dv-group-view-background-color: var(--background);
+  --dv-tabs-and-actions-container-background-color: var(--sidebar);
+  --dv-tab-divider-color: var(--sidebar);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+
+  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: transparent;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-dim);
+
+  --dv-icon-hover-background-color: var(--accent);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--primary) 12%, transparent);
+  --dv-drag-over-border-color: var(--primary);
+  --dv-drag-over-border: 2px solid var(--primary);
+
+  --dv-floating-box-shadow: var(--shadow-lg);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-floating-titlebar-background-color: var(--sidebar);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--border);
+
+  --dv-tabs-container-scrollbar-color: var(--border);
+  --dv-active-sash-color: var(--primary);
+}
+
+.dockview-theme-cradle .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * `dockview` automatically toggles `.dv-single-tab` on a group's tab strip
+ * whenever it holds exactly one panel. That's the exact signal we need to
+ * tell apart the two states that otherwise look identical: a pane that's
+ * simply one column of a split (single tab, left alone) versus a pane that
+ * has multiple sessions merged into it as tabs (2+ tabs, accented) — so
+ * dropping a session "as a tab" vs "as a split" is visually unambiguous.
+ */
+.dockview-theme-cradle .dv-tabs-and-actions-container:not(.dv-single-tab) {
+  background-color: color-mix(in srgb, var(--primary) 6%, var(--sidebar));
+  border-bottom-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.dockview-theme-cradle .dv-groupview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.dockview-theme-cradle .dv-tab {
+  transition: background-color var(--duration-quick) var(--ease-standard),
+    color var(--duration-quick) var(--ease-standard);
+}
+
+/* External-drag overlay (sidebar session → new split pane) reuses the same
+   accent treatment as dockview's own internal drag overlay. */
+.dockview-theme-cradle .dv-drop-target-dropzone {
+  transition: opacity var(--duration-quick) var(--ease-standard);
+}

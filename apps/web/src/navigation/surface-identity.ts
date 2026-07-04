@@ -16,7 +16,7 @@ export type SurfaceKind
 
 export type SurfaceRoute
   = | { to: '/', params?: undefined, search?: undefined }
-    | { to: '/chat/new', params?: undefined, search?: undefined }
+    | { to: '/chat/new', params?: undefined, search?: { issueId?: string } }
     | { to: '/chat/$sessionId', params: { sessionId: string }, search?: undefined }
     | { to: '/diff', params?: undefined, search?: { workspace?: string, repo?: string, path?: string, review?: string, view?: 'commit' | 'guide' } }
     | { to: '/workspaces/$workspaceId', params: { workspaceId: string }, search?: undefined }

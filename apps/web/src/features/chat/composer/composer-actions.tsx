@@ -235,7 +235,7 @@ export function ComposerActions({
               size="icon-xs"
               disabled={disabled || sendDisabled || sendBlocked || !hasDraft}
               aria-label={sendButtonLabel ? `${sendButtonLabel} options` : 'Send options'}
-              className={cn(sendButtonClassName, 'px-1')}
+              className={cn(sendButtonClassName, 'px-1 mx-0')}
               data-testid={`${sendButtonTestId}-variants`}
             >
               <ChevronDownIcon className="size-3" aria-hidden />

@@ -33,6 +33,7 @@ import {
 } from '~/components/layout/use-layout-query-records'
 import { useLayoutSlotsCtx } from '~/components/layout/use-layout-slots'
 import { Skeleton } from '~/components/ui/skeleton'
+import { useChatSplitFocusedSessionId } from '~/features/chat/split-workspace/chat-split-workspace-store'
 import { useJarvisUiStore } from '~/features/system-agent/jarvis-ui-store'
 import { useGlobalEventListeners } from '~/hooks/use-global-event-listeners'
 import { useShortcut } from '~/hooks/use-shortcut'
@@ -49,7 +50,6 @@ const PANEL = { min: 80, max: 480 }
 
 const SPRING = { type: 'spring', stiffness: 600, damping: 50 } as const
 const INSTANT = { duration: 0 } as const
-const BROWSER_NATIVE_BOUNDS_SETTLE_MS = 420
 
 type BrowserBridgeCleanup = () => void
 
@@ -587,11 +587,9 @@ function AppLayoutContent({
   validChromeOwnerIds,
 }: AppLayoutProps) {
   const [dragging, setDragging] = useState<string | null>(null)
-  const [browserNativeBoundsPaused, setBrowserNativeBoundsPaused] = useState(false)
   const [browserPanelClosing, setBrowserPanelClosing] = useState(false)
   const mainElementRef = useRef<HTMLElement | null>(null)
   const previousBrowserPanelVisibleRef = useRef(false)
-  const browserNativeBoundsResumeTimerRef = useRef<number | null>(null)
   const browserPanelWidthAnimationIdRef = useRef(0)
   const browserPanelWidthAnimatingRef = useRef(false)
   const mainRef = useCallback((el: HTMLElement | null) => {
@@ -609,14 +607,20 @@ function AppLayoutContent({
   // Route surface layout slots registered by route content components.
   const { slots } = useLayoutSlotsCtx()
   const activeSurface = useActiveSurface()
+  // When the active chat surface is split into multiple dockview panes, the
+  // aside/panel chrome should follow whichever pane is focused rather than
+  // always the primary (URL) session.
+  const focusedSplitSessionId = useChatSplitFocusedSessionId(activeSurface?.id ?? null)
   const activeTab = activeSurface
     ? {
         type: activeSurface.kind === 'workspace' ? 'workspace-detail' : activeSurface.kind,
         label: activeSurface.title,
-        params: activeSurface.route.params ?? {},
+        params: focusedSplitSessionId
+          ? { ...activeSurface.route.params, sessionId: focusedSplitSessionId }
+          : (activeSurface.route.params ?? {}),
       }
     : undefined
-  const activeSessionId = chatSessionIdForSurface(activeSurface)
+  const activeSessionId = focusedSplitSessionId ?? chatSessionIdForSurface(activeSurface)
   const activeSessionTitle = activeTab?.type === 'chat' ? activeTab.label : null
   const activeChromeOwnerId = activeSurface?.id ?? null
   const activeBrowserPanelOwnerId = activeChromeOwnerId
@@ -692,38 +696,6 @@ function AppLayoutContent({
     },
     [setBrowserPanelOpen],
   )
-  const clearBrowserNativeBoundsResumeTimer = useCallback(() => {
-    if (browserNativeBoundsResumeTimerRef.current === null) {
-      return
-    }
-    window.clearTimeout(browserNativeBoundsResumeTimerRef.current)
-    browserNativeBoundsResumeTimerRef.current = null
-  }, [])
-  const pauseBrowserNativeBounds = useCallback(() => {
-    if (!browserPanelVisible) {
-      return
-    }
-    clearBrowserNativeBoundsResumeTimer()
-    setBrowserNativeBoundsPaused(true)
-  }, [browserPanelVisible, clearBrowserNativeBoundsResumeTimer])
-  const resumeBrowserNativeBounds = useCallback(() => {
-    clearBrowserNativeBoundsResumeTimer()
-    setBrowserNativeBoundsPaused(false)
-  }, [clearBrowserNativeBoundsResumeTimer])
-  const pauseBrowserNativeBoundsForLayout = useCallback(
-    (force = false) => {
-      if (!force && !browserPanelVisible) {
-        return
-      }
-      clearBrowserNativeBoundsResumeTimer()
-      setBrowserNativeBoundsPaused(true)
-      browserNativeBoundsResumeTimerRef.current = window.setTimeout(() => {
-        browserNativeBoundsResumeTimerRef.current = null
-        setBrowserNativeBoundsPaused(false)
-      }, BROWSER_NATIVE_BOUNDS_SETTLE_MS)
-    },
-    [browserPanelVisible, clearBrowserNativeBoundsResumeTimer],
-  )
   const handleBrowserPanelResize = useCallback(
     (px: number) => {
       browserPanelWidth.setSize(px)
@@ -750,19 +722,10 @@ function AppLayoutContent({
   }, [browserPanelWidth, updateDragging])
   const handleBottomPanelDragStart = useCallback(() => {
     updateDragging('panel')
-    pauseBrowserNativeBounds()
-  }, [pauseBrowserNativeBounds, updateDragging])
+  }, [updateDragging])
   const handleBottomPanelDragEnd = useCallback(() => {
     updateDragging(null)
-    resumeBrowserNativeBounds()
-  }, [resumeBrowserNativeBounds, updateDragging])
-
-  useEffect(
-    () => () => {
-      clearBrowserNativeBoundsResumeTimer()
-    },
-    [clearBrowserNativeBoundsResumeTimer],
-  )
+  }, [updateDragging])
 
   useEffect(() => {
     if (dragging === 'browser') {
@@ -779,7 +742,6 @@ function AppLayoutContent({
     const animationId = browserPanelWidthAnimationIdRef.current + 1
     browserPanelWidthAnimationIdRef.current = animationId
     browserPanelWidthAnimatingRef.current = true
-    pauseBrowserNativeBoundsForLayout(true)
 
     const controls = browserPanelWidth.animateSize(nextWidth, SPRING)
     void controls.finished
@@ -791,7 +753,6 @@ function AppLayoutContent({
         if (!browserPanelVisible) {
           setBrowserPanelClosing(false)
         }
-        resumeBrowserNativeBounds()
       })
       .catch(() => {})
   }, [
@@ -799,9 +760,7 @@ function AppLayoutContent({
     browserPanelVisible,
     browserPanelWidth,
     dragging,
-    pauseBrowserNativeBoundsForLayout,
     readMainWidth,
-    resumeBrowserNativeBounds,
   ])
 
   useEffect(() => {
@@ -827,48 +786,11 @@ function AppLayoutContent({
     }
   }, [browserPanelRatio, browserPanelVisible, browserPanelWidth, dragging, readMainWidth])
 
-  useEffect(() => {
-    if (browserPanelVisible || browserPanelClosing || browserNativeBoundsPaused) {
-      return
-    }
-    clearBrowserNativeBoundsResumeTimer()
-  }, [
-    browserNativeBoundsPaused,
-    browserPanelClosing,
-    browserPanelVisible,
-    clearBrowserNativeBoundsResumeTimer,
-  ])
+  const handleAsideLayoutResizeStart = useCallback(() => {}, [])
+  const handleAsideLayoutResizeEnd = useCallback(() => {}, [])
 
-  useEffect(() => {
-    const initialState = useLayoutStore.getState()
-    let previousSidebarCollapsed = initialState.sidebarCollapsed
-    let previousAsideOpen = initialState.asideOpen
-    return useLayoutStore.subscribe((state) => {
-      const sidebarToggled = previousSidebarCollapsed !== state.sidebarCollapsed
-      const asideToggled = previousAsideOpen !== state.asideOpen
-      previousSidebarCollapsed = state.sidebarCollapsed
-      previousAsideOpen = state.asideOpen
-
-      if (!sidebarToggled && !asideToggled) {
-        return
-      }
-      if (dragging === 'browser') {
-        return
-      }
-      pauseBrowserNativeBoundsForLayout()
-    })
-  }, [dragging, pauseBrowserNativeBoundsForLayout])
-
-  const handleAsideLayoutResizeStart = useCallback(() => {
-    pauseBrowserNativeBounds()
-  }, [pauseBrowserNativeBounds])
-  const handleAsideLayoutResizeEnd = useCallback(() => {
-    resumeBrowserNativeBounds()
-  }, [resumeBrowserNativeBounds])
-
-  const browserPanelNativeBoundsPaused = browserNativeBoundsPaused || browserPanelClosing
-  const browserPanelActivityVisible
-    = browserPanelVisible || browserPanelClosing || browserNativeBoundsPaused
+  const browserPanelNativeBoundsPaused = browserPanelClosing
+  const browserPanelActivityVisible = browserPanelVisible || browserPanelClosing
 
   const handleToggleZenSidebars = useCallback(() => {
     const { asideOpen, setAsideOpen, setSidebarCollapsed, sidebarCollapsed }
