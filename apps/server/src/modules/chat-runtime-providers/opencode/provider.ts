@@ -1,5 +1,4 @@
 import type {
-  Agent as OpencodeAgent,
   AssistantMessage as OpencodeAssistantMessage,
   Config,
   Event as OpencodeEvent,
@@ -11,6 +10,7 @@ import type {
   Session as OpencodeSession,
   SessionStatus as OpencodeSessionStatus,
   Todo as OpencodeTodo,
+  ToolPart as OpencodeToolPart,
 } from '@opencode-ai/sdk'
 import type { UIMessage, UIMessageChunk } from 'ai'
 
@@ -55,7 +55,12 @@ import { providerChunk } from '../kit/chunk-mapper'
 import { requestProviderToolApproval } from '../kit/permission-bridge'
 import { readProviderStateSnapshot } from '../kit/state-snapshot'
 import { resolveOpencodeConfig } from './config'
-import { OpencodeEventStreamProjector, readOpencodeTerminalAssistantForTurn } from './event-stream'
+import {
+  isTerminalOpencodeAssistant,
+  OpencodeEventStreamProjector,
+  readOpencodeTerminalAssistantForTurn,
+  type OpencodeStreamEvent,
+} from './event-stream'
 import {
   projectOpencodePromptParts,
   projectOpencodeQuickQuestionParts,
@@ -69,6 +74,18 @@ import {
 import { listOpencodeRuntimeModels, OPENCODE_RUNTIME_NATIVE_PROVIDER_TARGET_ID } from './model-inventory'
 import { OPENCODE_RUNTIME_OWNED_PROVIDER_TARGETS } from './owned-provider-targets'
 import { createOpencodeRuntimePresentation } from './presentation'
+import {
+  OpencodeSubagentRegistry,
+  projectOpencodeCrewAgentProviderThread,
+  projectOpencodeSubagentProviderThread,
+  projectOpencodeSubagentStreamChunks,
+  readOpencodeEventSessionId,
+  readOpencodeSubagentBindingFromSessionCreated,
+  readOpencodeSubagentBindingFromTaskPart,
+  readOpencodeTaskBindingsFromMessages,
+  resolveOpencodeProviderThreadTarget,
+  type OpencodeSubagentBinding,
+} from './subagent-bridge'
 import type { OpencodeRuntimeResource } from './runtime-context'
 import { acquireOpencodeRuntimeResource } from './runtime-context'
 import { buildOpencodePermissionInput, buildOpencodePermissionOutput } from './tools/mapper'
@@ -107,6 +124,7 @@ export class OpencodeProvider implements ChatRuntime {
   private _lastModelId: string | null = null
   private readonly activePermissionIds = new Set<string>()
   private readonly permissionApprovalsByChatSessionId = new Map<string, OpencodePermissionApprovalRecord[]>()
+  private readonly subagentRegistriesByChatSessionId = new Map<string, OpencodeSubagentRegistry>()
 
   get lastUsage(): TokenUsage | null {
     return this._lastUsage
@@ -153,14 +171,21 @@ export class OpencodeProvider implements ChatRuntime {
     const modelId = input.modelId ?? snapshot.models.currentModelId ?? null
     const providerModel = parseOpenCodeModelRef(modelId)
     const updatedAt = Date.now()
-    const [status, todos, diff, mcpStatus, fileStatus, agents] = await Promise.all([
+    const subagentRegistry = this.readSubagentRegistry(input.runtimeSession.chatSessionId)
+    const [status, todos, diff, mcpStatus, fileStatus, taskBindings] = await Promise.all([
       readOpencodeSessionStatus(handle, input.workspacePath, providerSessionId),
       readOpencodeSessionTodo(handle, input.workspacePath, providerSessionId),
       readOpencodeSessionDiff(handle, input.workspacePath, providerSessionId),
       readOpencodeMcpStatus(handle, input.workspacePath),
       readOpencodeFileStatus(handle, input.workspacePath),
-      readOpencodeAgents(handle, input.workspacePath),
+      readOpencodeParentTaskBindings(handle, input.workspacePath, providerSessionId),
     ])
+    for (const binding of taskBindings) {
+      subagentRegistry.register(binding)
+    }
+    const subagentBindings = subagentRegistry
+      .listBindings()
+      .filter(binding => binding.parentSessionId === providerSessionId)
     const approvalRecords = this.permissionApprovalsByChatSessionId.get(input.runtimeSession.chatSessionId) ?? []
     const states: RuntimeUiSlotState[] = [
       {
@@ -229,8 +254,8 @@ export class OpencodeProvider implements ChatRuntime {
     if (fileStatus.length > 0) {
       states.push(projectOpencodeFilesystemState(providerSessionId, fileStatus, updatedAt))
     }
-    if (agents.length > 0) {
-      states.push(projectOpencodeCrewState(providerSessionId, agents, updatedAt))
+    if (subagentBindings.length > 0) {
+      states.push(projectOpencodeCrewState(providerSessionId, subagentBindings, updatedAt))
     }
     return states
   }
@@ -423,8 +448,60 @@ export class OpencodeProvider implements ChatRuntime {
 
   async readProviderThread(input: ProviderThreadReadInput): Promise<ProviderThreadReadResult> {
     const handle = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const registry = this.readSubagentRegistry(input.runtimeSession.chatSessionId)
+    let target
+    try {
+      target = await resolveOpencodeProviderThreadTarget({
+        threadId: input.threadId,
+        parentSessionId: input.runtimeSession.providerSessionId,
+        registry,
+        readChildSession: async sessionId => {
+          const result = await handle.client.session.get({
+            path: { id: sessionId },
+            query: { directory: input.workspacePath },
+          })
+          if (result.error || !result.data) {
+            return null
+          }
+          return result.data
+        },
+        readParentTaskBindings: async () => {
+          const parentSessionId = input.runtimeSession.providerSessionId
+          if (!parentSessionId) {
+            return []
+          }
+          const messages = await handle.client.session.messages({
+            path: { id: parentSessionId },
+            query: { directory: input.workspacePath, limit: 200 },
+          })
+          if (messages.error) {
+            return []
+          }
+          return await readOpencodeTaskBindingsFromMessages(parentSessionId, messages.data ?? [])
+        },
+      })
+    }
+    catch (error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.get', formatOpencodeError(error)),
+      )
+    }
+
+    if (target.kind === 'crew-agent') {
+      return {
+        runtimeKind: this.runtimeKind,
+        providerSessionId: input.runtimeSession.providerSessionId,
+        thread: projectOpencodeCrewAgentProviderThread({
+          threadId: target.threadId,
+          sessionId: target.sessionId,
+          agentName: target.agentName,
+          parentSessionId: target.parentSessionId,
+        }),
+      }
+    }
+
     const result = await handle.client.session.get({
-      path: { id: input.threadId },
+      path: { id: target.sessionId },
       query: { directory: input.workspacePath },
     })
     if (result.error) {
@@ -437,11 +514,19 @@ export class OpencodeProvider implements ChatRuntime {
         ProviderErrors.requestFailed(this.runtimeKind, 'session.get', 'opencode returned no session'),
       )
     }
-    const children = await readOpencodeSessionChildren(handle, input.workspacePath, input.threadId)
+    const children = await readOpencodeSessionChildren(handle, input.workspacePath, target.sessionId)
+    const thread = target.binding
+      ? projectOpencodeSubagentProviderThread({
+          threadId: target.requestedThreadId,
+          binding: target.binding,
+          session: result.data,
+          childCount: children.length,
+        })
+      : projectOpencodeProviderThread(result.data, children.length)
     return {
       runtimeKind: this.runtimeKind,
       providerSessionId: input.runtimeSession.providerSessionId,
-      thread: projectOpencodeProviderThread(result.data, children.length),
+      thread,
     }
   }
 
@@ -475,8 +560,53 @@ export class OpencodeProvider implements ChatRuntime {
 
   async listProviderThreadTurns(input: ProviderThreadTurnsInput): Promise<ProviderThreadTurnsResult> {
     const handle = readOpencodeRuntimeHandle(this.runtimeKind, input.runtimeSession)
+    const registry = this.readSubagentRegistry(input.runtimeSession.chatSessionId)
+    let resolvedSessionId = input.threadId
+    try {
+      const target = await resolveOpencodeProviderThreadTarget({
+        threadId: input.threadId,
+        parentSessionId: input.runtimeSession.providerSessionId,
+        registry,
+        readChildSession: async () => null,
+        readParentTaskBindings: async () => {
+          const parentSessionId = input.runtimeSession.providerSessionId
+          if (!parentSessionId) {
+            return []
+          }
+          const messages = await handle.client.session.messages({
+            path: { id: parentSessionId },
+            query: { directory: input.workspacePath, limit: 200 },
+          })
+          if (messages.error) {
+            return []
+          }
+          return await readOpencodeTaskBindingsFromMessages(parentSessionId, messages.data ?? [])
+        },
+      })
+      if (target.kind === 'crew-agent') {
+        return {
+          runtimeKind: this.runtimeKind,
+          providerSessionId: input.runtimeSession.providerSessionId,
+          threadId: input.threadId,
+          turns: [],
+          messages: [],
+          nextCursor: null,
+          backwardsCursor: null,
+        }
+      }
+      resolvedSessionId = target.sessionId
+      if (target.binding) {
+        registry.register(target.binding)
+      }
+    }
+    catch (error) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(this.runtimeKind, 'session.messages', formatOpencodeError(error)),
+      )
+    }
+
     const result = await handle.client.session.messages({
-      path: { id: input.threadId },
+      path: { id: resolvedSessionId },
       query: { directory: input.workspacePath, limit: 200 },
     })
     if (result.error) {
@@ -741,6 +871,8 @@ export class OpencodeProvider implements ChatRuntime {
     let projector = new OpencodeEventStreamProjector(opencodeSessionId)
     const chunks = new AsyncChunkQueue()
     const eventAbortController = new AbortController()
+    const subagentRegistry = this.readSubagentRegistry(input.runtimeSession.chatSessionId)
+    const pendingTaskParts: OpencodeToolPart[] = []
     let asyncPromptBaselineMessageIds: ReadonlySet<string> | null = null
     let asyncPromptDispatchStarted = false
     let asyncPromptSubmitted = false
@@ -841,19 +973,39 @@ export class OpencodeProvider implements ChatRuntime {
     }
 
     const recoverAsyncPromptIfTerminalSignalObserved = async (): Promise<void> => {
-      if (
-        !asyncPromptBaselineMessageIds
-        || eventStreamRecoveryStarted
-        || chunks.done
-      ) {
+      if (!asyncPromptBaselineMessageIds || chunks.done) {
         return
       }
+
       const shouldRecoverFromEndedStream = eventStreamEnded && asyncPromptSubmitted
-      const shouldRecoverFromIdleSession
-        = asyncPromptDispatchStarted && asyncPromptSessionBecameBusy && asyncPromptSessionBecameIdle
-      if (!shouldRecoverFromEndedStream && !shouldRecoverFromIdleSession) {
+      const shouldAttemptIdleHistoryClose
+        = !eventStreamRecoveryStarted
+          && asyncPromptDispatchStarted
+          && asyncPromptSessionBecameBusy
+          && asyncPromptSessionBecameIdle
+
+      if (!shouldRecoverFromEndedStream && !shouldAttemptIdleHistoryClose) {
         return
       }
+
+      if (shouldAttemptIdleHistoryClose && !shouldRecoverFromEndedStream) {
+        const recovered = await this.closeAsyncPromptTurnFromHistory({
+          resource,
+          projector,
+          chunks,
+          sessionId: opencodeSessionId,
+          workspacePath: input.workspacePath,
+          baselineMessageIds: asyncPromptBaselineMessageIds,
+        })
+        if (recovered) {
+          eventStreamRecoveryStarted = true
+          return
+        }
+        // OpenCode may go idle between agent-loop steps; wait for busy again or stream end.
+        asyncPromptSessionBecameIdle = false
+        return
+      }
+
       eventStreamRecoveryStarted = true
       const recovered = await this.closeAsyncPromptTurnFromHistory({
         resource,
@@ -866,7 +1018,7 @@ export class OpencodeProvider implements ChatRuntime {
       if (recovered) {
         return
       }
-      if (shouldRecoverFromIdleSession && !retriedWithFreshSession) {
+      if (!retriedWithFreshSession) {
         await retryAsyncPromptWithFreshSession()
         return
       }
@@ -874,9 +1026,7 @@ export class OpencodeProvider implements ChatRuntime {
         ProviderErrors.requestFailed(
           this.runtimeKind,
           'session.promptAsync',
-          shouldRecoverFromIdleSession
-            ? 'opencode session became idle before the async prompt produced a terminal assistant message'
-            : 'opencode event stream ended before the async prompt produced a terminal assistant message',
+          'opencode event stream ended before the async prompt produced a terminal assistant message',
         ),
       ))
     }
@@ -906,6 +1056,19 @@ export class OpencodeProvider implements ChatRuntime {
                 chunks,
                 permission: event.properties,
               })
+            }
+            this.registerOpencodeSubagentFromEvent({
+              event,
+              parentSessionId: opencodeSessionId,
+              registry: subagentRegistry,
+              pendingTaskParts,
+            })
+            const eventSessionId = readOpencodeEventSessionId(event)
+            if (eventSessionId) {
+              const childBinding = subagentRegistry.getByChildSessionId(eventSessionId)
+              if (childBinding) {
+                this.publishOpencodeSubagentThreadEvent(input, childBinding, event, subagentRegistry)
+              }
             }
             for (const chunk of projector.projectEvent(event)) {
               chunks.push(chunk)
@@ -1240,6 +1403,78 @@ export class OpencodeProvider implements ChatRuntime {
     return result.data as OpencodeSession & { id: string }
   }
 
+  private readSubagentRegistry(chatSessionId: string): OpencodeSubagentRegistry {
+    let registry = this.subagentRegistriesByChatSessionId.get(chatSessionId)
+    if (!registry) {
+      registry = new OpencodeSubagentRegistry()
+      this.subagentRegistriesByChatSessionId.set(chatSessionId, registry)
+    }
+    return registry
+  }
+
+  private registerOpencodeSubagentFromEvent(input: {
+    event: OpencodeStreamEvent
+    parentSessionId: string
+    registry: OpencodeSubagentRegistry
+    pendingTaskParts: OpencodeToolPart[]
+  }): OpencodeSubagentBinding | null {
+    if (input.event.type === 'message.part.updated') {
+      const part = input.event.properties.part
+      if (part.type !== 'tool' || part.tool !== 'task' || part.sessionID !== input.parentSessionId) {
+        return null
+      }
+      const existingIndex = input.pendingTaskParts.findIndex(candidate => candidate.id === part.id)
+      if (existingIndex >= 0) {
+        input.pendingTaskParts[existingIndex] = part
+      }
+      else {
+        input.pendingTaskParts.push(part)
+      }
+      const binding = readOpencodeSubagentBindingFromTaskPart(part, input.parentSessionId)
+      if (binding) {
+        input.registry.register(binding)
+      }
+      return binding
+    }
+    if (input.event.type === 'session.created') {
+      const binding = readOpencodeSubagentBindingFromSessionCreated(
+        input.event.properties.info,
+        input.pendingTaskParts,
+      )
+      if (binding) {
+        input.registry.register(binding)
+      }
+      return binding
+    }
+    return null
+  }
+
+  private publishOpencodeSubagentThreadEvent(
+    turnInput: StreamTurnInput,
+    binding: OpencodeSubagentBinding,
+    event: OpencodeStreamEvent,
+    registry: OpencodeSubagentRegistry,
+  ): void {
+    if (!turnInput.onProviderThreadEvent) {
+      return
+    }
+    const chunks = projectOpencodeSubagentStreamChunks(event, binding, registry)
+    if (chunks.length === 0) {
+      return
+    }
+    try {
+      turnInput.onProviderThreadEvent({
+        providerThreadId: binding.toolCallId,
+        providerTurnId: null,
+        notification: event,
+        chunks,
+      })
+    }
+    catch {
+      // Provider-thread subscribers must not affect the parent turn stream.
+    }
+  }
+
   private async resolveRuntimeConfig(input: {
     profile: StartChatSessionInput['profile']
     requestedModelId?: string | null
@@ -1350,10 +1585,6 @@ function parseOpenCodeModelRef(modelId: string | null | undefined): { providerID
     providerID: modelId.slice(0, slashIndex),
     modelID: modelId.slice(slashIndex + 1),
   }
-}
-
-function toOpenCodeModelRef(providerId: string, modelId: string): string {
-  return modelId.includes('/') ? modelId : `${providerId}/${modelId}`
 }
 
 function readOpencodeRuntimeHandle(runtimeKind: RuntimeKind, runtimeSession: RuntimeSession): OpencodeRuntimeResource {
@@ -1583,17 +1814,19 @@ async function readOpencodeFileStatus(
   return result.data ?? []
 }
 
-async function readOpencodeAgents(
+async function readOpencodeParentTaskBindings(
   resource: OpencodeRuntimeResource,
   workspacePath: string,
-): Promise<OpencodeAgent[]> {
-  const result = await resource.client.app.agents({
-    query: { directory: workspacePath },
+  sessionId: string,
+): Promise<OpencodeSubagentBinding[]> {
+  const result = await resource.client.session.messages({
+    path: { id: sessionId },
+    query: { directory: workspacePath, limit: 200 },
   }).catch(() => null)
   if (!result || result.error) {
     return []
   }
-  return result.data ?? []
+  return await readOpencodeTaskBindingsFromMessages(sessionId, result.data ?? [])
 }
 
 function projectOpencodeRuntimeThreadStatus(status: OpencodeSessionStatus | null): Extract<RuntimeUiSlotState, { kind: 'status' }>['status'] {
@@ -1731,41 +1964,65 @@ function projectOpencodeFilesystemState(
 
 function projectOpencodeCrewState(
   sessionId: string,
-  agents: OpencodeAgent[],
+  bindings: OpencodeSubagentBinding[],
   updatedAt: number,
 ): RuntimeUiSlotState {
-  const visibleAgents = agents
-    .map(agent => ({
-      threadId: `${sessionId}:agent:${agent.name}`,
-      status: 'available',
-      message: agent.description ?? null,
-      name: agent.name,
-      preview: agent.prompt ?? agent.description ?? null,
-      modelProvider: agent.model?.providerID ?? null,
-      agentNickname: agent.name,
-      agentRole: agent.mode,
-    }))
-    .sort((left, right) => (left.name ?? '').localeCompare(right.name ?? ''))
-  const collaborationModes = agents
-    .map(agent => ({
-      name: agent.name,
-      mode: agent.mode,
-      model: agent.model ? toOpenCodeModelRef(agent.model.providerID, agent.model.modelID) : null,
-      reasoningEffort: null,
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name))
+  const sortedBindings = [...bindings].sort((left, right) =>
+    (right.startedAt ?? 0) - (left.startedAt ?? 0)
+      || left.toolCallId.localeCompare(right.toolCallId),
+  )
+  const agents = sortedBindings.map(binding => ({
+    threadId: binding.toolCallId,
+    status: binding.status,
+    message: binding.description,
+    name: binding.subagentType,
+    preview: binding.description,
+    modelProvider: null,
+    agentNickname: binding.subagentType,
+    agentRole: binding.description,
+  }))
+  const calls = sortedBindings.map(binding => ({
+    id: binding.toolCallId,
+    tool: 'task',
+    status: binding.status,
+    senderThreadId: sessionId,
+    receiverThreadIds: [binding.toolCallId],
+    prompt: binding.description,
+    model: null,
+    reasoningEffort: null,
+    agents: [{
+      threadId: binding.toolCallId,
+      status: binding.status,
+      message: binding.description,
+      name: binding.subagentType,
+      preview: binding.description,
+      modelProvider: null,
+      agentNickname: binding.subagentType,
+      agentRole: binding.description,
+    }],
+    startedAt: binding.startedAt,
+    completedAt: binding.completedAt,
+  }))
+  const recentItems = sortedBindings.map(binding => ({
+    id: binding.toolCallId,
+    type: 'subagent',
+    label: binding.description ?? binding.subagentType ?? binding.toolCallId,
+    status: binding.status,
+    startedAt: binding.startedAt,
+    completedAt: binding.completedAt,
+  }))
   return {
     kind: 'crew',
     slotId: 'opencode:crew',
     threadId: sessionId,
-    activeCount: 0,
-    completedCount: 0,
-    failedCount: 0,
-    recentItems: [],
-    agents: visibleAgents,
-    collaborationModeCount: collaborationModes.length,
-    collaborationModes,
-    calls: [],
+    activeCount: sortedBindings.filter(binding => binding.status === 'running').length,
+    completedCount: sortedBindings.filter(binding => binding.status === 'completed').length,
+    failedCount: sortedBindings.filter(binding => binding.status === 'failed').length,
+    recentItems,
+    agents,
+    collaborationModeCount: 0,
+    collaborationModes: [],
+    calls,
     updatedAt,
   }
 }
@@ -2003,10 +2260,6 @@ function readTerminalAssistantAfterBaseline(
     }
   }
   return selected
-}
-
-function isTerminalOpencodeAssistant(message: OpencodeAssistantMessage): boolean {
-  return message.time.completed !== undefined || message.finish !== undefined || message.error !== undefined
 }
 
 function projectOpencodeShellResult(parts: OpencodePart[]): {

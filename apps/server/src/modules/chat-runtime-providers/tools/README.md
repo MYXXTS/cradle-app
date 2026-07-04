@@ -12,7 +12,7 @@ Each provider owns its own mapping from provider-native tool names to `CradleToo
 
 - `claude-agent/tools/mapper.ts` — `classifyClaudeCodeToolKind`, a complete mapping for every `ClaudeCodeToolName`, plus `'mcp'` for any `mcp__<server>__<tool>` name (the SDK's own MCP naming convention).
 - `codex/tools/mapper.ts` — `classifyCodexToolKind`. Codex has not been migrated to the rest of this architecture yet, so only the api names the frontend previously classified are mapped; real MCP tool calls (`item.type === 'mcpToolCall'`) are classified as `'mcp'`, everything else (including dynamic tool calls) is `'generic'`.
-- `opencode/tools/mapper.ts` — `classifyOpencodeToolKind`, currently always `'generic'` (unmigrated); opencode does not expose a reliable signal to distinguish MCP tool calls from built-ins yet.
+- `opencode/tools/mapper.ts` — `classifyOpencodeToolKind` maps built-in OpenCode tool names (`bash`, `read`, `write`, `grep`, …) and `mcp_*` / `mcp:` prefixes to `CradleToolKind`.
 
 When adding a new provider tool, classify it at the point the envelope is created — never reintroduce identity-based guessing on the frontend.
 

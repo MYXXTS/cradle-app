@@ -31,6 +31,7 @@ interface TextPartProjection {
 
 interface ToolPartProjection {
   inputAvailable: boolean
+  inputKey: string | null
   outputKey: string | null
 }
 
@@ -246,6 +247,7 @@ export class OpencodeEventStreamProjector {
   private projectToolPart(part: OpencodeToolPart): UIMessageChunk[] {
     const projection = this.toolParts.get(part.callID) ?? {
       inputAvailable: false,
+      inputKey: null,
       outputKey: null,
     }
     this.toolParts.set(part.callID, projection)
@@ -255,12 +257,18 @@ export class OpencodeEventStreamProjector {
       projection.inputAvailable = true
       chunks.push(
         providerChunk.toolInputStart(part.callID, part.tool),
-        providerChunk.toolInputAvailable({
-          toolCallId: part.callID,
-          toolName: part.tool,
-          input: buildOpencodeToolInput(part),
-        }),
       )
+    }
+
+    const input = buildOpencodeToolInput(part)
+    const inputKey = JSON.stringify(input)
+    if (inputKey !== projection.inputKey) {
+      projection.inputKey = inputKey
+      chunks.push(providerChunk.toolInputAvailable({
+        toolCallId: part.callID,
+        toolName: part.tool,
+        input,
+      }))
     }
 
     const outputKey = readToolOutputKey(part)
@@ -318,6 +326,20 @@ export class OpencodeEventStreamProjector {
   }
 }
 
+/**
+ * OpenCode's agent loop continues while `finish` is `tool-calls` or `unknown`.
+ * Treating those as terminal closes Cradle turns after the first tool batch.
+ */
+export function isTerminalOpencodeAssistant(message: OpencodeAssistantMessage): boolean {
+  if (message.error !== undefined) {
+    return true
+  }
+  if (message.finish === 'tool-calls' || message.finish === 'unknown') {
+    return false
+  }
+  return message.time.completed !== undefined || message.finish !== undefined
+}
+
 export function readOpencodeTerminalAssistantForTurn(
   event: OpencodeStreamEvent,
   input: {
@@ -336,9 +358,7 @@ export function readOpencodeTerminalAssistantForTurn(
   ) {
     return null
   }
-  return info.time.completed !== undefined || info.finish !== undefined || info.error !== undefined
-    ? info
-    : null
+  return isTerminalOpencodeAssistant(info) ? info : null
 }
 
 function readTextDelta(previousText: string, nextText: string): string {

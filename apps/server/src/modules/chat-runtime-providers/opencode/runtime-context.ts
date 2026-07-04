@@ -7,11 +7,9 @@
  * carried per request, while Cradle-owned provider/MCP config is injected at
  * process startup through `OPENCODE_CONFIG_CONTENT`. opencode cwd, config
  * directory, and database path are isolated under Cradle's runtime data
- * directory. One long-lived server therefore serves every Cradle chat session
- * and workspace until the injected config changes, at which point Cradle
- * restarts the shared server with the new cumulative config. Per-session
- * process spawning and the host-manager lease/reaper machinery do not apply
- * here.
+ * directory. One long-lived server serves every Cradle chat session and
+ * workspace. Per-session process spawning and the host-manager lease/reaper
+ * machinery do not apply here.
  *
  * The server is spawned directly (rather than via the SDK's `createOpencode`)
  * so Cradle retains the `ChildProcess` and can report its pid/RSS/CPU to the
@@ -72,6 +70,7 @@ interface OpencodeServerResources {
 let instancePromise: Promise<OpencodeServerInstance> | null = null
 let serverConfig: Config = {}
 let serverConfigFingerprint = ''
+const ignoredLateConfigFingerprints = new Set<string>()
 
 /**
  * Start the shared opencode server (idempotent). Resolves to the same instance
@@ -103,7 +102,7 @@ export async function stopOpencodeServer(): Promise<void> {
   try {
     const instance = await pending
     instance.close()
-    logger.info('opencode server stopped')
+    logger.info('opencode server stopped', { childPid: instance.process.pid ?? null })
   }
   catch (error) {
     logger.warn('opencode server stop failed', { error: formatError(error) })
@@ -174,13 +173,13 @@ async function spawnOpencodeServerInstance(): Promise<OpencodeServerInstance> {
   }
   spawnedInstance = instance
   proc.once('exit', (code, signal) => {
-    logger.warn('opencode server exited', { code, signal })
+    logger.warn('opencode server exited', { childPid: proc.pid ?? null, code, signal })
     if (spawnedInstance === instance) {
       spawnedInstance = null
       instancePromise = null
     }
   })
-  logger.info('opencode server started', { url, port, pid: proc.pid })
+  logger.info('opencode server started', { url, port, childPid: proc.pid ?? null })
   return instance
 }
 
@@ -299,10 +298,10 @@ function readProcessResourceUsage(pid: number): { rssMB: number, cpuPercent: num
  * `config.json`, which would write runtime-owned Cradle config into the user's
  * source tree.
  *
- * If the cumulative startup config changes while the shared server is running,
- * restart it. opencode sessions are stored in Cradle's opencode runtime
- * database outside the server process, and the server is otherwise a stateless
- * HTTP multiplexer.
+ * Startup config can only be applied before the shared server is spawned.
+ * Session acquire must not restart the global opencode host: opencode is a
+ * runtime-owned server, and one chat session's resolved provider profile is not
+ * allowed to mutate the lifecycle of every other session.
  */
 export async function ensureOpencodeServerConfig(input: {
   config: Config
@@ -318,11 +317,18 @@ export async function ensureOpencodeServerConfig(input: {
     return
   }
 
+  if (instancePromise) {
+    if (!ignoredLateConfigFingerprints.has(nextFingerprint)) {
+      ignoredLateConfigFingerprints.add(nextFingerprint)
+      logger.warn('opencode server startup config changed after shared server start; keeping server alive', {
+        childPid: spawnedInstance?.process.pid ?? null,
+      })
+    }
+    return
+  }
+
   serverConfig = nextConfig
   serverConfigFingerprint = nextFingerprint
-  if (instancePromise) {
-    await stopOpencodeServer()
-  }
 }
 
 export function mergeOpencodeRuntimeConfig(base: Config, incoming: Config): Config {
@@ -360,10 +366,10 @@ function readOpencodeRuntimeConfigPayload(config: Config): Pick<Config, 'provide
  * host-managed lease.
  *
  * When the caller passes a config that projects `provider` or `mcp` entries,
- * the shared server is started or restarted with that config in
- * `OPENCODE_CONFIG_CONTENT`. The workspace directory remains only the request
- * execution directory; Cradle disables opencode project config and never writes
- * runtime-owned opencode config into it.
+ * it is used only if the shared server has not started yet. The workspace
+ * directory remains only the request execution directory; Cradle disables
+ * opencode project config and never writes runtime-owned opencode config into
+ * it.
  */
 export async function acquireOpencodeRuntimeResource(input: {
   runtimeKind: RuntimeKind

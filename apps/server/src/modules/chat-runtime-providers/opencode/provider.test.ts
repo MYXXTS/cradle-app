@@ -89,7 +89,8 @@ function assistantMessage(input: Partial<OpencodeAssistantMessage> = {}): Openco
       reasoning: 0,
       cache: { read: 0, write: 0 },
     },
-    finish: input.finish ?? 'stop',
+    ...('finish' in input ? {} : { finish: 'stop' as const }),
+    ...input,
   }
 }
 
@@ -402,6 +403,121 @@ describe('OpencodeProvider provider threads', () => {
       query: { directory: '/tmp/workspace' },
     }))
   })
+
+  it('resolves subagent provider threads from task toolCallId aliases', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    fake.session.get = vi.fn(async (options?: { path?: { id?: string } }) => {
+      if (options?.path?.id === 'ses_child') {
+        return {
+          data: {
+            id: 'ses_child',
+            projectID: 'project-1',
+            directory: '/tmp/workspace',
+            parentID: 'ses_1',
+            title: 'Explore auth module',
+            version: '1.17.11',
+            time: { created: 2, updated: 3 },
+          },
+          error: undefined,
+        }
+      }
+      return { data: fake.state.sessionGetData, error: undefined }
+    })
+    fake.session.messages = vi.fn(async (options?: { path?: { id?: string } }) => ({
+      data: fake.state.sessionMessagesData.filter(entry =>
+        Boolean(
+          entry
+          && typeof entry === 'object'
+          && 'info' in entry
+          && entry.info
+          && typeof entry.info === 'object'
+          && 'sessionID' in entry.info
+          && entry.info.sessionID === options?.path?.id,
+        ),
+      ),
+      error: undefined,
+    }))
+    fake.state.sessionMessagesData = [
+      {
+        info: {
+          id: 'msg_assistant',
+          sessionID: 'ses_1',
+          role: 'assistant',
+          time: { created: 1 },
+          parentID: 'msg_user',
+          modelID: 'gpt-5',
+          providerID: 'openai',
+          mode: 'build',
+          path: { cwd: '/tmp/workspace', root: '/tmp/workspace' },
+          cost: 0,
+          tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{
+          id: 'part_task',
+          sessionID: 'ses_1',
+          messageID: 'msg_assistant',
+          type: 'tool',
+          callID: 'call_task_1',
+          tool: 'task',
+          state: {
+            status: 'running',
+            input: { description: 'Explore auth module', subagent_type: 'explore' },
+            title: 'Explore auth module',
+            metadata: { sessionId: 'ses_child', parentSessionId: 'ses_1' },
+            time: { start: 1 },
+          },
+        }],
+      },
+      {
+        info: assistantMessage({ id: 'msg_child_assistant', sessionID: 'ses_child' }),
+        parts: [textPart({ id: 'part_child', sessionID: 'ses_child', messageID: 'msg_child_assistant', text: 'Found 3 files' })],
+      },
+    ]
+
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const runtimeSession = createRuntimeSession(fake.resource)
+
+    await expect(provider.readProviderThread({
+      runtimeSession,
+      profile: null,
+      workspacePath: '/tmp/workspace',
+      threadId: 'call_task_1',
+    })).resolves.toMatchObject({
+      thread: {
+        id: 'call_task_1',
+        forkedFromId: 'call_task_1',
+        agentNickname: 'explore',
+        name: 'Explore auth module',
+        source: {
+          type: 'opencode-subagent',
+          childSessionId: 'ses_child',
+          toolCallId: 'call_task_1',
+        },
+      },
+    })
+
+    await expect(provider.listProviderThreadTurns({
+      runtimeSession,
+      profile: null,
+      workspacePath: '/tmp/workspace',
+      threadId: 'call_task_1',
+    })).resolves.toMatchObject({
+      threadId: 'call_task_1',
+      turns: [
+        { id: 'msg_child_assistant', status: 'completed' },
+      ],
+      messages: [
+        { role: 'assistant', parts: [{ type: 'text', text: 'Found 3 files' }] },
+      ],
+    })
+    expect(fake.session.get).toHaveBeenCalledWith(expect.objectContaining({
+      path: { id: 'ses_child' },
+    }))
+    expect(fake.session.messages).toHaveBeenCalledWith(expect.objectContaining({
+      path: { id: 'ses_child' },
+    }))
+  })
 })
 
 describe('OpencodeProvider UI slot states', () => {
@@ -426,24 +542,14 @@ describe('OpencodeProvider UI slot states', () => {
       { path: 'src/app.ts', added: 12, removed: 3, status: 'modified' },
       { path: 'src/new.ts', added: 4, removed: 0, status: 'added' },
     )
-    fake.state.appAgentsData.push({
-      name: 'plan',
-      description: 'Plan work before editing',
-      mode: 'primary',
-      builtIn: true,
-      permission: { edit: 'ask', bash: {}, webfetch: 'ask' },
-      model: { providerID: 'openai', modelID: 'gpt-5' },
-      tools: {},
-      options: {},
-    })
-
     const provider = new OpencodeProvider({ readSecret: () => 'secret' })
-    await expect(provider.getUiSlotStates({
+    const states = await provider.getUiSlotStates({
       runtimeSession: createRuntimeSession(fake.resource),
       profile: null,
       workspacePath: '/tmp/workspace',
       modelId: 'openai/gpt-5',
-    })).resolves.toEqual(expect.arrayContaining([
+    })
+    expect(states).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'status',
         slotId: 'opencode:status',
@@ -475,15 +581,71 @@ describe('OpencodeProvider UI slot states', () => {
         changedPathCount: 2,
         recentPaths: ['src/app.ts', 'src/new.ts'],
       }),
+    ]))
+    expect(states.find(state => state.kind === 'crew')).toBeUndefined()
+  })
+
+  it('projects crew state only from current session task subagents', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    fake.state.appAgentsData.push({
+      name: 'plan',
+      description: 'Plan work before editing',
+      mode: 'primary',
+      builtIn: true,
+      permission: { edit: 'ask', bash: {}, webfetch: 'ask' },
+      model: { providerID: 'openai', modelID: 'gpt-5' },
+      tools: {},
+      options: {},
+    })
+    fake.state.sessionMessagesData = [{
+      info: assistantMessage({ id: 'msg_parent', sessionID: 'ses_1' }),
+      parts: [{
+        id: 'part_task',
+        sessionID: 'ses_1',
+        messageID: 'msg_parent',
+        type: 'tool',
+        callID: 'call_task_1',
+        tool: 'task',
+        state: {
+          status: 'completed',
+          input: { description: 'Explore opencode bridge', subagent_type: 'explore' },
+          output: 'task_id: ses_child',
+          title: 'Explore opencode bridge',
+          metadata: { sessionId: 'ses_child', parentSessionId: 'ses_1' },
+          time: { start: 10, end: 20 },
+        },
+      }],
+    }]
+
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    await expect(provider.getUiSlotStates({
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      workspacePath: '/tmp/workspace',
+      modelId: 'openai/gpt-5',
+    })).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: 'crew',
         slotId: 'opencode:crew',
-        collaborationModeCount: 1,
+        activeCount: 0,
+        completedCount: 1,
+        failedCount: 0,
+        collaborationModeCount: 0,
+        collaborationModes: [],
         agents: [
           expect.objectContaining({
-            name: 'plan',
-            agentRole: 'primary',
-            modelProvider: 'openai',
+            threadId: 'call_task_1',
+            name: 'explore',
+            status: 'completed',
+          }),
+        ],
+        calls: [
+          expect.objectContaining({
+            id: 'call_task_1',
+            status: 'completed',
+            receiverThreadIds: ['call_task_1'],
+            prompt: 'Explore opencode bridge',
           }),
         ],
       }),
@@ -832,13 +994,34 @@ describe('OpencodeProvider streamTurn', () => {
     expect(fake.session.create).not.toHaveBeenCalled()
   })
 
-  it('retries async prompts in a fresh native session when OpenCode goes idle without a terminal assistant', async () => {
+  it('retries async prompts in a fresh native session when the OpenCode event stream ends without a terminal assistant', async () => {
     const events = new AsyncEventStream<OpencodeEvent>()
     const fake = createFakeResource(events)
+    let promptAsyncCalls = 0
+    fake.promptAsync.mockImplementation(async () => {
+      promptAsyncCalls += 1
+      if (promptAsyncCalls === 2) {
+        fake.state.sessionMessagesData.push({
+          info: assistantMessage({
+            id: 'msg_assistant_recovered',
+            sessionID: 'ses_recovered',
+            parentID: 'msg_user_recovered',
+            time: { created: 3, completed: 4 },
+            finish: 'stop',
+          }),
+          parts: [textPart({
+            id: 'part_text_recovered',
+            sessionID: 'ses_recovered',
+            messageID: 'msg_assistant_recovered',
+          })],
+        })
+      }
+      return { data: undefined, error: undefined }
+    })
     const provider = new OpencodeProvider({ readSecret: () => 'secret' })
     const runtimeSession = createRuntimeSession(fake.resource)
     const stream = provider.streamTurn({
-      runId: 'run-idle-empty',
+      runId: 'run-stream-empty',
       runtimeSession,
       profile: null,
       message: {
@@ -868,6 +1051,9 @@ describe('OpencodeProvider streamTurn', () => {
       done: false,
       value: { type: 'data-runtime-event', data: { kind: 'opencode.session.status' } },
     })
+
+    events.close()
+
     await vi.waitFor(() => expect(fake.session.create).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(2))
     expect(runtimeSession.providerSessionId).toBe('ses_recovered')
@@ -878,45 +1064,6 @@ describe('OpencodeProvider streamTurn', () => {
       },
     })
     expect(fake.promptAsync.mock.calls[1]![0].body).not.toHaveProperty('messageID')
-    const recoveredAssistant = assistantMessage({
-      id: 'msg_assistant_recovered',
-      sessionID: 'ses_recovered',
-      parentID: 'msg_user_recovered',
-      time: { created: 3 },
-    })
-    fake.state.sessionMessagesData.push({
-      info: {
-        ...recoveredAssistant,
-        time: { created: 3, completed: 4 },
-        finish: 'stop',
-      },
-      parts: [textPart({
-        id: 'part_text_recovered',
-        sessionID: 'ses_recovered',
-        messageID: 'msg_assistant_recovered',
-      })],
-    })
-    events.push({ type: 'message.updated', properties: { info: recoveredAssistant } })
-    events.push({
-      type: 'message.part.updated',
-      properties: {
-        part: textPart({
-          id: 'part_text_recovered',
-          sessionID: 'ses_recovered',
-          messageID: 'msg_assistant_recovered',
-        }),
-      },
-    })
-    events.push({
-      type: 'message.updated',
-      properties: {
-        info: {
-          ...recoveredAssistant,
-          time: { created: 3, completed: 4 },
-          finish: 'stop',
-        },
-      },
-    })
 
     await expect(stream.next()).resolves.toMatchObject({
       done: false,
@@ -927,6 +1074,132 @@ describe('OpencodeProvider streamTurn', () => {
     await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-end' } })
     await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'finish' } })
     await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('keeps streaming across tool-calls finish and idle between agent-loop steps', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-tool-loop',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Run checks' }],
+      },
+      workspacePath: '/tmp/workspace',
+    })
+
+    const firstChunk = stream.next()
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const assistant = assistantMessage({
+      id: 'msg_assistant',
+      parentID: 'msg_user',
+      time: { created: 1 },
+      finish: undefined,
+    })
+    const toolPart = {
+      id: 'part_tool',
+      sessionID: 'ses_1',
+      messageID: 'msg_assistant',
+      type: 'tool',
+      callID: 'call_1',
+      tool: 'bash',
+      state: {
+        status: 'completed',
+        input: { command: 'pnpm typecheck' },
+        output: 'ok',
+        title: 'Command completed',
+        metadata: {},
+        time: { start: 1, end: 2 },
+      },
+    } satisfies OpencodePart
+
+    events.push({ type: 'message.updated', properties: { info: assistant } })
+    events.push({ type: 'message.part.updated', properties: { part: toolPart } })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 2 },
+          finish: 'tool-calls',
+        },
+      },
+    })
+    events.push({
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'busy' } },
+    })
+    events.push({
+      type: 'session.idle',
+      properties: { sessionID: 'ses_1' },
+    })
+
+    await expect(firstChunk).resolves.toMatchObject({ done: false, value: { type: 'tool-input-start' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'tool-input-available' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'tool-output-available' } })
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.status' } },
+    })
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.idle' } },
+    })
+
+    events.push({
+      type: 'session.status',
+      properties: { sessionID: 'ses_1', status: { type: 'busy' } },
+    })
+    events.push({
+      type: 'message.part.updated',
+      properties: {
+        part: textPart({
+          id: 'part_text_final',
+          messageID: 'msg_assistant',
+          text: 'All checks passed.',
+        }),
+      },
+    })
+    fake.state.sessionMessagesData.push({
+      info: {
+        ...assistant,
+        time: { created: 1, completed: 4 },
+        finish: 'stop',
+      },
+      parts: [
+        toolPart,
+        textPart({
+          id: 'part_text_final',
+          messageID: 'msg_assistant',
+          text: 'All checks passed.',
+        }),
+      ],
+    })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 4 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: { type: 'data-runtime-event', data: { kind: 'opencode.session.status' } },
+    })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-start' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-delta', delta: 'All checks passed.' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-end' } })
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'finish' } })
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+    expect(fake.session.create).not.toHaveBeenCalled()
   })
 
   it('bridges OpenCode permission events through runtime tool approvals', async () => {

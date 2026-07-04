@@ -4,6 +4,7 @@ import { useCallback, useMemo } from 'react'
 
 import type { ModelDescriptor } from '~/features/agent-runtime/types'
 import { useProviderTargetModels } from '~/features/agent-runtime/use-agent-models'
+import { useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
 import { useGitRepositories } from '~/features/git/use-git'
 import { useChatPreferencesQuery } from '~/features/settings/use-chat-preferences'
 import { isElectron, platform } from '~/lib/electron'
@@ -143,6 +144,13 @@ export function useChatComposerRuntime({
     staleTime: 60_000,
     retry: false,
   })
+  const { runtimes } = useRuntimeCatalog()
+  const runtimeSteerCapability = useMemo(() => {
+    const runtimeKind = runtimeCapabilities?.runtimeKind
+    if (!runtimeKind) return 'queue-fallback'
+    return runtimes.find(r => r.runtimeKind === runtimeKind)?.capabilities?.steer ?? 'queue-fallback'
+  }, [runtimeCapabilities?.runtimeKind, runtimes])
+
   const { data: runtimeUiSlotStates } = useQuery({
     queryKey: runtimeUiSlotStatesQueryKey(sessionId, runtimeCapabilities?.runtimeKind),
     queryFn: ({ signal }) => getChatRuntimeUiSlotStates(sessionId!, signal),
@@ -290,9 +298,11 @@ export function useChatComposerRuntime({
 
       const overrides = sendOverridesRef?.current
       const defaultContinuationMode = chatPreferences?.continuationBehavior ?? 'queue'
-      const continuationMode = options?.invertContinuationMode
+      const effectiveMode = options?.invertContinuationMode
         ? invertContinuationMode(defaultContinuationMode)
         : defaultContinuationMode
+      // Runtimes that lack native steer always queue — skip the round-trip.
+      const continuationMode = runtimeSteerCapability === 'native' ? effectiveMode : 'queue'
       return sendMessage(
         text,
         {
@@ -306,7 +316,7 @@ export function useChatComposerRuntime({
         contextParts,
       )
     },
-    [chatPreferences?.continuationBehavior, isReady, runtimeSettings, sendMessage, sendOverridesRef],
+    [chatPreferences?.continuationBehavior, isReady, runtimeSettings, runtimeSteerCapability, sendMessage, sendOverridesRef],
   )
 
   return {

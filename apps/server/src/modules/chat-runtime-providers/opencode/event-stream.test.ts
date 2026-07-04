@@ -6,7 +6,7 @@ import type {
 import { describe, expect, it } from 'vitest'
 
 import { assertValidProviderChunkSequence } from '../kit/testing/chunk-contract'
-import { OpencodeEventStreamProjector } from './event-stream'
+import { isTerminalOpencodeAssistant, OpencodeEventStreamProjector } from './event-stream'
 
 function assistantMessage(input: Partial<OpencodeAssistantMessage> = {}): OpencodeAssistantMessage {
   return {
@@ -138,5 +138,20 @@ describe('opencodeEventStreamProjector', () => {
       { type: 'text-start', id: 'part_text' },
       { type: 'text-delta', id: 'part_text', delta: 'Hel' },
     ])
+  })
+
+  it('does not treat tool-calls finish as terminal', () => {
+    expect(isTerminalOpencodeAssistant(assistantMessage({
+      finish: 'tool-calls',
+      time: { created: 1, completed: 2 },
+    }))).toBe(false)
+    expect(isTerminalOpencodeAssistant(assistantMessage({
+      finish: 'unknown',
+      time: { created: 1, completed: 2 },
+    }))).toBe(false)
+    expect(isTerminalOpencodeAssistant(assistantMessage({
+      finish: 'stop',
+      time: { created: 1, completed: 2 },
+    }))).toBe(true)
   })
 })
