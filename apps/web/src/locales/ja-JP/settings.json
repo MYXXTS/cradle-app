@@ -144,6 +144,7 @@
   "desktop.updates.availableVersion": "利用可能な更新",
   "desktop.updates.currentVersion": "インストール済みバージョン",
   "desktop.updates.none": "なし",
+  "desktop.updates.releaseNotes": "リリースノート",
   "desktop.updates.status.available": "更新あり",
   "desktop.updates.status.checking": "確認中",
   "desktop.updates.status.current": "最新",

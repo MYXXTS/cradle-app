@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   deleteWorkspacesByWorkspaceIdMutation,
@@ -39,6 +40,7 @@ export function useWorkspaces() {
 }
 
 export function useAddWorkspace() {
+  const { t } = useTranslation('workspace')
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [recognition, setRecognition] = useState<WorkspaceRecognition | null>(null)
@@ -61,7 +63,7 @@ export function useAddWorkspace() {
   const addFromPicker = useCallback(async () => {
     setAdding(true)
     try {
-      const dirPath = await selectDirectory({ title: '添加项目', description: '选择一个项目目录导入到 Cradle' })
+      const dirPath = await selectDirectory({ title: t('workspace.dialog.addProject'), description: t('workspace.dialog.addProjectDescription') })
       if (!dirPath) {
         return
       }

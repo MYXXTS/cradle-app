@@ -16,6 +16,8 @@
   "continuation.steer.label": "Guide",
   "empty.startConversation": "Sending a message to start the conversation",
   "error.loadMessages": "Failed to load messages. (Unknown error)",
+  "minimap.assistantReply": "Assistant reply",
+  "minimap.userMessage": "User message",
   "rollback.action.disabledHint": "Finish or stop the current response before editing the previous message.",
   "rollback.action.fileCaveat": "Edit the previous message. The chat turn will be rolled back only when you send the edited message; workspace file changes are kept.",
   "rollback.action.label": "Edit previous",

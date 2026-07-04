@@ -23,4 +23,6 @@ export default {
   'import.installed_plural': '{{count}} skills installed successfully',
   'import.failed': '{{count}} failed',
   'import.finish': 'Finish importing',
+  'export.title': 'Export skills',
+  'export.selectDirectory': 'Select export directory',
 } as const

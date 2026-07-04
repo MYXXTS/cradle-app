@@ -10,6 +10,7 @@ import enUS, { allNamespaces } from '~/locales/default'
 import { applyDocumentLocale, writeLocaleCookie } from './browser-locale'
 import type { I18nContextValue } from './i18n-context'
 import { I18nContext } from './i18n-context'
+import { setI18nInstance } from './instance'
 import type { SupportedLocale } from './locales'
 import { DEFAULT_LOCALE, normalizeLocale } from './locales'
 import { getI18nSettings } from './settings'
@@ -67,6 +68,7 @@ export function I18nProvider({
 }) {
   const runtime = createI18nInstance(initialLocale)
   const { i18n, readyPromise } = runtime
+  setI18nInstance(i18n)
   const [isReady, setIsReady] = useState(() => i18n.isInitialized)
 
   useEffect(() => {

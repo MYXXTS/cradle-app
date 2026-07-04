@@ -2,9 +2,11 @@ import type { UIMessage } from 'ai'
 import { clamp } from 'es-toolkit'
 import type { Ref } from 'react'
 import { useCallback, useImperativeHandle, useReducer, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '~/components/ui/button'
 import { cn } from '~/lib/cn'
+import { getI18n } from '~/i18n/instance'
 import { clampRatio } from '~/lib/number-format'
 import { chatSelectors, useChatStore } from '~/store/chat'
 
@@ -78,7 +80,7 @@ function extractText(msg: UIMessage): string {
       texts.push((part as { text: string }).text)
     }
   }
-  return texts.join('\n').trim() || (msg.role === 'user' ? '用户消息' : '助手回复')
+  return texts.join('\n').trim() || (msg.role === 'user' ? getI18n().t('chat:minimap.userMessage') : getI18n().t('chat:minimap.assistantReply'))
 }
 
 interface ChatMinimapAnchor {

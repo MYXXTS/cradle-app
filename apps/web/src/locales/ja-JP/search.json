@@ -1,6 +1,7 @@
 {
   "aria.dialog": "コマンドパレット",
   "aria.input": "グローバル検索",
+  "command.kanban.label": "かんばん",
   "command.newChat.keywords": "new chat session create 新規 チャット 会話",
   "command.newChat.label": "新しい会話",
   "command.openProfile.keywords": "profile user activity streak tokens プロフィール アクティビティ",
@@ -12,6 +13,7 @@
   "command.recent": "最近",
   "command.toggleSidebar.keywords": "sidebar toggle サイドバー 切り替え",
   "command.toggleSidebar.label": "サイドバーを切り替え",
+  "command.usage.label": "使用量",
   "footer.close": "閉じる",
   "footer.commands": "コマンド",
   "footer.open": "開く",

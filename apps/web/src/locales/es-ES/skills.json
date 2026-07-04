@@ -1,4 +1,6 @@
 {
+  "export.selectDirectory": "Seleccionar directorio de exportación",
+  "export.title": "Exportar habilidades",
   "import.description": "Instala skills desde cualquier repositorio git público, abreviatura de GitHub o ruta local.",
   "import.deselectAll": "Deseleccionar todo",
   "import.done": "¡Listo!",

@@ -3,6 +3,7 @@ import type { DragEndEvent } from '@dnd-kit/react'
 import { DragDropProvider, DragOverlay } from '@dnd-kit/react'
 import { isSortable } from '@dnd-kit/react/sortable'
 import { m } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 
 import type { KanbanBoardIssue, KanbanMilestone, KanbanStatus } from '~/features/kanban/types'
 
@@ -53,6 +54,7 @@ export function KanbanBoard({
   selectedIssueIds,
   runtimeData,
 }: BoardProps) {
+  const { t } = useTranslation('kanban')
   const groups = (() => {
     if (config.groupBy === 'status') {
       return statuses.map(s => ({
@@ -63,16 +65,16 @@ export function KanbanBoard({
     }
     if (config.groupBy === 'priority') {
       return [
-        { id: 'urgent', name: '紧急' },
-        { id: 'high', name: '高' },
-        { id: 'medium', name: '中' },
-        { id: 'low', name: '低' },
-        { id: 'none', name: '无' },
+        { id: 'urgent', name: t('priority.urgent') },
+        { id: 'high', name: t('priority.high') },
+        { id: 'medium', name: t('priority.medium') },
+        { id: 'low', name: t('priority.low') },
+        { id: 'none', name: t('priority.none') },
       ]
     }
     if (config.groupBy === 'milestone') {
       const ms: GroupDef[] = milestones.map(m => ({ id: m.id, name: m.title }))
-      ms.push({ id: '__none__', name: '无里程碑' })
+      ms.push({ id: '__none__', name: t('noMilestone') })
       return ms
     }
     return statuses.map(s => ({

@@ -1,4 +1,9 @@
 {
+  "isolatedAction": "隔離チャット",
+  "isolatedActionTooltip": "隔離された git ワークツリーで実行",
+  "isolatedDefaultTitle": "隔離セッション",
+  "isolatedProviderRequired": "隔離セッションを開始する前にプロバイダーを選択してください。",
+  "isolatedStartError": "隔離セッションの開始に失敗しました。",
   "placeholder.fixTest": "失敗しているテストを修正し、根本原因を説明...",
   "placeholder.refactor": "実装を編集する前にリファクタリングを計画...",
   "placeholder.risk": "リスクの高い変更を見つけ、安全な次の一手を提案...",
@@ -25,6 +30,7 @@
   "relative.justNow": "たった今",
   "relative.minutesAgo": "{{count}} 分前",
   "relative.monthsAgo": "{{count}} か月前",
+  "send.inWorktree": "ワークツリーで送信",
   "send.tooltip": "送信",
   "workspace.adding": "追加中...",
   "workspace.addProject": "プロジェクトを追加",

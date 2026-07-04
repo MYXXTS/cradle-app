@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { getServerWebSocketUrl } from '~/lib/electron'
+import { getI18n } from '~/i18n/instance'
 
 import type { PtyClientEvent, PtyErrorEvent, PtyExitEvent, PtyOutputEvent, PtySnapshotEvent } from './pty-protocol'
 import { PtyServerEventJsonSchema } from './pty-protocol'
@@ -168,7 +169,7 @@ export function createPtyChannel(rawOptions: PtyChannelOptions): PtyChannel {
     })
 
     socket.addEventListener('error', () => {
-      emitError('SOCKET_ERROR', 'PTY socket 连接发生错误')
+      emitError('SOCKET_ERROR', getI18n().t('common:pty.socketConnectionError'))
     })
 
     socket.addEventListener('close', () => {

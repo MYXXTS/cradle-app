@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { cn } from '~/lib/cn'
 import type { KanbanBoardIssue, KanbanMilestone, KanbanStatus } from '~/features/kanban/types'
@@ -43,6 +44,7 @@ export function KanbanList({
   onIssueClick,
   onIssueSelectionGesture,
 }: ListProps) {
+  const { t } = useTranslation('kanban')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const groups = (() => {
@@ -55,16 +57,16 @@ export function KanbanList({
     }
     if (config.groupBy === 'priority') {
       return [
-        { id: 'urgent', name: '紧急' },
-        { id: 'high', name: '高' },
-        { id: 'medium', name: '中' },
-        { id: 'low', name: '低' },
-        { id: 'none', name: '无' },
+        { id: 'urgent', name: t('priority.urgent') },
+        { id: 'high', name: t('priority.high') },
+        { id: 'medium', name: t('priority.medium') },
+        { id: 'low', name: t('priority.low') },
+        { id: 'none', name: t('priority.none') },
       ]
     }
     if (config.groupBy === 'milestone') {
       const ms: GroupDef[] = milestones.map(m => ({ id: m.id, name: m.title }))
-      ms.push({ id: '__none__', name: '无里程碑' })
+      ms.push({ id: '__none__', name: t('noMilestone') })
       return ms
     }
     return statuses.map(s => ({

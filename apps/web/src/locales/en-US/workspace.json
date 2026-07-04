@@ -119,6 +119,8 @@
   "workspace.action.unpin": "Unpin project",
   "workspace.aria.pinned": "Pinned project",
   "workspace.aria.toggleExpanded": "Toggle workspace collapse state",
+  "workspace.dialog.addProject": "Add project",
+  "workspace.dialog.addProjectDescription": "Select a project directory to import into Cradle",
   "workspace.dialog.cancel": "Cancel",
   "workspace.dialog.create": "Create",
   "workspace.dialog.multiFolderAddFolder": "Add folder",

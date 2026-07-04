@@ -1,6 +1,7 @@
 {
   "aria.dialog": "命令面板",
   "aria.input": "全局搜索",
+  "command.kanban.label": "看板",
   "command.newChat.keywords": "new chat session 新建 聊天 对话",
   "command.newChat.label": "新建对话",
   "command.openProfile.keywords": "profile user activity streak tokens 个人 活动 连续",
@@ -12,6 +13,7 @@
   "command.recent": "最近",
   "command.toggleSidebar.keywords": "sidebar toggle 侧栏 切换",
   "command.toggleSidebar.label": "切换侧栏",
+  "command.usage.label": "用量",
   "footer.close": "关闭",
   "footer.commands": "命令",
   "footer.open": "打开",

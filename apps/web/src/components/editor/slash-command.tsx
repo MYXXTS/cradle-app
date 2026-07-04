@@ -5,6 +5,8 @@ import { ReactRenderer } from '@tiptap/react'
 import type { SuggestionKeyDownProps, SuggestionOptions } from '@tiptap/suggestion'
 import Suggestion from '@tiptap/suggestion'
 
+import { getI18n } from '~/i18n/instance'
+
 /* ─── Command item type ──────────────────────────────────── */
 
 export interface SlashCommandItem {
@@ -16,88 +18,91 @@ export interface SlashCommandItem {
 
 /* ─── Available commands ─────────────────────────────────── */
 
-const SLASH_COMMANDS: SlashCommandItem[] = [
-  {
-    title: 'Text',
-    description: '普通段落',
-    icon: 'T',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setParagraph().run()
+function getSlashCommands(): SlashCommandItem[] {
+  const t = getI18n().t
+  return [
+    {
+      title: 'Text',
+      description: t('common:slashCommand.paragraph'),
+      icon: 'T',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setParagraph().run()
+      },
     },
-  },
-  {
-    title: 'Heading 1',
-    description: '大标题',
-    icon: 'H1',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setHeading({ level: 1 }).run()
+    {
+      title: 'Heading 1',
+      description: t('common:slashCommand.heading1'),
+      icon: 'H1',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setHeading({ level: 1 }).run()
+      },
     },
-  },
-  {
-    title: 'Heading 2',
-    description: '中标题',
-    icon: 'H2',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setHeading({ level: 2 }).run()
+    {
+      title: 'Heading 2',
+      description: t('common:slashCommand.heading2'),
+      icon: 'H2',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setHeading({ level: 2 }).run()
+      },
     },
-  },
-  {
-    title: 'Heading 3',
-    description: '小标题',
-    icon: 'H3',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run()
+    {
+      title: 'Heading 3',
+      description: t('common:slashCommand.heading3'),
+      icon: 'H3',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setHeading({ level: 3 }).run()
+      },
     },
-  },
-  {
-    title: 'Bullet List',
-    description: '无序列表',
-    icon: '•',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleBulletList().run()
+    {
+      title: 'Bullet List',
+      description: t('common:slashCommand.bulletList'),
+      icon: '•',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).toggleBulletList().run()
+      },
     },
-  },
-  {
-    title: 'Numbered List',
-    description: '有序列表',
-    icon: '1.',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleOrderedList().run()
+    {
+      title: 'Numbered List',
+      description: t('common:slashCommand.orderedList'),
+      icon: '1.',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).toggleOrderedList().run()
+      },
     },
-  },
-  {
-    title: 'Task List',
-    description: '任务列表',
-    icon: '☐',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleTaskList().run()
+    {
+      title: 'Task List',
+      description: t('common:slashCommand.taskList'),
+      icon: '☐',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).toggleTaskList().run()
+      },
     },
-  },
-  {
-    title: 'Code Block',
-    description: '代码块',
-    icon: '<>',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleCodeBlock().run()
+    {
+      title: 'Code Block',
+      description: t('common:slashCommand.codeBlock'),
+      icon: '<>',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).toggleCodeBlock().run()
+      },
     },
-  },
-  {
-    title: 'Quote',
-    description: '引用块',
-    icon: '"',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleBlockquote().run()
+    {
+      title: 'Quote',
+      description: t('common:slashCommand.blockquote'),
+      icon: '"',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).toggleBlockquote().run()
+      },
     },
-  },
-  {
-    title: 'Divider',
-    description: '分隔线',
-    icon: '—',
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setHorizontalRule().run()
+    {
+      title: 'Divider',
+      description: t('common:slashCommand.divider'),
+      icon: '—',
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setHorizontalRule().run()
+      },
     },
-  },
-]
+  ]
+}
 
 /* ─── Suggestion render ──────────────────────────────────── */
 
@@ -183,7 +188,7 @@ export const SlashCommand = Extension.create({
           props.command({ editor, range })
         },
         items: ({ query }: { query: string }) => {
-          return SLASH_COMMANDS.filter(item =>
+          return getSlashCommands().filter(item =>
             item.title.toLowerCase().includes(query.toLowerCase()))
         },
         render: suggestionRender,

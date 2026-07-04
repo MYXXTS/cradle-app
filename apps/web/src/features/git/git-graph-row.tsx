@@ -1,6 +1,7 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
 import { cn } from '~/lib/cn'
+import { getI18n } from '~/i18n/instance'
 
 import type { LayoutCommit } from './graph-layout'
 import { LANE_COLORS } from './graph-layout'
@@ -31,7 +32,7 @@ function segmentPath(x1: number, y1: number, x2: number, y2: number): string {
 function relativeTime(timestamp: number): string {
   const diff = Math.floor((Date.now() - timestamp) / 1000)
   if (diff < 60) {
-    return '刚刚'
+    return getI18n().t('git:graphRow.justNow')
   }
   if (diff < 3600) {
     return `${Math.floor(diff / 60)}m`
@@ -227,7 +228,7 @@ function GitGraphRowInner({ commit }: GitGraphRowProps) {
               <p className="text-[10px] text-muted-foreground">{formattedDate}</p>
               {isMerge && (
                 <p className="text-[10px] text-muted-foreground">
-                  {`合并自 ${commit.parents.slice(1).map(p => p.slice(0, 7)).join(', ')}`}
+                  {getI18n().t('git:graphRow.mergedFrom', { sha: commit.parents.slice(1).map(p => p.slice(0, 7)).join(', ') })}
                 </p>
               )}
             </div>

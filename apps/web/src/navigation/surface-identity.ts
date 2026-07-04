@@ -1,3 +1,5 @@
+import { getI18n } from '~/i18n/instance'
+
 export type SurfaceKind
   = | 'home'
     | 'new-chat'
@@ -52,7 +54,7 @@ export const HOME_SURFACE_ID = 'home'
 export const HOME_SURFACE: AppSurface = {
   id: HOME_SURFACE_ID,
   kind: 'home',
-  title: '首页',
+  title: getI18n().t('chrome:surface.home'),
   route: { to: '/' },
   order: 0,
   closable: false,
@@ -112,7 +114,7 @@ export function surfaceDraftFromRoute(input: {
     return {
       id: 'new-chat',
       kind: 'new-chat',
-      title: '新建聊天',
+      title: getI18n().t('chrome:surface.newChat'),
       route: { to: '/chat/new' },
       closable: true,
     }
@@ -185,7 +187,7 @@ export function surfaceDraftFromRoute(input: {
     return {
       id: kanbanSurfaceId(boardId),
       kind: 'kanban',
-      title: '看板',
+      title: getI18n().t('chrome:surface.kanban'),
       route: {
         to: '/kanban/$boardId',
         params: { boardId },
@@ -234,7 +236,7 @@ export function surfaceDraftFromRoute(input: {
     return {
       id: 'usage',
       kind: 'usage',
-      title: '用量',
+      title: getI18n().t('chrome:surface.usage'),
       route: { to: '/usage' },
       closable: true,
     }

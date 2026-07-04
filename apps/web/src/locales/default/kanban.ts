@@ -70,6 +70,7 @@ export default {
   'issue.label.empty': 'No labels yet',
   'issue.label.noPriority': 'No priority',
   'issue.label.noMilestone': 'No milestone',
+  'noMilestone': 'No milestone',
   'subIssue.openAria': 'Open sub-issue {{title}}',
   'subIssue.titlePlaceholder': 'Sub-issue title',
   'subIssue.titleAria': 'Sub-issue title',

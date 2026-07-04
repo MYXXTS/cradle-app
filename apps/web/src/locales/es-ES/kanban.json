@@ -124,6 +124,7 @@
   "issue.label.inputPlaceholder": "Buscar o crear etiqueta",
   "issue.label.noMatches": "No hay etiquetas coincidentes",
   "issue.label.noMilestone": "Sin hito",
+  "noMilestone": "Sin hito",
   "issue.label.noPriority": "Sin prioridad",
   "issue.label.workspaceLabels": "Etiquetas del workspace",
   "issue.loading": "Cargando...",

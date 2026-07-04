@@ -16,6 +16,8 @@
   "continuation.steer.label": "ガイド",
   "empty.startConversation": "メッセージを送信して会話を開始",
   "error.loadMessages": "メッセージを読み込めませんでした。（不明なエラー）",
+  "minimap.assistantReply": "アシスタントの返信",
+  "minimap.userMessage": "ユーザーメッセージ",
   "rollback.action.disabledHint": "前のメッセージを編集する前に、現在の応答を完了または停止してください。",
   "rollback.action.fileCaveat": "前のメッセージを編集します。編集後のメッセージを送信したときだけ前のターンを取り消します。ワークスペースのファイル変更は保持されます。",
   "rollback.action.label": "前のメッセージを編集",

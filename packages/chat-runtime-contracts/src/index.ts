@@ -932,6 +932,11 @@ export interface RuntimeUserInputResolution {
   answers: Record<string, string[]>
 }
 
+export interface SubmitRuntimeUserInputInput extends GetCapabilitiesInput {
+  requestId: string
+  answers: Record<string, string[]>
+}
+
 export interface RuntimeToolApprovalRequest {
   sessionId: string
   runId: string
@@ -1450,6 +1455,7 @@ export interface ChatRuntime {
   getDynamicCapabilities?: (input: GetCapabilitiesInput) => Promise<ChatRuntimeCapabilities>
   getUiSlotStates?: (input: GetUiSlotStatesInput) => Promise<RuntimeUiSlotState[]>
   getContextUsage?: (input: GetContextUsageInput) => Promise<RuntimeContextUsage | null>
+  submitUserInput?: (input: SubmitRuntimeUserInputInput) => Promise<RuntimeUserInputResolution | null>
   listProviderThreads?: (input: ProviderThreadListInput) => Promise<ProviderThreadListResult>
   readProviderThread?: (input: ProviderThreadReadInput) => Promise<ProviderThreadReadResult>
   deleteProviderThread?: (input: ProviderThreadDeleteInput) => Promise<ProviderThreadDeleteResult>

@@ -13,6 +13,7 @@ import { Markdown } from 'tiptap-markdown'
 import { toastManager } from '~/components/ui/toast'
 import { withAssetDisplaySize } from '~/features/assets/asset-url'
 import { cn } from '~/lib/cn'
+import { getI18n } from '~/i18n/instance'
 
 import { AssetImage } from './asset-image-extension'
 import { EditorBubbleMenu } from './editor-bubble-menu'
@@ -69,11 +70,12 @@ export function MarkdownEditor({
   onSave,
   saveOnBlur = true,
   readonly = false,
-  placeholder = '开始编写...',
+  placeholder,
   className,
   smartMentions,
   assetImages,
 }: MarkdownEditorProps) {
+  const resolvedPlaceholder = placeholder ?? getI18n().t('common:markdownEditor.placeholder')
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
   const readonlyRef = useRef(readonly)
@@ -202,7 +204,7 @@ export function MarkdownEditor({
         transformPastedText: true,
       }),
       Placeholder.configure({
-        placeholder,
+        placeholder: resolvedPlaceholder,
         emptyEditorClass: 'is-editor-empty',
       }),
       Typography,
@@ -251,7 +253,7 @@ export function MarkdownEditor({
         onChangeRef.current?.(getMarkdownContent(e.storage))
       }
     },
-  }, [placeholder, saveCurrentDraft, saveOnBlur, smartMentionsEnabled])
+  }, [resolvedPlaceholder, saveCurrentDraft, saveOnBlur, smartMentionsEnabled])
 
   useEffect(() => {
     editor?.setEditable(!readonly)

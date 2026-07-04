@@ -1,27 +1,30 @@
+import { getI18n } from '~/i18n/instance'
+
 function _timeAgo(timestamp: number, now: number): string {
+  const t = getI18n().t
   const seconds = Math.floor((now - timestamp) / 1000)
   if (seconds < 60) {
-    return '刚刚'
+    return t('common:time.justNow')
   }
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) {
-    return `${minutes}分钟前`
+    return t('common:time.minutesAgo', { count: minutes })
   }
   const hours = Math.floor(minutes / 60)
   if (hours < 24) {
-    return `${hours}小时前`
+    return t('common:time.hoursAgo', { count: hours })
   }
   const days = Math.floor(hours / 24)
   if (days < 30) {
-    return `${days}天前`
+    return t('common:time.daysAgo', { count: days })
   }
-  return `${Math.floor(days / 30)}个月前`
+  return t('common:time.monthsAgo', { count: Math.floor(days / 30) })
 }
 
 function _timeAgoShort(tsSeconds: number, nowMs: number): string {
   const diff = Math.floor(nowMs / 1000) - tsSeconds
   if (diff < 60) {
-    return '刚刚'
+    return getI18n().t('common:time.justNow')
   }
   if (diff < 3600) {
     return `${Math.floor(diff / 60)}m`

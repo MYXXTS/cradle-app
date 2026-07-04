@@ -389,7 +389,7 @@ export function BranchPicker({
       dispatch({ type: 'complete-create' })
     }
     catch (err) {
-      dispatch({ type: 'set-create-error', error: cleanGitError(err) || '创建失败' })
+      dispatch({ type: 'set-create-error', error: cleanGitError(err) || t('branchPicker.creationFailed') })
     }
     finally {
       dispatch({ type: 'set-create-loading', loading: false })

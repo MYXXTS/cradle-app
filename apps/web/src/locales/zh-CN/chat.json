@@ -16,6 +16,8 @@
   "continuation.steer.label": "引导",
   "empty.startConversation": "发送一条消息开始对话",
   "error.loadMessages": "消息加载失败。（未知错误）",
+  "minimap.assistantReply": "助手回复",
+  "minimap.userMessage": "用户消息",
   "rollback.action.disabledHint": "请先结束或停止当前回复，再编辑上一条消息。",
   "rollback.action.fileCaveat": "编辑上一条消息。只有发送修改后的消息时才会撤回上一轮；工作区文件改动会保留。",
   "rollback.action.label": "编辑上一条",

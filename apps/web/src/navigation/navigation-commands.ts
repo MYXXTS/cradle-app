@@ -1,4 +1,5 @@
 import { closeFocusedChatSplitPane } from '~/features/chat/split-workspace/chat-split-close'
+import { getI18n } from '~/i18n/instance'
 import { router } from '~/router'
 import { useSettingsOverlayStore } from '~/store/settings-overlay'
 
@@ -54,7 +55,7 @@ export function openNewChat(options: { replace?: boolean, issueId?: string } = {
   openSurface({
     id: 'new-chat',
     kind: 'new-chat',
-    title: '新建聊天',
+    title: getI18n().t('search:command.newChat.label'),
     route: options.issueId
       ? { to: '/chat/new', search: { issueId: options.issueId } }
       : { to: '/chat/new' },
@@ -121,7 +122,7 @@ export function openKanbanBoard(input: {
   openSurface({
     id: kanbanSurfaceId(input.boardId),
     kind: 'kanban',
-    title: '看板',
+    title: getI18n().t('search:command.kanban.label'),
     route: {
       to: '/kanban/$boardId',
       params: { boardId: input.boardId },
@@ -194,7 +195,7 @@ export function openUsage(options: { replace?: boolean } = {}): void {
   openSurface({
     id: 'usage',
     kind: 'usage',
-    title: '用量',
+    title: getI18n().t('search:command.usage.label'),
     route: { to: '/usage' },
     closable: true,
   }, options)

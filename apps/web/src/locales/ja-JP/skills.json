@@ -1,4 +1,6 @@
 {
+  "export.selectDirectory": "エクスポートディレクトリを選択",
+  "export.title": "スキルをエクスポート",
   "import.description": "公開 git リポジトリ、GitHub 省略形、またはローカルパスから skills をインストールします。",
   "import.deselectAll": "すべて選択解除",
   "import.done": "完了！",

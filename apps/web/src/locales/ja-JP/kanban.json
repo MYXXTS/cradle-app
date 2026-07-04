@@ -124,6 +124,7 @@
   "issue.label.inputPlaceholder": "ラベルを検索または作成",
   "issue.label.noMatches": "一致するラベルはありません",
   "issue.label.noMilestone": "マイルストーンなし",
+  "noMilestone": "マイルストーンなし",
   "issue.label.noPriority": "優先度なし",
   "issue.label.workspaceLabels": "ワークスペースラベル",
   "issue.loading": "読み込み中...",

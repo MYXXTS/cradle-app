@@ -1,4 +1,9 @@
 {
+  "isolatedAction": "Chat aislado",
+  "isolatedActionTooltip": "Ejecutar en un worktree git aislado",
+  "isolatedDefaultTitle": "Sesión aislada",
+  "isolatedProviderRequired": "Selecciona un proveedor antes de iniciar una sesión aislada.",
+  "isolatedStartError": "Error al iniciar la sesión aislada.",
   "placeholder.fixTest": "Arregla una prueba fallida y explica la causa raíz...",
   "placeholder.refactor": "Planifica una refactorización antes de editar implementación...",
   "placeholder.risk": "Encuentra cambios riesgosos y sugiere el siguiente paso más seguro...",
@@ -25,6 +30,7 @@
   "relative.justNow": "ahora mismo",
   "relative.minutesAgo": "hace {{count}} minutos",
   "relative.monthsAgo": "hace {{count}} meses",
+  "send.inWorktree": "Enviar en worktree",
   "send.tooltip": "Enviar",
   "workspace.adding": "Agregando...",
   "workspace.addProject": "Agregar proyecto",

@@ -124,6 +124,7 @@
   "issue.label.inputPlaceholder": "Search or create label",
   "issue.label.noMatches": "No matching labels",
   "issue.label.noMilestone": "No milestone",
+  "noMilestone": "No milestone",
   "issue.label.noPriority": "No priority",
   "issue.label.workspaceLabels": "Workspace labels",
   "issue.loading": "Loading...",

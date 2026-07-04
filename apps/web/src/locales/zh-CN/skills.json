@@ -1,4 +1,6 @@
 {
+  "export.selectDirectory": "选择导出目录",
+  "export.title": "导出技能",
   "import.description": "从任意公开 git 仓库、GitHub 简写或本地路径安装 skills。",
   "import.deselectAll": "取消全选",
   "import.done": "完成！",

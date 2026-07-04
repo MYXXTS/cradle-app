@@ -1,4 +1,6 @@
 {
+  "export.selectDirectory": "Select export directory",
+  "export.title": "Export skills",
   "import.description": "Install skills from any public git repository, GitHub shorthand, or local path.",
   "import.deselectAll": "Deselect all",
   "import.done": "Done!",

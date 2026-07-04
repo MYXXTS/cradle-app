@@ -10,6 +10,7 @@ import {
   UploadLine as UploadIcon
 } from '@mingcute/react'
 import { useEffect, useReducer } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '~/components/ui/button'
 import {
@@ -512,6 +513,7 @@ export function SkillManager({
   title,
   description,
 }: SkillManagerProps) {
+  const { t } = useTranslation('skills')
   const {
     inventory,
     isLoading,
@@ -581,7 +583,7 @@ export function SkillManager({
     if (!selectedEntry) {
       return
     }
-    const destinationDir = await selectDirectory({ title: '导出技能', description: '选择导出目录' })
+    const destinationDir = await selectDirectory({ title: t('export.title'), description: t('export.selectDirectory') })
     if (!destinationDir) {
       return
     }

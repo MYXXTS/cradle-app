@@ -196,6 +196,8 @@ export default {
   'workspace.aria.pinned': 'Pinned project',
   'workspace.aria.toggleExpanded': 'Toggle workspace collapse state',
   'workspace.dialog.cancel': 'Cancel',
+  'workspace.dialog.addProject': 'Add project',
+  'workspace.dialog.addProjectDescription': 'Select a project directory to import into Cradle',
   'workspace.dialog.create': 'Create',
   'workspace.dialog.multiFolderAddFolder': 'Add folder',
   'workspace.dialog.multiFolderBrowseDescription': 'Select a local project folder',

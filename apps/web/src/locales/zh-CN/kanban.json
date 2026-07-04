@@ -124,6 +124,7 @@
   "issue.label.inputPlaceholder": "搜索或创建标签",
   "issue.label.noMatches": "没有匹配标签",
   "issue.label.noMilestone": "无里程碑",
+  "noMilestone": "无里程碑",
   "issue.label.noPriority": "无优先级",
   "issue.label.workspaceLabels": "工作区标签",
   "issue.loading": "加载中...",

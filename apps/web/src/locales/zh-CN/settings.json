@@ -144,6 +144,7 @@
   "desktop.updates.availableVersion": "可用更新",
   "desktop.updates.currentVersion": "已安装版本",
   "desktop.updates.none": "无",
+  "desktop.updates.releaseNotes": "更新日志",
   "desktop.updates.status.available": "可更新",
   "desktop.updates.status.checking": "检查中",
   "desktop.updates.status.current": "最新",

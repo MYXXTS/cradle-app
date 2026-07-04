@@ -1,6 +1,7 @@
 {
   "aria.dialog": "Paleta de comandos",
   "aria.input": "Búsqueda global",
+  "command.kanban.label": "Kanban",
   "command.newChat.keywords": "new chat session create nuevo chat conversación",
   "command.newChat.label": "Nueva conversación",
   "command.openProfile.keywords": "profile user activity streak tokens perfil actividad",
@@ -12,6 +13,7 @@
   "command.recent": "reciente",
   "command.toggleSidebar.keywords": "sidebar toggle barra lateral alternar",
   "command.toggleSidebar.label": "Alternar barra lateral",
+  "command.usage.label": "Uso",
   "footer.close": "Cerrar",
   "footer.commands": "Comandos",
   "footer.open": "Abrir",
