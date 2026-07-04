@@ -1,33 +1,56 @@
 /**
- * Hero — full viewport intro
+ * Hero — full-viewport intro over the FoldGradient shader.
  *
- * Gradient background, dot grid texture, star-bordered icon frame.
+ * Type-led and minimal (Raycast / Cursor / Perplexity feel): eyebrow pill,
+ * tight-tracking headline, one-line value prop, two CTAs, footnote, scroll
+ * cue. The shader is the hero's signature visual; no faux product mock.
+ * Below the hero the page is solid var(--bg), so the shader never shows
+ * through content.
+ *
+ * The shader pauses (speed 0) when the hero scrolls out of view or when the
+ * user prefers reduced motion — no GPU spent animating an offscreen canvas.
  */
 
-import { useGSAP } from '@gsap/react'
-import gsap from 'gsap'
 import { Download } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useRef } from 'react'
-import { StarBorders } from './blueprint-annotations'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import FoldGradient from '../foldGradient'
 
-gsap.registerPlugin(useGSAP)
+const EASE = [0.22, 1, 0.36, 1] as const
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () =>
+      typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setReduced(mq.matches)
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+  return reduced
+}
 
 export function Hero() {
+  const reduced = usePrefersReducedMotion()
   const sectionRef = useRef<HTMLElement>(null)
+  const [inView, setInView] = useState(true)
 
-  useGSAP(() => {
-    gsap.set('.hero-icon-wrap', { opacity: 0, scale: 0.95, y: 20 })
-    gsap.set('.hero-title', { opacity: 0, y: 24 })
-    gsap.set('.hero-sub', { opacity: 0, y: 16 })
-    gsap.set('.hero-ctas', { opacity: 0, y: 12 })
+  useEffect(() => {
+    const el = sectionRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { rootMargin: '50px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
-    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } })
-    tl.to('.hero-icon-wrap', { opacity: 1, scale: 1, y: 0, duration: 0.7, ease: 'expo.out' })
-      .to('.hero-title', { opacity: 1, y: 0, duration: 0.7 }, '-=0.3')
-      .to('.hero-sub', { opacity: 1, y: 0, duration: 0.6 }, '-=0.4')
-      .to('.hero-ctas', { opacity: 1, y: 0, duration: 0.5 }, '-=0.3')
-  }, { scope: sectionRef })
+  const shaderSpeed = reduced ? 0 : (inView ? 1 : 0)
 
   return (
     <section
@@ -39,115 +62,236 @@ export function Hero() {
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: 'clamp(48px, 12dvh, 120px) 24px 60px',
+        padding: 'clamp(72px, 14dvh, 140px) 24px 80px',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Background gradient + dot grid */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: `radial-gradient(44.02% 44.02% at 14.38% 14.47%, var(--hero-gradient-1) 0%, transparent 100%), radial-gradient(50.49% 50.49% at 85.46% 82.33%, var(--hero-gradient-2) 0%, transparent 100%)`,
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundImage: 'radial-gradient(var(--pattern-fg) 1px, transparent 1px)',
-            backgroundSize: '10px 10px',
-            backgroundAttachment: 'fixed',
-          }}
-        />
-      </div>
+      {/* FoldGradient shader — domain-warped light-sheets, the hero's signature visual. */}
+      <FoldGradient
+        style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+        colors={['#101014', '#2e3038', '#8a8f9c', '#d8dce6', '#ffe9c2']}
+        bgColor="#08080a"
+        shadowColor="#141418"
+        softness={0.9}
+        saturation={0.9}
+        rotation={60}
+        zoom={8}
+        ribbon={0}
+        ribbonWidth={1}
+        speed={shaderSpeed}
+      />
+      {/* Center scrim for text legibility over the moving light-sheets. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          background:
+            'radial-gradient(46% 42% at 50% 48%, rgba(8,8,10,0.5), transparent 72%)',
+        }}
+      />
+      {/* Fade into the solid page below. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          background: 'linear-gradient(to bottom, transparent 60%, var(--bg) 100%)',
+        }}
+      />
 
-      {/* Icon */}
-      <div className="hero-icon-wrap" style={{ position: 'relative', zIndex: 1, marginBottom: 36 }}>
-        <StarBorders>
-          <div style={{ padding: 16 }}>
-            <img
-              src="/icon.png"
-              alt="Cradle"
-              width={120}
-              height={120}
-              fetchPriority="high"
-              decoding="async"
-              style={{ display: 'block' }}
-            />
-          </div>
-        </StarBorders>
-      </div>
-
-      {/* Headline */}
-      <h1
-        className="hero-title"
+      <motion.div
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: EASE }}
         style={{
           position: 'relative',
           zIndex: 1,
-          fontSize: 'clamp(2.5rem, 8vw, 5.5rem)',
-          fontWeight: 700,
-          lineHeight: 0.95,
-          letterSpacing: '-0.04em',
-          color: 'var(--text)',
-          marginBottom: 'clamp(12px, 2dvh, 20px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
         }}
       >
-        One layer above
-        <br />
-        <span style={{ color: 'var(--text-muted)' }}>your AI tools.</span>
-      </h1>
-
-      {/* Subline */}
-      <p
-        className="hero-sub"
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          fontSize: 'clamp(0.95rem, 1.6vw, 1.1rem)',
-          lineHeight: 1.7,
-          color: 'var(--text-secondary)',
-          maxWidth: 460,
-          marginBottom: 'clamp(20px, 3dvh, 36px)',
-        }}
-      >
-        Your AI coding tools are brilliant. Managing them is a mess.
-        Cradle is the command center that coordinates all of them.
-      </p>
-
-      {/* CTAs */}
-      <div className="hero-ctas" style={{ position: 'relative', zIndex: 1, display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-        <motion.a
-          href="https://github.com/wibus-wee/cradle-app/releases"
-          target='_block'
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+        {/* Eyebrow */}
+        <div
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 8,
-            padding: '10px 22px',
-            background: 'var(--text)',
-            color: 'var(--bg)',
-            fontWeight: 600,
-            fontSize: 13,
-            textDecoration: 'none',
-            transition: 'opacity 0.15s',
+            padding: '5px 12px',
+            border: '1px solid var(--border)',
+            background: 'var(--fill)',
+            borderRadius: 999,
+            marginBottom: 30,
           }}
         >
-          <Download style={{ width: 14, height: 14 }} />
-          Download for macOS
-        </motion.a>
-      </div>
+          <span
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: '50%',
+              background: 'var(--text)',
+              boxShadow: '0 0 8px rgba(255, 233, 194, 0.6)',
+            }}
+          />
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              letterSpacing: '0.01em',
+            }}
+          >
+            AI coding agent command center
+          </span>
+        </div>
 
-      {/* Footnote */}
-      <div style={{ position: 'relative', zIndex: 1, marginTop: 48 }}>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+        {/* Headline */}
+        <h1
+          style={{
+            fontSize: 'clamp(2.6rem, 8vw, 5.4rem)',
+            fontWeight: 600,
+            lineHeight: 0.98,
+            letterSpacing: '-0.045em',
+            color: 'var(--text)',
+            marginBottom: 'clamp(16px, 2dvh, 24px)',
+            maxWidth: 920,
+          }}
+        >
+          One layer above
+          <br />
+          <span style={{ color: 'var(--text-secondary)' }}>your AI tools.</span>
+        </h1>
+
+        {/* Subline */}
+        <p
+          style={{
+            fontSize: 'clamp(1rem, 1.5vw, 1.15rem)',
+            lineHeight: 1.65,
+            color: 'var(--text-secondary)',
+            maxWidth: 520,
+            marginBottom: 'clamp(28px, 4dvh, 40px)',
+          }}
+        >
+          Cradle orchestrates Claude Code, Cursor, Codex, and the rest — sessions,
+          issues, and tools, all in one focused desktop workspace.
+        </p>
+
+        {/* CTAs */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+          }}
+        >
+          <motion.a
+            href="https://github.com/wibus-wee/cradle-app/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            style={primaryButtonStyle}
+          >
+            <Download style={{ width: 14, height: 14 }} />
+            Download for macOS
+          </motion.a>
+          <motion.a
+            href="https://github.com/wibus-wee/cradle-app"
+            target="_blank"
+            rel="noopener noreferrer"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            style={ghostButtonStyle}
+          >
+            View on GitHub
+          </motion.a>
+        </div>
+
+        {/* Footnote */}
+        <span
+          style={{
+            marginTop: 40,
+            fontSize: 11,
+            color: 'var(--text-muted)',
+          }}
+        >
           macOS 14+ · Apple Silicon & Intel · Free forever
         </span>
-      </div>
+      </motion.div>
+
+      {/* Scroll cue */}
+      <motion.div
+        aria-hidden
+        initial={{ opacity: 0 }}
+        animate={{ opacity: inView ? 1 : 0 }}
+        transition={{ delay: 1, duration: 0.6 }}
+        style={{
+          position: 'absolute',
+          bottom: 28,
+          left: 0,
+          right: 0,
+          margin: '0 auto',
+          width: 'fit-content',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 8,
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Scroll
+        </span>
+        <motion.span
+          animate={reduced ? false : { y: [0, 5, 0] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            width: 1,
+            height: 22,
+            background: 'linear-gradient(to bottom, var(--text-muted), transparent)',
+          }}
+        />
+      </motion.div>
     </section>
   )
+}
+
+const primaryButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '11px 22px',
+  background: 'var(--text)',
+  color: 'var(--bg)',
+  fontWeight: 600,
+  fontSize: 13,
+  textDecoration: 'none',
+  borderRadius: 8,
+}
+
+const ghostButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '11px 22px',
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  border: '1px solid var(--border)',
+  fontWeight: 500,
+  fontSize: 13,
+  textDecoration: 'none',
+  borderRadius: 8,
 }

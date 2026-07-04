@@ -1,17 +1,19 @@
 /**
- * Footer — minimal
+ * Footer — minimal.
  */
 
 export function Footer() {
   return (
-    <footer style={{
-      borderTop: '1px solid var(--border)',
-      padding: '16px 24px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 16,
-    }}
+    <footer
+      style={{
+        borderTop: '1px solid var(--border)',
+        padding: '20px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
+        flexWrap: 'wrap',
+      }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <img src="/icon-64.webp" alt="" width={14} height={14} style={{ borderRadius: 3 }} />
@@ -24,7 +26,12 @@ export function Footer() {
         Changelog
       </a>
       <span style={{ fontSize: 11, color: 'var(--border-strong)' }}>·</span>
-      <a href="https://x.com/wibus_wee" style={{ fontSize: 12, color: 'var(--text-muted)' }} target="_blank" rel="noopener noreferrer">
+      <a
+        href="https://x.com/wibus_wee"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none' }}
+      >
         By wibus
       </a>
     </footer>

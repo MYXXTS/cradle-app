@@ -1,5 +1,41 @@
 [
   {
+    "version": "dev-20260628.1",
+    "date": "2026-06-28",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Tear-off Surfaces & Diff Review Hardening",
+      "zh": "任意 Surface 窗口分离，Diff Review 生命周期加固，以及一轮稳定性提升。"
+    }
+  },
+  {
+    "version": "dev-20260625.1",
+    "date": "2026-06-25",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Claude Subscription Login & Changelog Launch",
+      "zh": "Claude 订阅登录与 Changelog 上线"
+    }
+  },
+  {
+    "version": "dev-20260625.2",
+    "date": "2026-06-25",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Release Pipeline Fixes",
+      "zh": "发布流程修复"
+    }
+  },
+  {
     "version": "dev-20260624.1",
     "date": "2026-06-24",
     "languages": [

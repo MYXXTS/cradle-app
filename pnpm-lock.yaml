@@ -401,12 +401,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
-      '@gsap/react':
-        specifier: ^2.1.2
-        version: 2.1.2(gsap@3.15.0)(react@19.2.6)
-      gsap:
-        specifier: ^3.13.0
-        version: 3.15.0
+      '@paper-design/shaders-react':
+        specifier: ^0.0.76
+        version: 0.0.76(@types/react@19.2.15)(react@19.2.6)
       lucide-react:
         specifier: 1.8.0
         version: 1.8.0(react@19.2.6)
@@ -16795,6 +16792,13 @@ snapshots:
       react: 19.2.5
     optionalDependencies:
       '@types/react': 19.2.14
+
+  '@paper-design/shaders-react@0.0.76(@types/react@19.2.15)(react@19.2.6)':
+    dependencies:
+      '@paper-design/shaders': 0.0.76
+      react: 19.2.6
+    optionalDependencies:
+      '@types/react': 19.2.15
 
   '@paper-design/shaders@0.0.76': {}
 

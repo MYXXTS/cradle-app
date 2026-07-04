@@ -19,6 +19,7 @@ import { marked } from 'marked'
 import { motion } from 'motion/react'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { StarBorders } from './blueprint-annotations'
+import { MeshGradient } from './mesh-gradient'
 
 marked.setOptions({ gfm: true, breaks: false })
 
@@ -444,15 +445,7 @@ export function ChangelogPage({ onBack }: { onBack: () => void }) {
           overflow: 'hidden',
         }}
       >
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: `radial-gradient(50% 60% at 18% 10%, var(--hero-gradient-1) 0%, var(--bg-subtle) 100%)`,
-            pointerEvents: 'none',
-          }}
-        />
+        <MeshGradient />
         <div style={{ maxWidth: 960, margin: '0 auto', position: 'relative', zIndex: 1 }}>
           <motion.div
             initial={{ opacity: 0, y: 10 }}
