@@ -180,6 +180,14 @@ jobs:
         with:
           node-version: 24
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build relayd (darwin-arm64)
+        run: pnpm --filter @cradle/relayd build:desktop-resource -- --target=darwin-arm64
+
       - name: Clean macOS build leftovers
         shell: bash
         run: |
@@ -263,6 +271,14 @@ jobs:
         uses: ./.github/actions/setup
         with:
           node-version: 24
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build relayd (win32-x64)
+        run: pnpm --filter @cradle/relayd build:desktop-resource -- --target=win32-x64
 
       - name: Set desktop version
         run: pnpm --filter @cradle/desktop run set-version ${{ needs.resolve.outputs.desktop_version }}

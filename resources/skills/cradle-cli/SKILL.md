@@ -235,14 +235,15 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `profile` | 5 | Manage agent profiles. | `cradle man profile` |
 | `provider` | 1 | Inspect provider model availability. | `cradle man provider` |
 | `relay-server` | 4 | Generated Cradle CLI module. | `cradle man relay-server` |
-| `remote-host` | 8 | Generated Cradle CLI module. | `cradle man remote-host` |
+| `relay-transport` | 5 | Generated Cradle CLI module. | `cradle man relay-transport` |
+| `remote-host` | 9 | Generated Cradle CLI module. | `cradle man remote-host` |
 | `search` | 2 | Search Cradle data. | `cradle man search` |
 | `secret` | 2 | Manage secret metadata. | `cradle man secret` |
-| `session` | 17 | Manage chat sessions and session links. | `cradle man session` |
+| `session` | 22 | Manage chat sessions and session links. | `cradle man session` |
 | `skill` | 10 | Manage skills and skill sources. | `cradle man skill` |
 | `usage` | 7 | Inspect usage and cost data. | `cradle man usage` |
 | `workflow-rule` | 4 | Manage workflow rules. | `cradle man workflow-rule` |
-| `workspace` | 50 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
+| `workspace` | 53 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
 
 <!-- CRADLE_CLI_MODULES_END -->
 
