@@ -215,6 +215,13 @@ async function pumpRuntimeStream(
         })
       }
       accumulateDiagnostics(diagnostics, chunk)
+      if (isTokenDeltaChunk(chunk) && !activeRun.firstTokenDeltaSnapshotRecorded) {
+        activeRun.firstTokenDeltaSnapshotRecorded = true
+        deps.recordSnapshotEvent(activeRun, {
+          phase: 'model_first_token_delta',
+          chunk
+        })
+      }
       if (chunk.type === 'text-delta' && !activeRun.firstTextDeltaSnapshotRecorded) {
         activeRun.firstTextDeltaSnapshotRecorded = true
         deps.recordSnapshotEvent(activeRun, {
@@ -459,6 +466,12 @@ function completeRun(
       options: deps.readRuntimeGoalContinuationOptions()
     })
   }
+}
+
+function isTokenDeltaChunk(chunk: UIMessageChunk): boolean {
+  return chunk.type === 'text-delta'
+    || chunk.type === 'reasoning-delta'
+    || chunk.type === 'tool-input-delta'
 }
 
 function isAbortError(error: unknown): boolean {

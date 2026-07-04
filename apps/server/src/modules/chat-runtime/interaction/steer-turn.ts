@@ -122,7 +122,7 @@ export async function submitSessionSteerTurn(
     { mode: 'steer', sourceMessageId, splitParts }
   )
   try {
-    await steerHook({
+    await steerHook.call(activeRun.runtime, {
       runtimeSession: activeRun.runtimeSession,
       profile: context.profile,
       message: steerMessage

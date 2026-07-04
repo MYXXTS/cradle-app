@@ -20,7 +20,12 @@ import type { UIMessageChunk } from 'ai'
 
 import type { TokenUsage } from '../../chat-runtime-engine/ai-sdk-engine'
 import { providerChunk } from '../kit/chunk-mapper'
-import { CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE, isClaudeAgentEnterPlanModeToolName, isClaudeAgentExitPlanModeToolName } from './plan-mode'
+import {
+  CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE,
+  CLAUDE_PLAN_IMPLEMENTATION_TOOL_NAME,
+  isClaudeAgentEnterPlanModeToolName,
+  isClaudeAgentExitPlanModeToolName,
+} from './plan-mode'
 import { ClaudeCodeToolName } from './tools/identity'
 import { createClaudeCodeToolInputPayload, createClaudeCodeToolResultPayload, normalizeClaudeCodeToolApiName } from './tools/mapper'
 import type { ClaudeAgentTaskProgressState } from './tools/task-progress-state'
@@ -32,7 +37,6 @@ import {
 import type { TodoPluginItem } from './tools/todo-plugin-state'
 import { isTodoWriteToolName, synthesizeTodoWritePluginState } from './tools/todo-plugin-state'
 
-const PLAN_IMPLEMENTATION_TOOL_NAME = 'plan_implementation'
 const CLAUDE_PLAN_FILE_PATH_SEGMENT = '/.claude/plans/'
 
 interface BetaContentBlock {
@@ -89,6 +93,14 @@ export interface ClaudeAgentChunkMapperState {
   toolInputTextByToolCallId: Map<string, TextAccumulator>
   /** Caches Cradle-owned tool args by tool call so results can carry a stable tool envelope. */
   toolArgsByToolCallId: Map<string, unknown>
+  /**
+   * Maps a `task_started` SDK task id to the crew call it was linked to (its real `Agent`/
+   * `Workflow` tool_use id, or a synthesized id for tool_use-less local workflows). Lets later
+   * `task_progress`/`task_notification` events — which often omit `tool_use_id` for
+   * async-completed background tasks — keep updating the *same* crew call instead of either
+   * fabricating a new one or getting dropped. See `resolveClaudeTaskCrewLink`.
+   */
+  taskLaunchesById: Map<string, ClaudeCrewLink>
   /** Tracks structured Claude TaskCreate/TaskUpdate state for progress slot projection. */
   taskProgress: ClaudeAgentTaskProgressState
   /** Maps content block index → text item ID for currently-streaming text blocks. */
@@ -143,6 +155,20 @@ export interface ClaudeAgentCapturedCrewCall {
   completedAt: number | null
 }
 
+/**
+ * A background task lifecycle event (`task_started`/`task_progress`/`task_notification`) that
+ * could not be linked to a real `Agent`/`Workflow` tool_use. These are generic runtime task
+ * progress signals — not subagent delegations — and must never be written into the crew store,
+ * or any tool call carrying a `description` (e.g. `Bash`) would be misrendered as a Subagent.
+ */
+export interface ClaudeAgentCapturedTaskActivity {
+  id: string
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  startedAt: number | null
+  completedAt: number | null
+}
+
 export interface ClaudeAgentChunkMapperResult {
   chunks: UIMessageChunk[]
   sessionId: string | null
@@ -151,6 +177,7 @@ export interface ClaudeAgentChunkMapperResult {
   capturedTodos: ClaudeAgentCapturedTodos[]
   capturedInteractionModes: ClaudeAgentCapturedInteractionMode[]
   capturedCrewCalls: ClaudeAgentCapturedCrewCall[]
+  capturedTaskActivity: ClaudeAgentCapturedTaskActivity[]
 }
 
 export async function mapClaudeAgentMessageToChunks(msg: SDKMessage, state: ClaudeAgentChunkMapperState): Promise<ClaudeAgentChunkMapperResult> {
@@ -165,6 +192,7 @@ function normalizeClaudeAgentChunkMapperState(state: ClaudeAgentChunkMapperState
   state.toolNamesByToolCallId ??= new Map()
   state.toolInputTextByToolCallId ??= new Map()
   state.toolArgsByToolCallId ??= new Map()
+  state.taskLaunchesById ??= new Map()
   state.taskProgress ??= createClaudeAgentTaskProgressState()
   state.activeTextBlockByIndex ??= new Map()
   state.activeThinkingBlockByIndex ??= new Map()
@@ -174,7 +202,20 @@ function normalizeClaudeAgentChunkMapperState(state: ClaudeAgentChunkMapperState
   state.latestPlanFileContent ??= null
 }
 
-export function createClaudeAgentChunkMapperState(textItemId: string = randomUUID()): ClaudeAgentChunkMapperState {
+/**
+ * `taskLaunchesById` is optionally injected so callers that fork multiple chunk-mapper states
+ * for the same SDK session (main session state, per-subagent provider-thread states, synthetic
+ * turn state) can share a single map. Task lifecycle events for a given subagent are split
+ * across these states — e.g. `task_started` (which carries `tool_use_id`) routes to that
+ * subagent's own provider-thread state, while a later `task_progress`/`task_notification`
+ * (which typically omits `tool_use_id`) falls back to the main session state — so the link
+ * `resolveClaudeTaskCrewLink` registers must be visible from all of them. Standalone callers
+ * (e.g. Quick Questions, tests) that never fork state can omit it and get a private map.
+ */
+export function createClaudeAgentChunkMapperState(
+  textItemId: string = randomUUID(),
+  taskLaunchesById: Map<string, ClaudeCrewLink> = new Map(),
+): ClaudeAgentChunkMapperState {
   return {
     textItemId,
     assistantStarted: false,
@@ -185,6 +226,7 @@ export function createClaudeAgentChunkMapperState(textItemId: string = randomUUI
     toolNamesByToolCallId: new Map(),
     toolInputTextByToolCallId: new Map(),
     toolArgsByToolCallId: new Map(),
+    taskLaunchesById,
     taskProgress: createClaudeAgentTaskProgressState(),
     activeTextBlockByIndex: new Map(),
     activeThinkingBlockByIndex: new Map(),
@@ -221,6 +263,7 @@ export async function mapClaudeAgentMessageToChunksWithoutParentProjection(msg: 
     capturedTodos: [],
     capturedInteractionModes: [],
     capturedCrewCalls: [],
+    capturedTaskActivity: [],
   }
 
   switch (msg.type) {
@@ -258,22 +301,34 @@ function mapSystemOrUnknown(msg: SDKMessage, state: ClaudeAgentChunkMapperState,
     // Emit a text segment to announce the subagent
     const agentName = taskMsg.subagent_type ?? taskMsg.workflow_name ?? taskMsg.description ?? 'Subagent'
     const textId = randomUUID()
-    base.capturedCrewCalls.push({
-      toolCallId: taskMsg.tool_use_id ?? taskMsg.task_id,
-      tool: taskMsg.task_type === 'local_workflow' ? ClaudeCodeToolName.Workflow : ClaudeCodeToolName.Agent,
-      agentId: taskMsg.task_id,
-      prompt: taskMsg.prompt ?? null,
-      description: taskMsg.description ?? null,
-      subagentType: taskMsg.subagent_type ?? taskMsg.workflow_name ?? null,
-      model: null,
-      reasoningEffort: null,
-      tools: [],
-      outputFile: null,
-      runInBackground: true,
-      status: 'running',
-      startedAt: Date.now(),
-      completedAt: null,
-    })
+    const linkedCrewTool = resolveClaudeTaskCrewLink(taskMsg.task_id, taskMsg.tool_use_id, taskMsg.task_type, state)
+    if (linkedCrewTool) {
+      base.capturedCrewCalls.push({
+        toolCallId: linkedCrewTool.toolCallId,
+        tool: linkedCrewTool.tool,
+        agentId: taskMsg.task_id,
+        prompt: taskMsg.prompt ?? null,
+        description: taskMsg.description ?? null,
+        subagentType: taskMsg.subagent_type ?? taskMsg.workflow_name ?? null,
+        model: null,
+        reasoningEffort: null,
+        tools: [],
+        outputFile: null,
+        runInBackground: true,
+        status: 'running',
+        startedAt: Date.now(),
+        completedAt: null,
+      })
+    }
+    else {
+      base.capturedTaskActivity.push({
+        id: taskMsg.task_id,
+        label: taskMsg.description ?? agentName,
+        status: 'running',
+        startedAt: Date.now(),
+        completedAt: null,
+      })
+    }
     chunks.push(
       providerChunk.textStart(textId, { cradle: { systemEvent: 'task_started', taskId: taskMsg.task_id, agentName } }),
       providerChunk.textDelta(textId, `[${agentName} started]`),
@@ -282,43 +337,68 @@ function mapSystemOrUnknown(msg: SDKMessage, state: ClaudeAgentChunkMapperState,
   }
   else if (systemEvent?.subtype === 'task_progress') {
     const taskMsg = systemEvent.message
-    base.capturedCrewCalls.push({
-      toolCallId: taskMsg.tool_use_id ?? taskMsg.task_id,
-      tool: ClaudeCodeToolName.Agent,
-      agentId: taskMsg.task_id,
-      prompt: null,
-      description: taskMsg.description ?? taskMsg.summary ?? null,
-      subagentType: taskMsg.subagent_type ?? null,
-      model: null,
-      reasoningEffort: null,
-      tools: [],
-      outputFile: null,
-      runInBackground: true,
-      status: 'running',
-      startedAt: 0,
-      completedAt: null,
-    })
+    const linkedCrewTool = resolveClaudeTaskCrewLink(taskMsg.task_id, taskMsg.tool_use_id, undefined, state)
+    if (linkedCrewTool) {
+      base.capturedCrewCalls.push({
+        toolCallId: linkedCrewTool.toolCallId,
+        tool: linkedCrewTool.tool,
+        agentId: taskMsg.task_id,
+        prompt: null,
+        description: taskMsg.description ?? taskMsg.summary ?? null,
+        subagentType: taskMsg.subagent_type ?? null,
+        model: null,
+        reasoningEffort: null,
+        tools: [],
+        outputFile: null,
+        runInBackground: true,
+        status: 'running',
+        startedAt: 0,
+        completedAt: null,
+      })
+    }
+    else {
+      base.capturedTaskActivity.push({
+        id: taskMsg.task_id,
+        label: taskMsg.description ?? taskMsg.summary ?? 'Task in progress',
+        status: 'running',
+        startedAt: null,
+        completedAt: null,
+      })
+    }
   }
   else if (systemEvent?.subtype === 'task_notification') {
     const taskMsg = systemEvent.message
     const textId = randomUUID()
     const status = taskMsg.status
-    base.capturedCrewCalls.push({
-      toolCallId: taskMsg.tool_use_id ?? taskMsg.task_id,
-      tool: ClaudeCodeToolName.Agent,
-      agentId: taskMsg.task_id,
-      prompt: null,
-      description: taskMsg.summary ?? null,
-      subagentType: null,
-      model: null,
-      reasoningEffort: null,
-      tools: [],
-      outputFile: taskMsg.output_file ?? null,
-      runInBackground: true,
-      status: status === 'completed' ? 'completed' : 'failed',
-      startedAt: 0,
-      completedAt: Date.now(),
-    })
+    const resolvedStatus = status === 'completed' ? 'completed' : 'failed'
+    const linkedCrewTool = resolveClaudeTaskCrewLink(taskMsg.task_id, taskMsg.tool_use_id, undefined, state)
+    if (linkedCrewTool) {
+      base.capturedCrewCalls.push({
+        toolCallId: linkedCrewTool.toolCallId,
+        tool: linkedCrewTool.tool,
+        agentId: taskMsg.task_id,
+        prompt: null,
+        description: taskMsg.summary ?? null,
+        subagentType: null,
+        model: null,
+        reasoningEffort: null,
+        tools: [],
+        outputFile: taskMsg.output_file ?? null,
+        runInBackground: true,
+        status: resolvedStatus,
+        startedAt: 0,
+        completedAt: Date.now(),
+      })
+    }
+    else {
+      base.capturedTaskActivity.push({
+        id: taskMsg.task_id,
+        label: taskMsg.summary ?? `Task ${status}`,
+        status: resolvedStatus,
+        startedAt: null,
+        completedAt: Date.now(),
+      })
+    }
     chunks.push(
       providerChunk.textStart(textId, { cradle: { systemEvent: 'task_notification', taskId: taskMsg.task_id, status } }),
       providerChunk.textDelta(textId, taskMsg.summary || `[Task ${status}]`),
@@ -340,6 +420,65 @@ type ClaudeSystemLifecycleEvent
   = | { subtype: 'task_started', message: SDKTaskStartedMessage }
     | { subtype: 'task_progress', message: SDKTaskProgressMessage }
     | { subtype: 'task_notification', message: SDKTaskNotificationMessage }
+
+export type ClaudeCrewLink = { toolCallId: string, tool: typeof ClaudeCodeToolName.Agent | typeof ClaudeCodeToolName.Workflow }
+
+/**
+ * Tier 1 of `resolveClaudeTaskCrewLink`: resolves a `tool_use_id` to a real `Agent`/`Workflow`
+ * tool_use block. Any `tool_use_id` that resolves to a different tool (e.g. `Bash`) — or is
+ * absent — fails this tier and falls through to the other tiers.
+ */
+function resolveClaudeLinkedCrewTool(
+  toolUseId: string | undefined,
+  state: ClaudeAgentChunkMapperState,
+): ClaudeCrewLink | null {
+  if (!toolUseId) {
+    return null
+  }
+  const toolName = state.toolNamesByToolCallId.get(toolUseId)
+  if (!toolName) {
+    return null
+  }
+  const normalized = normalizeClaudeCodeToolApiName(toolName)
+  if (normalized === ClaudeCodeToolName.Agent || normalized === ClaudeCodeToolName.Workflow) {
+    return { toolCallId: toolUseId, tool: normalized }
+  }
+  return null
+}
+
+/**
+ * Resolves a `task_*` system event to the crew call it belongs to, so task lifecycle events
+ * only ever update an existing crew call instead of fabricating a new one. Tried in order,
+ * most to least specific:
+ *
+ *  1. `tool_use_id` resolves to a real `Agent`/`Workflow` tool_use block — the common case for
+ *     synchronous Task-tool subagents.
+ *  2. `task_started` carries `task_type: 'local_workflow'` — Cradle's Workflow tool runs
+ *     synchronously server-side, so the SDK never emits a `tool_use` content block for it; the
+ *     `tool_use_id` on the task event itself is the only handle we'll ever get.
+ *  3. `task_id` was already linked to a crew call by an earlier event on the same task (tier 1/2
+ *     resolving a prior `task_started`, or an async-launched Agent's `tool_result` — see
+ *     `mapUser`). Covers `task_progress`/`task_notification` events, which routinely omit
+ *     `tool_use_id` once a task has moved to the background.
+ *
+ * A task that fails all three tiers is a generic background task, not a subagent delegation,
+ * and must be routed to `capturedTaskActivity` instead of `capturedCrewCalls`.
+ */
+function resolveClaudeTaskCrewLink(
+  taskId: string,
+  toolUseId: string | undefined,
+  taskType: string | undefined,
+  state: ClaudeAgentChunkMapperState,
+): ClaudeCrewLink | null {
+  const linked = resolveClaudeLinkedCrewTool(toolUseId, state)
+    ?? (taskType === 'local_workflow' && toolUseId ? { toolCallId: toolUseId, tool: ClaudeCodeToolName.Workflow } : null)
+    ?? state.taskLaunchesById.get(taskId)
+    ?? null
+  if (linked) {
+    state.taskLaunchesById.set(taskId, linked)
+  }
+  return linked
+}
 
 function readClaudeSystemLifecycleEvent(message: SDKMessage): ClaudeSystemLifecycleEvent | null {
   if (message.type !== 'system') {
@@ -429,7 +568,7 @@ function mapAssistant(msg: SDKAssistantMessage, state: ClaudeAgentChunkMapperSta
       }
     : null
 
-  return { chunks, sessionId: msg.session_id, usage, capturedPlans, capturedTodos, capturedInteractionModes, capturedCrewCalls }
+  return { chunks, sessionId: msg.session_id, usage, capturedPlans, capturedTodos, capturedInteractionModes, capturedCrewCalls, capturedTaskActivity: [] }
 }
 
 async function mapUser(msg: SDKUserMessage, state: ClaudeAgentChunkMapperState): Promise<ClaudeAgentChunkMapperResult> {
@@ -458,6 +597,13 @@ async function mapUser(msg: SDKUserMessage, state: ClaudeAgentChunkMapperState):
               : launch?.status === 'async_launched'
                 ? 'running'
                 : 'completed'
+            // Once launched, the SDK identifies this task purely by its `agentId` (== task_id)
+            // for the rest of its lifecycle — later `task_progress`/`task_notification` events
+            // omit `tool_use_id` entirely. Link that id now so `resolveClaudeTaskCrewLink` keeps
+            // updating this same crew call instead of routing it to `capturedTaskActivity`.
+            if (launch?.agentId) {
+              state.taskLaunchesById.set(launch.agentId, { toolCallId: launch.agentId, tool: normalizedToolName })
+            }
             capturedCrewCalls.push({
               toolCallId: b.tool_use_id,
               tool: normalizedToolName,
@@ -508,7 +654,7 @@ async function mapUser(msg: SDKUserMessage, state: ClaudeAgentChunkMapperState):
     }
   }
 
-  return { chunks, sessionId: msg.session_id ?? null, usage: null, capturedPlans: [], capturedTodos, capturedInteractionModes: [], capturedCrewCalls }
+  return { chunks, sessionId: msg.session_id ?? null, usage: null, capturedPlans: [], capturedTodos, capturedInteractionModes: [], capturedCrewCalls, capturedTaskActivity: [] }
 }
 
 function mapContentBlock(
@@ -670,7 +816,7 @@ function mapStreamEvent(msg: SDKPartialAssistantMessage, state: ClaudeAgentChunk
     }
   }
 
-  return { chunks, sessionId: msg.session_id, usage, capturedPlans, capturedTodos, capturedInteractionModes, capturedCrewCalls: [] }
+  return { chunks, sessionId: msg.session_id, usage, capturedPlans, capturedTodos, capturedInteractionModes, capturedCrewCalls: [], capturedTaskActivity: [] }
 }
 
 function clearCompletedAssistantBlockIndices(state: ClaudeAgentChunkMapperState): void {
@@ -752,6 +898,7 @@ function mapResult(msg: SDKResultMessage, state: ClaudeAgentChunkMapperState): C
     capturedTodos: [],
     capturedInteractionModes: [],
     capturedCrewCalls: [],
+    capturedTaskActivity: [],
   }
 }
 
@@ -972,14 +1119,14 @@ function emitPlanImplementationApprovalChunks(
   const current = state.emittedToolStateByToolCallId.get(toolCallId) ?? { started: false, inputAvailable: false }
   const chunks: UIMessageChunk[] = []
   if (!current.started) {
-    chunks.push(providerChunk.toolInputStart(toolCallId, PLAN_IMPLEMENTATION_TOOL_NAME))
+    chunks.push(providerChunk.toolInputStart(toolCallId, CLAUDE_PLAN_IMPLEMENTATION_TOOL_NAME))
     current.started = true
   }
   if (!current.inputAvailable) {
     chunks.push(providerChunk.toolInputAvailable({
       toolCallId,
-      toolName: PLAN_IMPLEMENTATION_TOOL_NAME,
-      input: createClaudeCodeToolInputPayload(PLAN_IMPLEMENTATION_TOOL_NAME, {
+      toolName: CLAUDE_PLAN_IMPLEMENTATION_TOOL_NAME,
+      input: createClaudeCodeToolInputPayload(CLAUDE_PLAN_IMPLEMENTATION_TOOL_NAME, {
         turnId: sourceToolCallId,
         planContent,
       }),

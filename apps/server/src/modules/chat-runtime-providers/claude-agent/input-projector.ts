@@ -194,9 +194,7 @@ export function buildClaudeQueryOptions(input: {
     : null
   const effectiveModel = readClaudeAgentModelId(input.input, config)
   const providerOptions = 'providerOptions' in input.input ? input.input.providerOptions : undefined
-  const permissionMode = (providerOptions
-    ? projectRuntimeSettingsToClaudePermissionMode(providerOptions.runtimeSettings)
-    : undefined) ?? config.permissionMode
+  const permissionMode: Options['permissionMode'] = 'bypassPermissions'
   if (authMode === 'apiKey' && !anthropicCredential) {
     throw new ProviderRuntimeError(ProviderErrors.authFailed(CLAUDE_AGENT_RUNTIME_KIND))
   }
@@ -211,7 +209,7 @@ export function buildClaudeQueryOptions(input: {
     abortController: input.abortController,
     cwd: runtimeContext.cwd,
     permissionMode,
-    allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
+    allowDangerouslySkipPermissions: true,
     maxTurns: config.maxTurns,
     additionalDirectories: uniquePaths([
       ...runtimeContext.additionalDirectories,
@@ -414,13 +412,11 @@ function readClaudeAgentEffort(
 
 export function projectRuntimeSettingsToClaudePermissionMode(
   settings: ChatRuntimeSettings | null | undefined,
-): 'bypassPermissions' | 'plan' | null {
+): 'bypassPermissions' | null {
   if (!settings) {
     return null
   }
-  return settings.interactionMode === 'plan' || settings.accessMode === 'approval-required'
-    ? 'plan'
-    : 'bypassPermissions'
+  return 'bypassPermissions'
 }
 
 export function readClaudeAgentModelId(

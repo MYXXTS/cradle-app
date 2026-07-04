@@ -207,6 +207,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'claude-code',
           apiName: 'ExitPlanMode',
+          kind: 'plan',
           args: { plan },
         },
       },
@@ -217,6 +218,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.result.v1',
           identifier: 'claude-code',
           apiName: 'ExitPlanMode',
+          kind: 'plan',
           args: { plan },
           result: { plan },
         },
@@ -230,6 +232,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.input.v1',
           identifier: 'claude-code',
           apiName: 'plan_implementation',
+          kind: 'plan-implementation',
           args: { turnId: 'toolu_plan_1', planContent: plan },
         },
       },
@@ -358,6 +361,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.result.v1',
           identifier: 'claude-code',
           apiName: 'ExitPlanMode',
+          kind: 'plan',
           args: {
             allowedPrompts: [
               { tool: 'Bash', prompt: 'run build for testing' },
@@ -444,6 +448,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.result.v1',
           identifier: 'claude-code',
           apiName: 'TodoWrite',
+          kind: 'todo',
           args: {
             todos: [
               { id: 'todo-1', content: 'Inspect', status: 'pending' },
@@ -532,6 +537,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.result.v1',
           identifier: 'claude-code',
           apiName: 'TaskCreate',
+          kind: 'todo',
           args: {
             subject: 'Map modules',
             description: 'List user-facing modules',
@@ -644,6 +650,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
           type: 'cradle.builtin-tool-call.result.v1',
           identifier: 'claude-code',
           apiName: 'Read',
+          kind: 'file-read',
           args: { file_path: '/tmp/chart.png' },
           result: [
             { type: 'text', text: 'Rendered chart' },
@@ -802,6 +809,76 @@ describe('mapClaudeAgentMessageToChunks', () => {
         completedAt: expect.any(Number),
       }),
     ])
+  })
+
+  it('routes an orphan task_notification with no linked tool_use to capturedTaskActivity, not capturedCrewCalls', async () => {
+    // Regression test: any `task_*` event used to be pushed unconditionally into
+    // `capturedCrewCalls`, so e.g. a background `Bash` script with a `description` was
+    // misidentified as a Subagent. A `task_notification` whose `task_id` was never linked to a
+    // real Agent/Workflow tool_use (no `task_started`, no `tool_use`/`tool_result` pair) is a
+    // generic background task and must land in `capturedTaskActivity` instead.
+    const state = createClaudeAgentChunkMapperState('text-1')
+
+    const result = await mapClaudeAgentMessageToChunks({
+      type: 'system',
+      subtype: 'task_notification',
+      session_id: 'claude-session-crew',
+      uuid: 'task-notification-orphan',
+      task_id: 'background-script-1',
+      status: 'completed',
+      output_file: '/tmp/script-output.json',
+      summary: 'Background script finished',
+    } as unknown as SDKMessage, state)
+
+    expect(result.capturedCrewCalls).toEqual([])
+    expect(result.capturedTaskActivity).toEqual([
+      expect.objectContaining({
+        id: 'background-script-1',
+        label: 'Background script finished',
+        status: 'completed',
+      }),
+    ])
+  })
+
+  it('links a local_workflow task_started by tool_use_id even without a preceding tool_use block', async () => {
+    // Cradle's Workflow tool runs synchronously server-side, so the SDK never emits a `tool_use`
+    // content block for it — the `tool_use_id` on the `task_started` event itself, combined with
+    // `task_type: 'local_workflow'`, is the only handle available to link it as a crew call.
+    const state = createClaudeAgentChunkMapperState('text-1')
+
+    const started = await mapClaudeAgentMessageToChunks({
+      type: 'system',
+      subtype: 'task_started',
+      session_id: 'claude-session-workflow',
+      uuid: 'workflow-task-started-1',
+      task_id: 'wciccg1br',
+      tool_use_id: 'toolu_workflow_1',
+      task_type: 'local_workflow',
+      workflow_name: 'Run workflow',
+      description: 'Run release workflow',
+      prompt: 'Execute workflow.py',
+    } as unknown as SDKMessage, state)
+
+    expect(started.capturedCrewCalls).toEqual([
+      expect.objectContaining({ toolCallId: 'toolu_workflow_1', tool: 'Workflow', status: 'running' }),
+    ])
+
+    // A later task_notification for the same task_id omits both tool_use_id and task_type — it
+    // must still resolve to the same crew call via the link `task_started` registered above.
+    const notification = await mapClaudeAgentMessageToChunks({
+      type: 'system',
+      subtype: 'task_notification',
+      session_id: 'claude-session-workflow',
+      uuid: 'workflow-task-notification-1',
+      task_id: 'wciccg1br',
+      status: 'completed',
+      summary: 'Workflow complete',
+    } as unknown as SDKMessage, state)
+
+    expect(notification.capturedCrewCalls).toEqual([
+      expect.objectContaining({ toolCallId: 'toolu_workflow_1', tool: 'Workflow', status: 'completed' }),
+    ])
+    expect(notification.capturedTaskActivity).toEqual([])
   })
 
   it('normalizes Claude Workflow tool calls into Cradle-owned tool payloads', async () => {

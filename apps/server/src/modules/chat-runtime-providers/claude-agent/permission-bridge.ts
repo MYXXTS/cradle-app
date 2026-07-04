@@ -150,6 +150,16 @@ async function handleClaudeAgentToolPermissionRequest(input: {
   options: ClaudeAgentCanUseToolOptions
   emitToolApprovalRequest?: (request: ClaudeAgentToolApprovalRequest) => void
 }): Promise<PermissionResult> {
+  if (input.runtimeSettings?.interactionMode === 'plan') {
+    return {
+      behavior: 'deny',
+      message: CLAUDE_AGENT_PLAN_MODE_DENIAL_MESSAGE,
+    }
+  }
+  if (input.permissionMode === 'bypassPermissions') {
+    return allowClaudeAgentTool(input.toolInput)
+  }
+
   if (!input.deps.requestToolApproval || !('runId' in input.runtimeInput)) {
     return {
       behavior: 'deny',
@@ -180,22 +190,6 @@ async function handleClaudeAgentToolPermissionRequest(input: {
       },
     },
     policy: {
-      // Claude-specific pre-checks that decide the outcome without ever reaching the user:
-      // an SDK-level bypass-permissions session should auto-approve, and Cradle's own plan
-      // mode should auto-deny implementation tools regardless of what the SDK would otherwise ask.
-      resolveOverride: () => {
-        if (input.permissionMode === 'bypassPermissions') {
-          return { requestId: input.options.toolUseID, approved: true }
-        }
-        if (input.runtimeSettings?.interactionMode === 'plan') {
-          return {
-            requestId: input.options.toolUseID,
-            approved: false,
-            reason: CLAUDE_AGENT_PLAN_MODE_DENIAL_MESSAGE,
-          }
-        }
-        return null
-      },
       onBeforeDispatch: () => {
         input.emitToolApprovalRequest?.({
           toolCallId: input.options.toolUseID,

@@ -54,8 +54,9 @@ import { providerChunk } from '../kit/chunk-mapper'
 import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 import { ClaudeAgentInputStream, emptyClaudeAgentInput } from './async-input-stream'
 import { projectClaudeAgentCompactState, projectClaudeAgentContextUsage } from './context-usage-projector'
-import type { ClaudeAgentCapturedCrewCall, ClaudeAgentChunkMapperState } from './event-to-chunk-mapper'
+import type { ClaudeAgentCapturedCrewCall, ClaudeAgentChunkMapperState, ClaudeCrewLink } from './event-to-chunk-mapper'
 import { createClaudeAgentChunkMapperState, mapClaudeAgentMessageToChunks, mapClaudeAgentMessageToChunksWithoutParentProjection, resetClaudeAgentChunkMapperForTurn } from './event-to-chunk-mapper'
+import type { ClaudeStderrSink } from './input-projector'
 import {
   buildClaudeAgentTurnContent,
   buildClaudeQueryOptions,
@@ -67,7 +68,6 @@ import {
   readClaudeAgentModelId,
   shouldPersistClaudeAgentSdkSession,
 } from './input-projector'
-import type { ClaudeStderrSink } from './input-projector'
 import {
   CLAUDE_AGENT_RUNTIME_CAPABILITIES,
   CLAUDE_AGENT_RUNTIME_KIND,
@@ -88,6 +88,7 @@ import {
   projectClaudeAgentCrewUiSlotState,
   projectClaudeAgentPlanUiSlotState,
   projectClaudeAgentProgressUiSlotState,
+  projectClaudeAgentToolActivityUiSlotState,
   projectClaudeAgentUsageUiSlotState,
   readClaudeAgentCrewProviderThreadIdForAgent,
   readClaudeAgentPendingModelSwitchId,
@@ -99,6 +100,7 @@ import {
   writeClaudeAgentPendingModelSwitch,
   writeClaudeAgentProgress,
   writeClaudeAgentRateLimitSnapshot,
+  writeClaudeAgentTaskActivity,
 } from './state-projector'
 import { ClaudeCodeToolName } from './tools/identity'
 import { createClaudeCodeToolInputPayload, createClaudeCodeToolResultPayload } from './tools/mapper'
@@ -109,6 +111,13 @@ type ActiveClaudeQuery = {
   abortController: AbortController
   inputStream: ClaudeAgentInputStream
   mapperState: ClaudeAgentChunkMapperState
+  /**
+   * Shared across the main session's mapper state and every per-subagent provider-thread /
+   * synthetic-turn mapper state forked for this session (see `createClaudeAgentChunkMapperState`
+   * call sites below). Task lifecycle events for one subagent are split across these states, so
+   * the crew link `resolveClaudeTaskCrewLink` registers must be visible from all of them.
+   */
+  taskLaunchesById: Map<string, ClaudeCrewLink>
   permissionBridgeState: ClaudeAgentPermissionBridgeState
   runtimeSession: RuntimeSession
   providerTargetId: string
@@ -180,11 +189,27 @@ type ClaudeSubagentSessionMessage = SessionMessage & {
   message: ClaudeTranscriptMessagePayload | string
 }
 
+type ClaudeSubagentProjectedToolPart = UIMessage['parts'][number] & {
+  toolCallId: string
+  state?: string
+  input?: unknown
+  output?: unknown
+  errorText?: string
+}
+
 interface ClaudeSubagentThreadRecord {
   agentId: string
   parentSessionId: string
   cwd: string
   messages: ClaudeSubagentSessionMessage[]
+}
+
+interface ClaudeSubagentProjectedEntry {
+  providerThreadId: string
+  agentId: string
+  turn: ProviderThreadTurn
+  message: UIMessage
+  rawMessages: ClaudeSubagentSessionMessage[]
 }
 
 function readActiveClaudeQueryPermissionMode(
@@ -315,6 +340,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     const planState = projectClaudeAgentPlanUiSlotState(runtimeSession)
     const progressState = projectClaudeAgentProgressUiSlotState(runtimeSession)
     const crewState = projectClaudeAgentCrewUiSlotState(runtimeSession)
+    const toolActivityState = projectClaudeAgentToolActivityUiSlotState(runtimeSession)
     const compactState = await this.readCompactState({ ...input, runtimeSession })
     const states: RuntimeUiSlotState[] = []
     if (planState) {
@@ -325,6 +351,9 @@ export class ClaudeAgentProvider implements ChatRuntime {
     }
     if (crewState) {
       states.push(crewState)
+    }
+    if (toolActivityState) {
+      states.push(toolActivityState)
     }
     const usageState = projectClaudeAgentUsageUiSlotState(input.runtimeSession)
     if (usageState) {
@@ -455,11 +484,13 @@ export class ClaudeAgentProvider implements ChatRuntime {
       this.activePermissionModesBySession.set(sessionId, turnPermissionMode)
       const inputStream = new ClaudeAgentInputStream()
       const activeQuery = query({ prompt: inputStream, options: queryOptions })
+      const taskLaunchesById: Map<string, ClaudeCrewLink> = new Map()
       activeEntry = {
         query: activeQuery,
         abortController,
         inputStream,
-        mapperState: createClaudeAgentChunkMapperState(),
+        mapperState: createClaudeAgentChunkMapperState(undefined, taskLaunchesById),
+        taskLaunchesById,
         permissionBridgeState,
         runtimeSession: input.runtimeSession,
         providerTargetId: profile.providerTargetId,
@@ -685,6 +716,9 @@ export class ClaudeAgentProvider implements ChatRuntime {
     for (const crewCall of result.capturedCrewCalls) {
       writeClaudeAgentCrewCall(entry.runtimeSession, mapCrewCallToSnapshot(crewCall))
     }
+    for (const taskActivity of result.capturedTaskActivity) {
+      writeClaudeAgentTaskActivity(entry.runtimeSession, taskActivity)
+    }
     for (const mode of result.capturedInteractionModes) {
       await this.requestRuntimeInteractionModeUpdate(entry.runtimeSession, mode.interactionMode)
     }
@@ -744,6 +778,9 @@ export class ClaudeAgentProvider implements ChatRuntime {
     for (const crewCall of result.capturedCrewCalls) {
       writeClaudeAgentCrewCall(entry.runtimeSession, mapCrewCallToSnapshot(crewCall))
     }
+    for (const taskActivity of result.capturedTaskActivity) {
+      writeClaudeAgentTaskActivity(entry.runtimeSession, taskActivity)
+    }
     this.updateClaudeTurnUsage(result.usage)
     this.publishClaudeProviderThreadEvent(turn, providerThreadTurn, result.chunks)
     if (hasTerminalProviderThreadChunk(result.chunks)) {
@@ -765,7 +802,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     const providerThreadTurn: ActiveClaudeProviderThreadTurn = {
       providerThreadId,
       providerTurnId: `claude-subagent-${randomUUID()}`,
-      mapperState: createClaudeAgentChunkMapperState(`provider-thread:${providerThreadId}`),
+      mapperState: createClaudeAgentChunkMapperState(`provider-thread:${providerThreadId}`, entry.taskLaunchesById),
       terminal: false,
     }
     entry.providerThreadTurns.set(providerThreadId, providerThreadTurn)
@@ -922,7 +959,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     const syntheticTurn: ActiveClaudeSyntheticTurn = {
       providerTurnId: `claude-synthetic-${randomUUID()}`,
       providerThreadId: readClaudeSyntheticProviderThreadId(message),
-      mapperState: createClaudeAgentChunkMapperState(),
+      mapperState: createClaudeAgentChunkMapperState(undefined, entry.taskLaunchesById),
       onProviderSyntheticTurnEvent,
     }
     entry.syntheticTurn = syntheticTurn
@@ -1130,17 +1167,18 @@ export class ClaudeAgentProvider implements ChatRuntime {
     const record = await this.resolveClaudeSubagentThreadRecord(input.threadId, input)
     const sortDirection = input.sortDirection ?? 'asc'
     const displayMessages = record.messages.filter(hasClaudeSubagentDisplayParts)
-    const messages = sortDirection === 'desc' ? [...displayMessages].reverse() : displayMessages
+    const entries = projectClaudeSubagentEntries(record, displayMessages)
+    const orderedEntries = sortDirection === 'desc' ? [...entries].reverse() : entries
     const offset = readProviderThreadOffset(input.cursor)
     const limit = readProviderThreadLimit(input.limit)
-    const page = messages.slice(offset, offset + limit)
+    const page = orderedEntries.slice(offset, offset + limit)
     return {
       runtimeKind: this.runtimeKind,
       providerSessionId: record.parentSessionId,
       threadId: readClaudeSubagentProviderThreadId(record),
-      turns: page.map(message => projectClaudeSubagentTurn(record, message)),
-      messages: projectClaudeSubagentMessagesToUiMessages(record, page, displayMessages),
-      nextCursor: offset + limit < messages.length ? String(offset + limit) : null,
+      turns: page.map(entry => entry.turn),
+      messages: page.map(entry => entry.message),
+      nextCursor: offset + limit < orderedEntries.length ? String(offset + limit) : null,
       backwardsCursor: offset > 0 ? String(Math.max(0, offset - limit)) : null,
     }
   }
@@ -1225,7 +1263,9 @@ export class ClaudeAgentProvider implements ChatRuntime {
     if (!entry) {
       return
     }
-    await entry.query.setPermissionMode(input.mode)
+    if (this.activePermissionModesBySession.get(sessionId) !== input.mode) {
+      await entry.query.setPermissionMode(input.mode)
+    }
     this.activePermissionModesBySession.set(sessionId, input.mode)
     updateClaudeAgentPermissionBridgeState(entry.permissionBridgeState, {
       runtimeInput: input.runtimeInput ?? entry.permissionBridgeState.runtimeInput,
@@ -1812,53 +1852,250 @@ function readClaudeSubagentTimestamp(message: ClaudeSubagentSessionMessage): num
   return Number.isFinite(timestamp) ? timestamp : null
 }
 
-function projectClaudeSubagentTurn(
-  record: ClaudeSubagentThreadRecord,
-  message: ClaudeSubagentSessionMessage,
-): ProviderThreadTurn {
-  const timestamp = readClaudeSubagentTimestamp(message)
-  const providerThreadId = readClaudeSubagentProviderThreadId(record)
+function projectClaudeSubagentEntryTurn(entry: Pick<ClaudeSubagentProjectedEntry, 'agentId' | 'providerThreadId' | 'rawMessages' | 'message'>): ProviderThreadTurn {
+  const metadata = readRecord(entry.message.metadata)
+  const entryId = typeof metadata.providerMessageId === 'string' ? metadata.providerMessageId : entry.message.id
+  const startedAt = readClaudeSubagentTimestamp(entry.rawMessages[0]!)
+  const completedAt = readClaudeSubagentTimestamp(entry.rawMessages.at(-1)!)
   return {
-    id: message.uuid,
-    status: 'completed',
-    startedAt: timestamp,
-    completedAt: timestamp,
-    durationMs: null,
+    id: entryId,
+    status: entry.message.parts.some(part => isClaudeSubagentToolErrorPart(part)) ? 'failed' : 'completed',
+    startedAt,
+    completedAt,
+    durationMs: startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null,
     itemsView: 'full',
-    items: [{
+    items: entry.rawMessages.map(message => ({
       provider: 'claude-agent',
-      providerThreadId,
-      agentId: record.agentId,
+      providerThreadId: entry.providerThreadId,
+      agentId: entry.agentId,
       message,
-    }],
+    })),
   }
 }
 
-function projectClaudeSubagentMessagesToUiMessages(
+function projectClaudeSubagentEntries(
   record: ClaudeSubagentThreadRecord,
   messages: ClaudeSubagentSessionMessage[],
   toolSourceMessages: ClaudeSubagentSessionMessage[] = messages,
-): UIMessage[] {
+): ClaudeSubagentProjectedEntry[] {
   const providerThreadId = readClaudeSubagentProviderThreadId(record)
   const toolUseById = collectClaudeSubagentToolUses(toolSourceMessages)
-  return messages.flatMap((message): UIMessage[] => {
-    const parts = projectClaudeSubagentMessageParts(message, toolUseById)
-    if (parts.length === 0) {
-      return []
+  const entries: ClaudeSubagentProjectedEntry[] = []
+  const toolEntryByCallId = new Map<string, ClaudeSubagentProjectedEntry>()
+
+  // The launch prompt is metadata carried on every persisted session message (`task_description`),
+  // not a message of its own — so it must be synthesized as a standing entry rather than relying on
+  // one of `messages` to happen to render it. Without this, the prompt was only ever visible via the
+  // transient live-stream announcement and vanished from history once the subagent produced output.
+  const launchPromptEntry = projectClaudeSubagentLaunchPromptEntry(record)
+  if (launchPromptEntry) {
+    entries.push(launchPromptEntry)
+  }
+
+  for (const message of messages) {
+    const rawParts = projectClaudeSubagentMessageParts(message, toolUseById)
+    if (rawParts.length === 0) {
+      continue
     }
-    return [{
+    // Claude Code session transcripts can bundle a `tool_use` block and its matching
+    // `tool_result` in the very same session message (unlike the raw Anthropic API, where
+    // they are always in separate messages). Merge those before cross-message merging below,
+    // or the tool call would render as two separate blocks — the input-available one and the
+    // output-available one — inside a single chat message.
+    const parts = mergeClaudeSubagentToolResultPartsWithinMessage(rawParts)
+
+    const localParts: UIMessage['parts'] = []
+    for (const part of parts) {
+      const merged = mergeClaudeSubagentToolResultPartIntoEntry(part, message, toolEntryByCallId)
+      if (!merged) {
+        localParts.push(part)
+      }
+    }
+
+    if (localParts.length === 0) {
+      continue
+    }
+
+    const entryMessage: UIMessage = {
       id: `provider-thread:${providerThreadId}:message:${message.uuid}`,
       role: readClaudeSubagentUiRole(message),
-      parts,
+      parts: localParts,
       metadata: {
         provider: 'claude-agent',
         providerThreadId,
         agentId: record.agentId,
         providerMessageId: message.uuid,
+        providerMessageIds: [message.uuid],
         parentToolUseId: message.parent_tool_use_id,
       },
-    }]
+    }
+    const entry: ClaudeSubagentProjectedEntry = {
+      providerThreadId,
+      agentId: record.agentId,
+      turn: {
+        id: message.uuid,
+        status: 'completed',
+        startedAt: readClaudeSubagentTimestamp(message),
+        completedAt: readClaudeSubagentTimestamp(message),
+        durationMs: null,
+        itemsView: 'full',
+        items: [{
+          provider: 'claude-agent',
+          providerThreadId,
+          agentId: record.agentId,
+          message,
+        }],
+      },
+      message: entryMessage,
+      rawMessages: [message],
+    }
+    entry.turn = projectClaudeSubagentEntryTurn(entry)
+
+    entries.push(entry)
+    indexClaudeSubagentToolUseParts(entry, toolEntryByCallId)
+  }
+
+  return entries
+}
+
+function projectClaudeSubagentLaunchPromptEntry(record: ClaudeSubagentThreadRecord): ClaudeSubagentProjectedEntry | null {
+  const promptText = readFirstClaudeSubagentString(record.messages, 'task_description')
+  if (!promptText) {
+    return null
+  }
+
+  const providerThreadId = readClaudeSubagentProviderThreadId(record)
+  const startedAt = readClaudeSubagentBoundaryTimestamp(record.messages, 'first')
+  const entryId = `${providerThreadId}:launch-prompt`
+  const message: UIMessage = {
+    id: `provider-thread:${providerThreadId}:message:${entryId}`,
+    role: 'user',
+    parts: [{ type: 'text', text: promptText, state: 'done' }],
+    metadata: {
+      provider: 'claude-agent',
+      providerThreadId,
+      agentId: record.agentId,
+      providerMessageId: entryId,
+      providerMessageIds: [entryId],
+      synthetic: 'launch-prompt',
+    },
+  }
+  return {
+    providerThreadId,
+    agentId: record.agentId,
+    turn: {
+      id: entryId,
+      status: 'completed',
+      startedAt,
+      completedAt: startedAt,
+      durationMs: null,
+      itemsView: 'full',
+      items: [],
+    },
+    message,
+    rawMessages: [],
+  }
+}
+
+function indexClaudeSubagentToolUseParts(
+  entry: ClaudeSubagentProjectedEntry,
+  toolEntryByCallId: Map<string, ClaudeSubagentProjectedEntry>,
+): void {
+  for (const part of entry.message.parts) {
+    if (isClaudeSubagentToolUsePart(part)) {
+      toolEntryByCallId.set(part.toolCallId, entry)
+    }
+  }
+}
+
+/**
+ * Merges a `tool_result` part into an earlier `tool_use` part for the same `toolCallId` when
+ * both originate from the same raw session message's content blocks. Must run before
+ * cross-message merging (`mergeClaudeSubagentToolResultPartIntoEntry`), since that only indexes
+ * tool_use parts from messages already fully processed — it can never see a tool_use from the
+ * message currently being projected.
+ */
+function mergeClaudeSubagentToolResultPartsWithinMessage(parts: UIMessage['parts']): UIMessage['parts'] {
+  const merged: UIMessage['parts'] = []
+  const toolUseIndexByCallId = new Map<string, number>()
+
+  for (const part of parts) {
+    if (isClaudeSubagentToolResultPart(part)) {
+      const toolUseIndex = toolUseIndexByCallId.get(part.toolCallId)
+      const toolUsePart = toolUseIndex !== undefined ? merged[toolUseIndex] : undefined
+      if (toolUseIndex !== undefined && toolUsePart && isClaudeSubagentToolUsePart(toolUsePart)) {
+        merged[toolUseIndex] = { ...toolUsePart, ...part, input: toolUsePart.input ?? part.input } as UIMessage['parts'][number]
+        continue
+      }
+    }
+    if (isClaudeSubagentToolUsePart(part)) {
+      toolUseIndexByCallId.set(part.toolCallId, merged.length)
+    }
+    merged.push(part)
+  }
+
+  return merged
+}
+
+function mergeClaudeSubagentToolResultPartIntoEntry(
+  part: UIMessage['parts'][number],
+  message: ClaudeSubagentSessionMessage,
+  toolEntryByCallId: Map<string, ClaudeSubagentProjectedEntry>,
+): boolean {
+  if (!isClaudeSubagentToolResultPart(part)) {
+    return false
+  }
+  const entry = toolEntryByCallId.get(part.toolCallId)
+  if (!entry) {
+    return false
+  }
+  entry.message.parts = entry.message.parts.map((candidate) => {
+    if (!isClaudeSubagentToolUsePart(candidate) || candidate.toolCallId !== part.toolCallId) {
+      return candidate
+    }
+    return {
+      ...candidate,
+      ...part,
+      input: candidate.input ?? part.input,
+    } as UIMessage['parts'][number]
   })
+  const providerMessageIds = readProviderMessageIds(entry.message.metadata)
+  if (!providerMessageIds.includes(message.uuid)) {
+    providerMessageIds.push(message.uuid)
+  }
+  entry.message.metadata = {
+    ...readRecord(entry.message.metadata),
+    providerMessageIds,
+  }
+  entry.rawMessages.push(message)
+  entry.turn = projectClaudeSubagentEntryTurn(entry)
+  return true
+}
+
+function readProviderMessageIds(metadata: UIMessage['metadata']): string[] {
+  if (!metadata || typeof metadata !== 'object') {
+    return []
+  }
+  const ids = (metadata as { providerMessageIds?: unknown }).providerMessageIds
+  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+}
+
+function isClaudeSubagentToolUsePart(part: UIMessage['parts'][number]): part is ClaudeSubagentProjectedToolPart {
+  return isClaudeSubagentToolPart(part) && part.state === 'input-available'
+}
+
+function isClaudeSubagentToolResultPart(part: UIMessage['parts'][number]): part is ClaudeSubagentProjectedToolPart {
+  return isClaudeSubagentToolPart(part) && (part.state === 'output-available' || part.state === 'output-error')
+}
+
+function isClaudeSubagentToolErrorPart(part: UIMessage['parts'][number]): part is ClaudeSubagentProjectedToolPart {
+  return isClaudeSubagentToolPart(part) && part.state === 'output-error'
+}
+
+function isClaudeSubagentToolPart(part: UIMessage['parts'][number]): part is ClaudeSubagentProjectedToolPart {
+  return typeof part.type === 'string'
+    && part.type.startsWith('tool-')
+    && typeof (part as { toolCallId?: unknown }).toolCallId === 'string'
 }
 
 function hasClaudeSubagentDisplayParts(message: ClaudeSubagentSessionMessage): boolean {

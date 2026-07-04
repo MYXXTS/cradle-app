@@ -196,44 +196,6 @@ export async function createRun(
         session: context.session,
         requestedProviderTargetId
       })
-    const runtimeResolution = await resolveRuntimeSessionForContext({
-      sessionId: input.sessionId,
-      context,
-      runtimeKind,
-      runtime,
-      modelId: requestedModelId,
-      requestedProviderTargetId
-    })
-    const runtimeSession = runtimeResolution.runtimeSession
-
-    if (pendingState.cancelled) {
-      if (input.queueItemId) {
-        await cancelQueuedSessionItem(input.sessionId, input.queueItemId)
-      }
-      try {
-        await runtime.cancelTurn({ runtimeSession, profile: context.profile })
-      } catch (error) {
-        deps.warn('runtime turn cancellation failed before chat run was created', {
-          error,
-          sessionId: input.sessionId,
-          queueItemId: input.queueItemId
-        })
-      }
-      throw new AppError({
-        code: 'chat_run_cancelled',
-        status: 409,
-        message: 'Chat run was cancelled before it started',
-        details: { sessionId: input.sessionId, queueItemId: input.queueItemId }
-      })
-    }
-
-    attachBinding({
-      sessionId: input.sessionId,
-      providerTargetId: context.providerTarget?.id ?? null,
-      runtimeKind: runtimeSession.runtimeKind,
-      runtimeSession,
-      requestedModelId: runtimeResolution.requestedModelId
-    })
 
     const runtimeGoalContinuation =
       input.internalContinuation === 'runtimeGoal' ? runtime.goalContinuation : undefined
@@ -283,6 +245,45 @@ export async function createRun(
                   : undefined
               })
 
+    const runtimeResolution = await resolveRuntimeSessionForContext({
+      sessionId: input.sessionId,
+      context,
+      runtimeKind,
+      runtime,
+      modelId: requestedModelId,
+      requestedProviderTargetId
+    })
+    const runtimeSession = runtimeResolution.runtimeSession
+
+    if (pendingState.cancelled) {
+      if (input.queueItemId) {
+        await cancelQueuedSessionItem(input.sessionId, input.queueItemId)
+      }
+      try {
+        await runtime.cancelTurn({ runtimeSession, profile: context.profile })
+      } catch (error) {
+        deps.warn('runtime turn cancellation failed before chat run was created', {
+          error,
+          sessionId: input.sessionId,
+          queueItemId: input.queueItemId
+        })
+      }
+      throw new AppError({
+        code: 'chat_run_cancelled',
+        status: 409,
+        message: 'Chat run was cancelled before it started',
+        details: { sessionId: input.sessionId, queueItemId: input.queueItemId }
+      })
+    }
+
+    attachBinding({
+      sessionId: input.sessionId,
+      providerTargetId: context.providerTarget?.id ?? null,
+      runtimeKind: runtimeSession.runtimeKind,
+      runtimeSession,
+      requestedModelId: runtimeResolution.requestedModelId
+    })
+
     const run = await startRun({
       sessionId: input.sessionId,
       messageId: draft.assistantMessageId,
@@ -313,6 +314,7 @@ export async function createRun(
           ? lastRequestMessage
           : createAssistantMessage(draft.assistantMessageId),
       finalProjection: createFinalMessageProjectionState(),
+      firstTokenDeltaSnapshotRecorded: false,
       firstTextDeltaSnapshotRecorded: false,
       queueItemId: input.queueItemId,
       runtimeSettings,

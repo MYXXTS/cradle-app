@@ -23,6 +23,7 @@ export interface ActiveRun {
   finalMessage: UIMessage
   finalProjection: FinalMessageProjectionState
   startChunkPublished?: boolean
+  firstTokenDeltaSnapshotRecorded?: boolean
   firstTextDeltaSnapshotRecorded?: boolean
   terminalStatus?: TerminalChatMessageStatus
   cancelRequested?: boolean

@@ -6,12 +6,12 @@
 
 import type { AccountInfo, SDKAuthStatusMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk'
 
-import type { RuntimeCrewAgentItem, RuntimeCrewCallItem, RuntimeCrewUiSlotState, RuntimePlanStepStatus, RuntimePlanUiSlotState, RuntimeProgressUiSlotState, RuntimeSession, RuntimeToolActivityItem, RuntimeUsageUiSlotState } from '../../chat-runtime/runtime-provider-types'
 import { readObjectRecord as readRecord } from '../../../helpers/json-record'
-import type { ClaudeAgentCapturedPlan, ClaudeAgentCapturedTodos } from './event-to-chunk-mapper'
-import type { TodoPluginItem, TodoPluginStatus } from './tools/todo-plugin-state'
+import type { RuntimeCrewAgentItem, RuntimeCrewCallItem, RuntimeCrewUiSlotState, RuntimePlanStepStatus, RuntimePlanUiSlotState, RuntimeProgressUiSlotState, RuntimeSession, RuntimeToolActivityItem, RuntimeToolActivityUiSlotState, RuntimeUsageUiSlotState } from '../../chat-runtime/runtime-provider-types'
 import type { WorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
+import type { ClaudeAgentCapturedPlan, ClaudeAgentCapturedTaskActivity, ClaudeAgentCapturedTodos } from './event-to-chunk-mapper'
+import type { TodoPluginItem, TodoPluginStatus } from './tools/todo-plugin-state'
 
 interface ClaudeAgentPlanSnapshot {
   threadId: string
@@ -669,4 +669,107 @@ function projectClaudeAgentCrewAgents(call: ClaudeAgentCrewCallSnapshot): Runtim
     agentNickname: call.subagentType,
     agentRole: call.description ?? call.prompt,
   }]
+}
+
+// ── Task Activity State ─────────────────────────────────────────────────────
+//
+// Background `task_*` lifecycle events that are not linked to a real `Agent`/`Workflow`
+// tool_use are projected here instead of into the crew store — see `resolveClaudeLinkedCrewTool`
+// in `event-to-chunk-mapper.ts`. This keeps generic runtime task progress (e.g. a `Bash` call
+// that happens to carry a `description`) out of the Subagent UI.
+
+interface ClaudeAgentTaskActivitySnapshot {
+  id: string
+  label: string
+  status: 'running' | 'completed' | 'failed'
+  startedAt: number | null
+  completedAt: number | null
+}
+
+export function writeClaudeAgentTaskActivity(
+  runtimeSession: RuntimeSession,
+  item: ClaudeAgentCapturedTaskActivity,
+): void {
+  const snapshot = readWorkspaceProviderStateSnapshot(runtimeSession.providerStateSnapshot)
+  const claudeAgentState = { ...readRecord(snapshot.claudeAgent) }
+  const existingItems = readClaudeAgentTaskActivitySnapshot(claudeAgentState.taskActivity)
+
+  const index = existingItems.findIndex(existing => existing.id === item.id)
+  if (index >= 0) {
+    existingItems[index] = mergeClaudeAgentTaskActivity(existingItems[index]!, item)
+  }
+  else {
+    existingItems.push(item)
+  }
+
+  claudeAgentState.taskActivity = existingItems
+  runtimeSession.providerStateSnapshot = JSON.stringify({
+    ...snapshot,
+    claudeAgent: claudeAgentState,
+  })
+}
+
+export function projectClaudeAgentToolActivityUiSlotState(
+  runtimeSession: RuntimeSession,
+): RuntimeToolActivityUiSlotState | null {
+  const snapshot = readWorkspaceProviderStateSnapshot(runtimeSession.providerStateSnapshot)
+  const items = readClaudeAgentTaskActivitySnapshot(readRecord(snapshot.claudeAgent).taskActivity)
+  if (items.length === 0) {
+    return null
+  }
+
+  const recentItems: RuntimeToolActivityItem[] = items.map(item => ({
+    id: item.id,
+    type: 'backgroundTask',
+    label: item.label,
+    status: item.status,
+    startedAt: item.startedAt,
+    completedAt: item.completedAt,
+  }))
+
+  return {
+    kind: 'toolActivity',
+    slotId: 'claude-agent:tool-activity',
+    threadId: runtimeSession.chatSessionId,
+    turnId: null,
+    activeCount: items.filter(item => item.status === 'running').length,
+    completedCount: items.filter(item => item.status === 'completed').length,
+    failedCount: items.filter(item => item.status === 'failed').length,
+    recentItems,
+    updatedAt: Date.now(),
+  }
+}
+
+function mergeClaudeAgentTaskActivity(
+  existing: ClaudeAgentTaskActivitySnapshot,
+  next: ClaudeAgentCapturedTaskActivity,
+): ClaudeAgentTaskActivitySnapshot {
+  return {
+    id: existing.id,
+    label: next.label || existing.label,
+    status: next.status,
+    startedAt: next.startedAt ?? existing.startedAt,
+    completedAt: next.completedAt ?? existing.completedAt,
+  }
+}
+
+function readClaudeAgentTaskActivitySnapshot(value: unknown): ClaudeAgentTaskActivitySnapshot[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.flatMap((item): ClaudeAgentTaskActivitySnapshot[] => {
+    const record = readRecord(item)
+    const id = typeof record.id === 'string' ? record.id.trim() : ''
+    const status = record.status
+    if (!id || (status !== 'running' && status !== 'completed' && status !== 'failed')) {
+      return []
+    }
+    return [{
+      id,
+      label: typeof record.label === 'string' ? record.label : id,
+      status,
+      startedAt: typeof record.startedAt === 'number' ? record.startedAt : null,
+      completedAt: typeof record.completedAt === 'number' ? record.completedAt : null,
+    }]
+  })
 }
