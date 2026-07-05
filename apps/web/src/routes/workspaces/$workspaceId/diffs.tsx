@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { RouteErrorFallback } from '~/components/common/route-error-fallback'
 import { WorkspaceDiffsView } from '~/features/diff-review/workspace-diffs-view'
 
 interface WorkspaceDiffsSearch {
@@ -16,6 +17,7 @@ export const Route = createFileRoute('/workspaces/$workspaceId/diffs')({
     review: typeof search.review === 'string' && search.review.length > 0 ? search.review : undefined,
     view: search.view === 'commit' || search.view === 'guide' ? search.view : undefined,
   }),
+  errorComponent: RouteErrorFallback,
   component: WorkspaceDiffsRoute,
 })
 

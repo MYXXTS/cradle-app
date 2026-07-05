@@ -37,6 +37,7 @@ export default defineConfig({
       },
       input: {
         main: resolve(__dirname, 'src/index.ts'),
+        'managed-process-runner': resolve(__dirname, 'src/infra/managed-process-runner.ts'),
       },
     },
   },

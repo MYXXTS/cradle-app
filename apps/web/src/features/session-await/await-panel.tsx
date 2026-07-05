@@ -748,7 +748,7 @@ function SourceCard({ awaitRow, sessionId }: { awaitRow: AwaitRow, sessionId: st
   const invalidatedRef = useRef(false)
   const supportsLiveStatus = awaitRow.source === 'github-ci' || awaitRow.source === 'github-review'
   const isPending = awaitRow.status === 'pending'
-  const { data: rawData } = useLiveAwaitStatus(supportsLiveStatus && isPending ? awaitRow.id : null, isPending)
+  const { data: rawData } = useLiveAwaitStatus(supportsLiveStatus ? awaitRow.id : null, isPending)
   const data = rawData as (LiveAwaitStatus | UnsupportedLiveAwaitStatus) | undefined
 
   useEffect(() => {

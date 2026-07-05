@@ -6,6 +6,7 @@
 import type { FileUIPart } from 'ai'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { z } from 'zod'
 
 import { persistStorage } from './persist-storage'
 
@@ -16,11 +17,47 @@ const BROWSER_HISTORY_LIMIT = 12
 const EMPTY_BROWSER_HISTORY: BrowserHistoryEntry[] = []
 const EMPTY_BROWSER_ANNOTATIONS: BrowserAnnotationRecord[] = []
 const BROWSER_PANEL_STORAGE_KEY = 'cradle:browser-panel:v2'
+const BROWSER_PANEL_PERSIST_VERSION = 2
 const BROWSER_PANEL_TAB_SHORTCUT_KEYS = new Set(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
 
 interface BrowserPanelPersistedState {
   recentHistoryByOwnerId?: Record<string, BrowserHistoryEntry[]>
   annotationTrayCollapsedByOwnerId?: Record<string, boolean>
+}
+
+const browserHistoryEntrySchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  tabId: z.string(),
+}) satisfies z.ZodType<BrowserHistoryEntry>
+
+const browserHistoryByOwnerIdSchema = z.record(z.string(), z.array(browserHistoryEntrySchema))
+const annotationTrayCollapsedByOwnerIdSchema = z.record(z.string(), z.boolean())
+const browserPanelPersistedStateSchema = z.object({
+  recentHistoryByOwnerId: z.unknown().optional(),
+  annotationTrayCollapsedByOwnerId: z.unknown().optional(),
+})
+
+export function readBrowserPanelPersistedState(raw: unknown): BrowserPanelPersistedState {
+  const parsedState = browserPanelPersistedStateSchema.safeParse(raw)
+  if (!parsedState.success) {
+    return {
+      recentHistoryByOwnerId: {},
+      annotationTrayCollapsedByOwnerId: {},
+    }
+  }
+
+  const recentHistoryResult = parsedState.data.recentHistoryByOwnerId === undefined
+    ? undefined
+    : browserHistoryByOwnerIdSchema.safeParse(parsedState.data.recentHistoryByOwnerId)
+  const collapsedResult = parsedState.data.annotationTrayCollapsedByOwnerId === undefined
+    ? undefined
+    : annotationTrayCollapsedByOwnerIdSchema.safeParse(parsedState.data.annotationTrayCollapsedByOwnerId)
+
+  return {
+    recentHistoryByOwnerId: recentHistoryResult?.success ? recentHistoryResult.data : {},
+    annotationTrayCollapsedByOwnerId: collapsedResult?.success ? collapsedResult.data : {},
+  }
 }
 
 export type BrowserPanelScriptRunAt = 'document-start' | 'document-end' | 'document-idle'
@@ -1358,16 +1395,15 @@ function createBrowserPanelStore() {
     {
       name: BROWSER_PANEL_STORAGE_KEY,
       storage: persistStorage,
+      version: BROWSER_PANEL_PERSIST_VERSION,
+      migrate: persistedState => readBrowserPanelPersistedState(persistedState),
       partialize: state => ({
         recentHistoryByOwnerId: state.recentHistoryByOwnerId,
         annotationTrayCollapsedByOwnerId: state.annotationTrayCollapsedByOwnerId,
       }),
       merge: (persisted, current) => ({
         ...current,
-        recentHistoryByOwnerId: (persisted as BrowserPanelPersistedState | undefined)
-          ?.recentHistoryByOwnerId ?? {},
-        annotationTrayCollapsedByOwnerId: (persisted as BrowserPanelPersistedState | undefined)
-          ?.annotationTrayCollapsedByOwnerId ?? {},
+        ...readBrowserPanelPersistedState(persisted),
       }),
     },
     ),

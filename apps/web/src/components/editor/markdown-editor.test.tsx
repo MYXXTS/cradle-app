@@ -5,6 +5,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from 'tiptap-markdown'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { I18nProvider } from '~/i18n/client'
+
 import { MarkdownEditor } from './markdown-editor'
 import { SmartMention } from './smart-mention'
 
@@ -16,11 +18,13 @@ describe('markdown editor', () => {
   it('mounts slash commands and Smart Mention suggestions with distinct plugin keys', () => {
     expect(() => {
       render(
-        <MarkdownEditor
-          content=""
-          readonly
-          smartMentions={{ getItems: vi.fn(() => []) }}
-        />,
+        <I18nProvider initialLocale="en-US">
+          <MarkdownEditor
+            content=""
+            readonly
+            smartMentions={{ getItems: vi.fn(() => []) }}
+          />
+        </I18nProvider>,
       )
     }).not.toThrow()
   })
@@ -75,14 +79,16 @@ describe('markdown editor', () => {
     const handleOpen = vi.fn()
 
     render(
-      <MarkdownEditor
-        content="See [[CRA-007] Smart mentions](cradle://mention/issue/issue-1?label=CRA-007&title=Smart+mentions&detail=Todo+%C2%B7+high&workspaceId=workspace-1)."
-        readonly
-        smartMentions={{
-          getItems: () => [],
-          onOpen: handleOpen,
-        }}
-      />,
+      <I18nProvider initialLocale="en-US">
+        <MarkdownEditor
+          content="See [[CRA-007] Smart mentions](cradle://mention/issue/issue-1?label=CRA-007&title=Smart+mentions&detail=Todo+%C2%B7+high&workspaceId=workspace-1)."
+          readonly
+          smartMentions={{
+            getItems: () => [],
+            onOpen: handleOpen,
+          }}
+        />
+      </I18nProvider>,
     )
 
     const mention = await screen.findByRole('button', { name: 'CRA-007' })

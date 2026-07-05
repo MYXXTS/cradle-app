@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { RouteErrorFallback } from '~/components/common/route-error-fallback'
 import { KanbanBoardRouteContent } from '~/features/kanban/kanban-board-route-content'
 
 interface KanbanSearch {
@@ -12,6 +13,7 @@ export const Route = createFileRoute('/kanban/$boardId')({
     issue: typeof search.issue === 'string' ? search.issue : undefined,
     milestoneId: typeof search.milestoneId === 'string' ? search.milestoneId : undefined,
   }),
+  errorComponent: RouteErrorFallback,
   component: KanbanBoardRoute,
 })
 

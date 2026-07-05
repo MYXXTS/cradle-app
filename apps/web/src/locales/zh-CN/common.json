@@ -1,5 +1,6 @@
 {
   "action.back": "返回",
+  "action.backToHome": "返回首页",
   "action.cancel": "取消",
   "action.close": "关闭",
   "action.continue": "继续",
@@ -17,6 +18,10 @@
   "errorBoundary.description": "应用已捕获这次崩溃，你可以重试渲染或重新加载窗口。",
   "errorBoundary.details": "错误详情",
   "errorBoundary.title": "Cradle 遇到了渲染错误",
+  "routeError.description": "Cradle 的其他部分仍在运行。你可以重试此路由或返回首页。",
+  "routeError.messageLabel": "错误",
+  "routeError.title": "此面板遇到了错误",
+  "routeError.unknownMessage": "未知路由错误",
   "model.emptySelection": "模型",
   "model.fuzzyMatchTitle": "models.dev 模糊匹配",
   "model.loadFailed": "模型加载失败",

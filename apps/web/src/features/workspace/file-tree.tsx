@@ -57,6 +57,7 @@ const WorkspaceFileEventSchema = z.object({
 const ROOT_DIRECTORY_KEY = ''
 
 type WorkspaceFileEntry = z.infer<typeof WorkspaceFileListSchema>[number]
+type WorkspaceFileEvent = z.infer<typeof WorkspaceFileEventSchema>
 const EMPTY_WORKSPACE_FILE_ENTRIES: WorkspaceFileEntry[] = []
 
 function toTreeGitStatus(statuses: GitFileStatus[]): TreeGitStatus[] {
@@ -344,8 +345,18 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
     }
 
     const eventSource = new EventSource(buildWorkspaceFileEventsUrl(workspaceId))
+    let malformedFrameReported = false
     eventSource.onmessage = (event) => {
-      const message = WorkspaceFileEventSchema.parse(JSON.parse(event.data))
+      let message: WorkspaceFileEvent
+      try {
+        message = WorkspaceFileEventSchema.parse(JSON.parse(event.data))
+      } catch (error) {
+        if (!malformedFrameReported) {
+          malformedFrameReported = true
+          console.warn('[file-tree] dropped malformed workspace file event', error)
+        }
+        return
+      }
       if (message.type !== 'directory-changed') {
         return
       }

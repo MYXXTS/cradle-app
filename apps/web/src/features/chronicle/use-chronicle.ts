@@ -565,6 +565,10 @@ const ChronicleDownloadProgressMessageSchema = z.string()
   .transform(message => JSON.parse(message))
   .pipe(ChronicleDownloadProgressEventSchema)
 
+export function readChronicleDownloadProgressMessage(message: string): DownloadProgressEntry[] {
+  return ChronicleDownloadProgressMessageSchema.parse(message)
+}
+
 const ChronicleSlackSyncResultSchema = z.object({
   sourceId: z.string(),
   status: z.enum(['success', 'error']),
@@ -1126,8 +1130,18 @@ export function useChronicleDownloadProgress(active: boolean): Map<string, Downl
     }
     const url = `${getServerUrl()}/chronicle/model-resources/download-progress`
     const eventSource = new EventSource(url)
+    let malformedFrameReported = false
     eventSource.onmessage = (event) => {
-      const entries = ChronicleDownloadProgressMessageSchema.parse(event.data)
+      let entries: DownloadProgressEntry[]
+      try {
+        entries = ChronicleDownloadProgressMessageSchema.parse(event.data)
+      } catch (error) {
+        if (!malformedFrameReported) {
+          malformedFrameReported = true
+          console.warn('[chronicle] dropped malformed download progress event', error)
+        }
+        return
+      }
       setProgress((prev) => {
         const next = new Map(prev)
         for (const entry of entries) {

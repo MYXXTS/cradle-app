@@ -1,5 +1,6 @@
 {
   "action.back": "Atrás",
+  "action.backToHome": "Volver al inicio",
   "action.cancel": "Cancelar",
   "action.close": "Cerrar",
   "action.continue": "Continuar",
@@ -17,6 +18,10 @@
   "errorBoundary.description": "La aplicación capturó este bloqueo, así que puedes reintentar el renderizado o recargar la ventana.",
   "errorBoundary.details": "Detalles del error",
   "errorBoundary.title": "Cradle encontró un error de renderizado",
+  "routeError.description": "El resto de Cradle sigue ejecutándose. Reintenta esta ruta o vuelve al inicio.",
+  "routeError.messageLabel": "Error",
+  "routeError.title": "Este panel encontró un error",
+  "routeError.unknownMessage": "Error de ruta desconocido",
   "model.emptySelection": "Modelo",
   "model.fuzzyMatchTitle": "Coincidencia aproximada de models.dev",
   "model.loadFailed": "No se pudieron cargar los modelos",

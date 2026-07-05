@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { RouteErrorFallback } from '~/components/common/route-error-fallback'
 import { DiffHomePage } from '~/features/diff-review/diff-home-page'
 
 interface DiffSearch {
@@ -18,6 +19,7 @@ export const Route = createFileRoute('/diff')({
     review: typeof search.review === 'string' && search.review.length > 0 ? search.review : undefined,
     view: search.view === 'commit' || search.view === 'guide' ? search.view : undefined,
   }),
+  errorComponent: RouteErrorFallback,
   component: DiffRoute,
 })
 

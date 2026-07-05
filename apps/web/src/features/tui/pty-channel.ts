@@ -122,7 +122,17 @@ export function createPtyChannel(rawOptions: PtyChannelOptions): PtyChannel {
   }
 
   function handleMessage(raw: string) {
-    const event = PtyServerEventJsonSchema.parse(raw)
+    const event = (() => {
+      try {
+        return PtyServerEventJsonSchema.parse(raw)
+      } catch {
+        return null
+      }
+    })()
+    if (!event) {
+      emitError('INVALID_SERVER_EVENT', 'Received malformed terminal event.')
+      return
+    }
 
     switch (event.type) {
       case 'snapshot':
@@ -165,7 +175,12 @@ export function createPtyChannel(rawOptions: PtyChannelOptions): PtyChannel {
     })
 
     socket.addEventListener('message', (event) => {
-      handleMessage(WebSocketMessageSchema.parse(event).data)
+      const message = WebSocketMessageSchema.safeParse(event)
+      if (!message.success) {
+        emitError('INVALID_SERVER_EVENT', 'Received malformed terminal socket message.')
+        return
+      }
+      handleMessage(message.data.data)
     })
 
     socket.addEventListener('error', () => {

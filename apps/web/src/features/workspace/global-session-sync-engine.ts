@@ -100,6 +100,7 @@ export class GlobalSessionSyncEngine {
 
   private readonly handleError = (event: Event): void => {
     this.callbacks.onError?.(event)
+    this.callbacks.onSnapshotRequired?.()
   }
 }
 

@@ -1,11 +1,34 @@
 import * as React from "react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
+import { useSuppressNativeBrowserSurface } from "~/features/browser/native-surface-suppression"
 import { cn } from "~/lib/cn"
 import { Button } from "~/components/ui/button"
 import { CloseLine as XIcon } from '@mingcute/react'
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+function Sheet({
+  open,
+  defaultOpen,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(Boolean(defaultOpen))
+  const active = open ?? uncontrolledOpen
+  useSuppressNativeBrowserSurface(active)
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setUncontrolledOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }
+
+  return (
+    <SheetPrimitive.Root
+      data-slot="sheet"
+      open={open}
+      defaultOpen={defaultOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  )
 }
 
 function SheetTrigger({

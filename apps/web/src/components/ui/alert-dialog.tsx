@@ -1,13 +1,34 @@
 import * as React from "react"
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
+import { useSuppressNativeBrowserSurface } from "~/features/browser/native-surface-suppression"
 import { cn } from "~/lib/cn"
 import { Button } from "~/components/ui/button"
 
 function AlertDialog({
+  open,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
-  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(Boolean(defaultOpen))
+  const active = open ?? uncontrolledOpen
+  useSuppressNativeBrowserSurface(active)
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setUncontrolledOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }
+
+  return (
+    <AlertDialogPrimitive.Root
+      data-slot="alert-dialog"
+      open={open}
+      defaultOpen={defaultOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  )
 }
 
 function AlertDialogTrigger({

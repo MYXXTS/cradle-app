@@ -27,6 +27,12 @@ class FakeEventSource implements GlobalSessionEventSource {
       listener(new MessageEvent('sessions', { data: JSON.stringify(data) }))
     }
   }
+
+  emitError(): void {
+    for (const listener of this.listeners.get('error') ?? []) {
+      listener(new Event('error'))
+    }
+  }
 }
 
 describe('GlobalSessionSyncEngine', () => {
@@ -114,5 +120,28 @@ describe('GlobalSessionSyncEngine', () => {
 
     engine.stop()
     expect(source.closed).toBe(true)
+  })
+
+  it('requests a snapshot refresh when the event tail reports an error', () => {
+    const source = new FakeEventSource()
+    const onSessionChanged = vi.fn()
+    const onSnapshotRequired = vi.fn()
+    const onError = vi.fn()
+    const engine = new GlobalSessionSyncEngine({
+      serverBaseUrl: 'http://127.0.0.1:21423',
+      eventSourceFactory: () => source,
+      callbacks: {
+        onSessionChanged,
+        onSnapshotRequired,
+        onError,
+      },
+    })
+
+    engine.start()
+    source.emitError()
+
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onSnapshotRequired).toHaveBeenCalledTimes(1)
+    expect(onSessionChanged).not.toHaveBeenCalled()
   })
 })

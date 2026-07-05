@@ -48,7 +48,9 @@ export function subscribeSyncChannel(
   subscriptions.set(frame.subId, active)
   clearIdleCloseTimer()
   void ensureConnected().then(() => {
-    sendClientFrame(frame)
+    if (subscriptions.get(frame.subId) === active && !active.ended) {
+      sendClientFrame(buildResubFrame(active))
+    }
   })
   return () => {
     unsubscribeSyncChannel(frame.subId)

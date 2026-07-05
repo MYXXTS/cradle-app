@@ -7,6 +7,7 @@ import type { ThreadBrowserState } from '~/store/browser-panel'
 import { DEFAULT_BROWSER_PANEL_OWNER_ID, useBrowserPanelStore } from '~/store/browser-panel'
 
 import { BrowserPanel } from './browser-panel'
+import { useNativeBrowserSurfaceSuppressionStore } from './native-surface-suppression'
 
 const diffViewerRender = vi.hoisted(() => vi.fn())
 
@@ -16,24 +17,30 @@ class TestResizeObserver {
   disconnect() {}
 }
 
-function createTestThreadState(threadId: string, url = 'about:blank', version = 1): ThreadBrowserState {
+function createTestThreadState(
+  threadId: string,
+  url = 'about:blank',
+  version = 1,
+): ThreadBrowserState {
   return {
     threadId,
     version,
     open: true,
     activeTabId: 'native-tab-1',
-    tabs: [{
-      id: 'native-tab-1',
-      url,
-      title: url === 'about:blank' ? 'New tab' : 'example.com',
-      status: 'live',
-      isLoading: false,
-      canGoBack: false,
-      canGoForward: false,
-      faviconUrl: null,
-      lastCommittedUrl: url === 'about:blank' ? null : url,
-      lastError: null,
-    }],
+    tabs: [
+      {
+        id: 'native-tab-1',
+        url,
+        title: url === 'about:blank' ? 'New tab' : 'example.com',
+        status: 'live',
+        isLoading: false,
+        canGoBack: false,
+        canGoForward: false,
+        faviconUrl: null,
+        lastCommittedUrl: url === 'about:blank' ? null : url,
+        lastError: null,
+      },
+    ],
     lastError: null,
   }
 }
@@ -60,8 +67,10 @@ function installTestBrowserBridge() {
     }
     return state
   })
-  const getState = vi.fn(async (input: { threadId: string }) =>
-    states.get(input.threadId) ?? createClosedThreadState(input.threadId))
+  const getState = vi.fn(
+    async (input: { threadId: string }) =>
+      states.get(input.threadId) ?? createClosedThreadState(input.threadId),
+  )
   const bridge = {
     open,
     close: vi.fn(async (input: { threadId: string }) => {
@@ -81,16 +90,31 @@ function installTestBrowserBridge() {
       states.set(input.threadId, state)
       return state
     }),
-    reload: vi.fn(async (input: { threadId: string }) => states.get(input.threadId) ?? createClosedThreadState(input.threadId)),
-    goBack: vi.fn(async (input: { threadId: string }) => states.get(input.threadId) ?? createClosedThreadState(input.threadId)),
-    goForward: vi.fn(async (input: { threadId: string }) => states.get(input.threadId) ?? createClosedThreadState(input.threadId)),
+    reload: vi.fn(
+      async (input: { threadId: string }) =>
+        states.get(input.threadId) ?? createClosedThreadState(input.threadId),
+    ),
+    goBack: vi.fn(
+      async (input: { threadId: string }) =>
+        states.get(input.threadId) ?? createClosedThreadState(input.threadId),
+    ),
+    goForward: vi.fn(
+      async (input: { threadId: string }) =>
+        states.get(input.threadId) ?? createClosedThreadState(input.threadId),
+    ),
     newTab: vi.fn(async (input: { threadId: string, url?: string }) => {
       const state = createTestThreadState(input.threadId, input.url ?? 'about:blank', 2)
       states.set(input.threadId, state)
       return state
     }),
-    closeTab: vi.fn(async (input: { threadId: string }) => states.get(input.threadId) ?? createClosedThreadState(input.threadId)),
-    selectTab: vi.fn(async (input: { threadId: string }) => states.get(input.threadId) ?? createClosedThreadState(input.threadId)),
+    closeTab: vi.fn(
+      async (input: { threadId: string }) =>
+        states.get(input.threadId) ?? createClosedThreadState(input.threadId),
+    ),
+    selectTab: vi.fn(
+      async (input: { threadId: string }) =>
+        states.get(input.threadId) ?? createClosedThreadState(input.threadId),
+    ),
     openDevTools: vi.fn(async () => {}),
     onState: vi.fn((handler: (state: ThreadBrowserState) => void) => {
       listeners.add(handler)
@@ -108,7 +132,12 @@ function installTestBrowserBridge() {
 }
 
 vi.mock('./workspace-diff-viewer', () => ({
-  WorkspaceDiffViewer: (props: { tabId: string, workspaceId: string, repositoryPath?: string | null, paths?: string[] }) => {
+  WorkspaceDiffViewer: (props: {
+    tabId: string
+    workspaceId: string
+    repositoryPath?: string | null
+    paths?: string[]
+  }) => {
     diffViewerRender(props)
     return null
   },
@@ -150,6 +179,7 @@ describe('browserPanel rendering', () => {
       requestedTab: null,
       scrollToFilePath: null,
     })
+    useNativeBrowserSurfaceSuppressionStore.setState({ suppressCount: 0 })
   })
 
   it('does not repaint the panel shell for diff scroll commands', () => {
@@ -225,7 +255,9 @@ describe('browserPanel rendering', () => {
 
     render(<BrowserPanel />)
 
-    expect(screen.getByRole('button', { name: 'https://example.com' }).getAttribute('aria-current')).toBe('page')
+    expect(
+      screen.getByRole('button', { name: 'https://example.com' }).getAttribute('aria-current'),
+    ).toBe('page')
     expect(useBrowserPanelStore.getState().activeTabId).toBe(tabId)
   })
 
@@ -247,5 +279,29 @@ describe('browserPanel rendering', () => {
     })
 
     expect(browserBridge.open).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the native browser surface while a global suppressor is active', async () => {
+    const state = await browserBridge.open({
+      threadId: DEFAULT_BROWSER_PANEL_OWNER_ID,
+      initialUrl: 'https://example.com',
+    })
+    useBrowserPanelStore.getState().upsertOwnerState(state)
+    const release = useNativeBrowserSurfaceSuppressionStore.getState().acquire()
+
+    try {
+      render(<BrowserPanel />)
+
+      await waitFor(() => {
+        expect(browserBridge.setBounds).toHaveBeenCalledWith({
+          threadId: DEFAULT_BROWSER_PANEL_OWNER_ID,
+          surface: 'native',
+          bounds: null,
+        })
+      })
+    }
+    finally {
+      release()
+    }
   })
 })

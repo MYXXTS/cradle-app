@@ -1,8 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { RouteErrorFallback } from '~/components/common/route-error-fallback'
 import { PluginPanelRouteContent } from '~/features/plugins/plugin-panel-route-content'
 
 export const Route = createFileRoute('/plugins/$routeSegment/$localId')({
+  errorComponent: RouteErrorFallback,
   component: PluginPanelRoute,
 })
 

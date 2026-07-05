@@ -54,7 +54,7 @@ export const HOME_SURFACE_ID = 'home'
 export const HOME_SURFACE: AppSurface = {
   id: HOME_SURFACE_ID,
   kind: 'home',
-  title: getI18n().t('chrome:surface.home'),
+  title: 'Home',
   route: { to: '/' },
   order: 0,
   closable: false,
@@ -64,7 +64,7 @@ export function createHomeSurfaceDraft(): SurfaceDraft {
   return {
     id: HOME_SURFACE.id,
     kind: HOME_SURFACE.kind,
-    title: HOME_SURFACE.title,
+    title: getI18n().t('chrome:surface.home'),
     route: HOME_SURFACE.route,
     closable: HOME_SURFACE.closable,
   }

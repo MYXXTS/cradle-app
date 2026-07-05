@@ -1,5 +1,6 @@
 export default {
   'action.back': 'Back',
+  'action.backToHome': 'Back to home',
   'action.cancel': 'Cancel',
   'action.close': 'Close',
   'action.continue': 'Continue',
@@ -21,6 +22,11 @@ export default {
   'errorBoundary.description':
     'The app caught this crash, so you can retry the render or reload the window.',
   'errorBoundary.details': 'Error details',
+  'routeError.description':
+    'The rest of Cradle is still running. Retry this route or return home.',
+  'routeError.messageLabel': 'Error',
+  'routeError.title': 'This pane hit an error',
+  'routeError.unknownMessage': 'Unknown route error',
   'model.emptySelection': 'Model',
   'model.fuzzyMatchTitle': 'Fuzzy models.dev match',
   'model.loadFailed': 'Models could not be loaded',

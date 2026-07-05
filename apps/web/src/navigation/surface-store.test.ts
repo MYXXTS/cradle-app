@@ -1,0 +1,72 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+
+import { HOME_SURFACE, HOME_SURFACE_ID } from './surface-identity'
+import { readPersistedSurfaceState, useSurfaceStore } from './surface-store'
+
+const SURFACE_STORAGE_KEY = 'cradle:surfaces:v1'
+
+describe('surface store persistence', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+    useSurfaceStore.setState({ surfaces: [HOME_SURFACE] })
+  })
+
+  it('drops invalid persisted surfaces and keeps valid old payload entries', async () => {
+    localStorage.setItem(SURFACE_STORAGE_KEY, JSON.stringify({
+      state: {
+        surfaces: [
+          {
+            id: 'chat:valid-session',
+            kind: 'chat',
+            title: 'Chat',
+            route: { to: '/chat/$sessionId', params: { sessionId: 'valid-session' } },
+            order: 0,
+            closable: true,
+          },
+          {
+            id: 'chat:broken-session',
+            kind: 'chat',
+            title: 'Broken chat',
+            route: { to: '/chat/$sessionId', params: {} },
+            order: 1,
+            closable: true,
+          },
+        ],
+      },
+    }))
+
+    await useSurfaceStore.persist.rehydrate()
+
+    expect(new Set(useSurfaceStore.getState().surfaces.map(surface => surface.id))).toEqual(
+      new Set([HOME_SURFACE_ID, 'chat:valid-session']),
+    )
+  })
+
+  it('falls back to the home surface when every persisted surface is invalid', async () => {
+    localStorage.setItem(SURFACE_STORAGE_KEY, JSON.stringify({
+      state: {
+        surfaces: [
+          {
+            id: 'workspace:broken',
+            kind: 'workspace',
+            title: 'Broken workspace',
+            route: { to: '/workspaces/$workspaceId', params: {} },
+            order: 0,
+            closable: true,
+          },
+        ],
+      },
+    }))
+
+    await useSurfaceStore.persist.rehydrate()
+
+    expect(useSurfaceStore.getState().surfaces).toEqual([HOME_SURFACE])
+  })
+
+  it('does not throw when parsing a corrupt persisted surface payload', () => {
+    expect(readPersistedSurfaceState({ surfaces: 'not-an-array' })).toEqual({
+      surfaces: [HOME_SURFACE],
+    })
+  })
+})

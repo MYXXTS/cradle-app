@@ -1,5 +1,6 @@
 {
   "action.back": "戻る",
+  "action.backToHome": "ホームへ戻る",
   "action.cancel": "キャンセル",
   "action.close": "閉じる",
   "action.continue": "続行",
@@ -17,6 +18,10 @@
   "errorBoundary.description": "アプリがこのクラッシュを捕捉しました。レンダーを再試行するか、ウィンドウを再読み込みできます。",
   "errorBoundary.details": "エラー詳細",
   "errorBoundary.title": "Cradle でレンダーエラーが発生しました",
+  "routeError.description": "Cradle の他の部分は動作しています。このルートを再試行するか、ホームへ戻れます。",
+  "routeError.messageLabel": "エラー",
+  "routeError.title": "このペインでエラーが発生しました",
+  "routeError.unknownMessage": "不明なルートエラー",
   "model.emptySelection": "モデル",
   "model.fuzzyMatchTitle": "models.dev のあいまい一致",
   "model.loadFailed": "モデルを読み込めませんでした",

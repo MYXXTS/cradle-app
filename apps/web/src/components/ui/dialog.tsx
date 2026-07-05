@@ -3,13 +3,34 @@
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
+import { useSuppressNativeBrowserSurface } from "~/features/browser/native-surface-suppression"
 import { cn } from "~/lib/cn"
 import { Button } from "~/components/ui/button"
 import { CloseLine as XIcon } from '@mingcute/react'
 function Dialog({
+  open,
+  defaultOpen,
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(Boolean(defaultOpen))
+  const active = open ?? uncontrolledOpen
+  useSuppressNativeBrowserSurface(active)
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setUncontrolledOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      open={open}
+      defaultOpen={defaultOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  )
 }
 
 function DialogTrigger({

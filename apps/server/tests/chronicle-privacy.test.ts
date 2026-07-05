@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -39,9 +40,11 @@ describe('chronicle privacy capability', () => {
       const now = Math.floor(Date.now() / 1000)
 
       db().insert(workspaces).values({
-        id: workspaceId,
-        name: 'Privacy Workspace',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: workspaceId,
+          name: 'Privacy Workspace',
+          path: workspaceRoot,
+        }),
       }).run()
       db().insert(chronicleMemories).values({
         id: 'privacy-memory',

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { z } from 'zod'
 
 import { isTearoffWindow } from '~/lib/electron'
 
@@ -8,6 +9,7 @@ import { HOME_SURFACE, HOME_SURFACE_ID, sortSurfaces } from './surface-identity'
 
 const SURFACE_STORAGE_KEY = 'cradle:surfaces:v1'
 const LEGACY_TABS_STORAGE_KEY = 'cradle:tabs-next:v1'
+const SURFACE_PERSIST_VERSION = 1
 
 interface PersistedSurfaceState {
   surfaces: AppSurface[]
@@ -24,6 +26,105 @@ interface SurfaceState extends PersistedSurfaceState {
   reorderSurfaces: (orderedIds: string[]) => void
   updateSurfaceTitle: (surfaceId: string, title: string) => void
   resetSurfaces: () => void
+}
+
+const optionalStringSchema = z.string().optional()
+const diffSearchSchema = z.object({
+  workspace: optionalStringSchema,
+  repo: optionalStringSchema,
+  path: optionalStringSchema,
+  review: optionalStringSchema,
+  view: z.enum(['commit', 'guide']).optional(),
+}).optional()
+
+const surfaceRouteSchema = z.discriminatedUnion('to', [
+  z.object({ to: z.literal('/') }),
+  z.object({
+    to: z.literal('/chat/new'),
+    search: z.object({ issueId: optionalStringSchema }).optional(),
+  }),
+  z.object({
+    to: z.literal('/chat/$sessionId'),
+    params: z.object({ sessionId: z.string() }),
+  }),
+  z.object({
+    to: z.literal('/diff'),
+    search: diffSearchSchema,
+  }),
+  z.object({
+    to: z.literal('/workspaces/$workspaceId'),
+    params: z.object({ workspaceId: z.string() }),
+  }),
+  z.object({
+    to: z.literal('/workspaces/$workspaceId/diffs'),
+    params: z.object({ workspaceId: z.string() }),
+    search: diffSearchSchema,
+  }),
+  z.object({
+    to: z.literal('/kanban/$boardId'),
+    params: z.object({ boardId: z.string() }),
+    search: z.object({
+      issue: optionalStringSchema,
+      milestoneId: optionalStringSchema,
+    }).optional(),
+  }),
+  z.object({
+    to: z.literal('/plugins/$routeSegment/$localId'),
+    params: z.object({ routeSegment: z.string(), localId: z.string() }),
+  }),
+  z.object({ to: z.literal('/awaits') }),
+  z.object({ to: z.literal('/automation') }),
+  z.object({ to: z.literal('/usage') }),
+  z.object({
+    to: z.literal('/settings/$section'),
+    params: z.object({ section: z.string() }),
+  }),
+  z.object({ to: z.literal('/onboarding') }),
+  z.object({ to: z.literal('/devtool') }),
+]) satisfies z.ZodType<SurfaceRoute>
+
+const appSurfaceSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum([
+    'home',
+    'new-chat',
+    'chat',
+    'diff',
+    'workspace',
+    'workspace-diffs',
+    'kanban',
+    'plugin',
+    'awaits',
+    'automation',
+    'usage',
+    'settings',
+    'onboarding',
+    'devtool',
+  ]),
+  title: z.string(),
+  route: surfaceRouteSchema,
+  order: z.number().finite(),
+  closable: z.boolean(),
+}) satisfies z.ZodType<AppSurface>
+
+const persistedSurfaceStateSchema = z.object({
+  surfaces: z.array(z.unknown()).optional(),
+})
+
+export function readPersistedSurfaceState(raw: unknown): PersistedSurfaceState {
+  const parsedState = persistedSurfaceStateSchema.safeParse(raw)
+  if (!parsedState.success) {
+    return { surfaces: [HOME_SURFACE] }
+  }
+
+  const surfaces = (parsedState.data.surfaces ?? [])
+    .map(surface => appSurfaceSchema.safeParse(surface))
+    .filter(result => result.success)
+    .map(result => result.data)
+
+  return {
+    surfaces: normalizeSurfaces(surfaces.length > 0 ? surfaces : [HOME_SURFACE]),
+  }
 }
 
 function normalizeSurfaces(surfaces: readonly AppSurface[]): AppSurface[] {
@@ -254,8 +355,14 @@ export const useSurfaceStore = create<SurfaceState>()(
     {
       name: SURFACE_STORAGE_KEY,
       storage: createJSONStorage(() => (isTearoffWindow ? sessionStorage : localStorage)),
+      version: SURFACE_PERSIST_VERSION,
+      migrate: persistedState => readPersistedSurfaceState(persistedState),
       partialize: (state): PersistedSurfaceState => ({
         surfaces: normalizeSurfaces(state.surfaces),
+      }),
+      merge: (persistedState, currentState): SurfaceState => ({
+        ...currentState,
+        ...readPersistedSurfaceState(persistedState),
       }),
       onRehydrateStorage: () => (state) => {
         clearLegacyTabsPersistence()

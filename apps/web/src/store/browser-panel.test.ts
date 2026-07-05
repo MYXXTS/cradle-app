@@ -8,8 +8,11 @@ import {
   DEFAULT_BROWSER_PANEL_OWNER_ID,
   handleBrowserPanelTabShortcut,
   handleBrowserPanelTabShortcutPayload,
+  readBrowserPanelPersistedState,
   useBrowserPanelStore,
 } from './browser-panel'
+
+const BROWSER_PANEL_STORAGE_KEY = 'cradle:browser-panel:v2'
 
 function commandKeyEvent(key: string): KeyboardEvent {
   const event = new KeyboardEvent('keydown', {
@@ -71,6 +74,7 @@ describe('browser panel shortcuts', () => {
   beforeEach(() => {
     vi.useRealTimers()
     cleanup()
+    localStorage.clear()
     useBrowserPanelStore.setState({
       activeOwnerId: DEFAULT_BROWSER_PANEL_OWNER_ID,
       owners: {},
@@ -485,6 +489,59 @@ describe('browser panel shortcuts', () => {
     expect(persisted).toEqual({
       recentHistoryByOwnerId: {},
       annotationTrayCollapsedByOwnerId: { 'app-tab-a': true },
+    })
+  })
+
+  it('rehydrates corrupt browser panel persisted maps as empty state', async () => {
+    useBrowserPanelStore.setState({
+      recentHistoryByOwnerId: {
+        'owner-a': [{ url: 'https://example.com', title: 'Example', tabId: 'tab-a' }],
+      },
+      annotationTrayCollapsedByOwnerId: { 'owner-a': true },
+    })
+    localStorage.setItem(BROWSER_PANEL_STORAGE_KEY, JSON.stringify({
+      state: {
+        recentHistoryByOwnerId: {
+          'owner-a': [{ url: 'https://example.com', title: 'Example', tabId: 'tab-a' }],
+          'owner-b': 'not-history',
+        },
+        annotationTrayCollapsedByOwnerId: {
+          'owner-a': true,
+          'owner-b': 'yes',
+        },
+      },
+    }))
+
+    await useBrowserPanelStore.persist.rehydrate()
+
+    expect(useBrowserPanelStore.getState().recentHistoryByOwnerId).toEqual({})
+    expect(useBrowserPanelStore.getState().annotationTrayCollapsedByOwnerId).toEqual({})
+  })
+
+  it('keeps valid old browser panel persisted maps without a version field', async () => {
+    localStorage.setItem(BROWSER_PANEL_STORAGE_KEY, JSON.stringify({
+      state: {
+        recentHistoryByOwnerId: {
+          'owner-a': [{ url: 'https://example.com', title: 'Example', tabId: 'tab-a' }],
+        },
+        annotationTrayCollapsedByOwnerId: { 'owner-a': true },
+      },
+    }))
+
+    await useBrowserPanelStore.persist.rehydrate()
+
+    expect(useBrowserPanelStore.getState().recentHistoryByOwnerId).toEqual({
+      'owner-a': [{ url: 'https://example.com', title: 'Example', tabId: 'tab-a' }],
+    })
+    expect(useBrowserPanelStore.getState().annotationTrayCollapsedByOwnerId).toEqual({
+      'owner-a': true,
+    })
+  })
+
+  it('does not throw when parsing a corrupt browser panel persisted payload', () => {
+    expect(readBrowserPanelPersistedState('not-an-object')).toEqual({
+      recentHistoryByOwnerId: {},
+      annotationTrayCollapsedByOwnerId: {},
     })
   })
 
