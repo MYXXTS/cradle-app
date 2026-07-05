@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
@@ -8,6 +7,7 @@ import { relayServers } from '@cradle/db'
 import { eq } from 'drizzle-orm'
 
 import { db } from '../../infra'
+import { spawnManagedProcess, type ManagedChildProcess } from '../../infra/managed-process'
 import { createChildLogger } from '../../logging/logger'
 import { getNetworkPreferencesSync } from '../preferences/service'
 import { readDefaultRelayServer } from './service'
@@ -21,7 +21,7 @@ const localModuleDir = dirname(fileURLToPath(import.meta.url))
 const logger = createChildLogger({ module: 'local-relayd-supervisor' })
 
 interface RunningLocalRelayd {
-  child: ChildProcess
+  child: ManagedChildProcess
   relayUrl: string
 }
 
@@ -63,7 +63,10 @@ export async function startManagedLocalRelayd(): Promise<void> {
   const relayUrl = process.env.CRADLE_RELAYD_PUBLIC_URL?.trim()
     || networkConfig.publicUrl
     || localReadyUrl
-  const child = spawn(launch.command, launch.args, {
+  const child = spawnManagedProcess({
+    kind: 'spawn',
+    command: launch.command,
+    args: launch.args,
     cwd: launch.cwd,
     env: {
       ...process.env,
@@ -71,8 +74,8 @@ export async function startManagedLocalRelayd(): Promise<void> {
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
       CRADLE_RELAYD_EXIT_ON_STDIN_CLOSE: '1',
     },
-    detached: process.platform !== 'win32',
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdin: 'pipe',
+    shutdownGraceMs: 3_000,
   })
 
   runningLocalRelayd = { child, relayUrl }
@@ -96,7 +99,7 @@ export async function startManagedLocalRelayd(): Promise<void> {
   try {
     await waitForReady(localReadyUrl)
     upsertManagedLocalRelayServer(relayUrl)
-    logger.info('managed local relayd started', { relayUrl, pid: child.pid ?? null })
+    logger.info('managed local relayd started', { relayUrl, pid: readManagedProcessPid(child) })
   }
   catch (error) {
     await stopManagedLocalRelayd()
@@ -284,41 +287,15 @@ async function waitForReady(relayUrl: string): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error('relayd did not become ready')
 }
 
-async function terminateChild(child: ChildProcess): Promise<void> {
+async function terminateChild(child: ManagedChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return
   }
   closeChildOwnerPipe(child)
-  await new Promise<void>((resolveDone) => {
-    let resolved = false
-    let timeout: ReturnType<typeof setTimeout>
-    const resolveOnce = () => {
-      if (resolved) {
-        return
-      }
-      resolved = true
-      clearTimeout(timeout)
-      child.off('exit', resolveOnce)
-      resolveDone()
-    }
-    timeout = setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) {
-        const signaled = signalChild(child, 'SIGKILL')
-        if (!signaled) {
-          resolveOnce()
-        }
-      }
-    }, 3_000)
-    timeout.unref()
-    child.once('exit', resolveOnce)
-    const signaled = signalChild(child, 'SIGTERM')
-    if (!signaled) {
-      resolveOnce()
-    }
-  })
+  await child.stop('SIGTERM')
 }
 
-function closeChildOwnerPipe(child: ChildProcess): void {
+function closeChildOwnerPipe(child: ManagedChildProcess): void {
   const stdin = child.stdin
   if (!stdin || stdin.destroyed) {
     return
@@ -334,20 +311,8 @@ function closeChildOwnerPipe(child: ChildProcess): void {
   }
 }
 
-function signalChild(child: ChildProcess, signal: NodeJS.Signals): boolean {
-  if (process.platform !== 'win32' && child.pid) {
-    try {
-      process.kill(-child.pid, signal)
-      return true
-    }
-    catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH') {
-        return false
-      }
-      throw error
-    }
-  }
-  return child.kill(signal)
+function readManagedProcessPid(child: ManagedChildProcess): number | null {
+  return child.targetPid ?? child.pid ?? null
 }
 
 function isTestEnvironment(): boolean {

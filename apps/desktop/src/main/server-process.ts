@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import { execFile, fork } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -12,8 +12,9 @@ import { z } from 'zod'
 import { resolveDesktopInstalledPluginsDir } from './plugin-install-links'
 import { getPluginEnvVars } from './plugin-loader'
 import { resolveDesktopPrimaryPluginsDir, resolveDesktopPrimaryPluginsSourceKind } from './plugin-paths'
+import { spawnManagedProcess, type ManagedChildProcess } from './managed-process'
 
-let serverProcess: ChildProcess | null = null
+let serverProcess: ManagedChildProcess | null = null
 let restartCount = 0
 let isServerShutdownRequested = false
 let locatedServerPid: number | null = null
@@ -193,7 +194,7 @@ function writeCliServerLocator(input: { dataDir: string, serverUrl: string }): v
     `${JSON.stringify(
       {
         serverUrl: input.serverUrl,
-        pid: serverProcess?.pid ?? null,
+        pid: readServerTargetPid(serverProcess),
         version: app.getVersion(),
         updatedAt: new Date().toISOString(),
       },
@@ -260,15 +261,16 @@ async function spawnServer(opts: { host: string, port: number, dataDir: string, 
   serverEnv.PATH = await resolveDesktopServerPath(serverEnv)
   delete serverEnv.NO_COLOR
 
-  serverProcess = fork(serverEntry, [], {
+  serverProcess = spawnManagedProcess({
+    kind: 'fork',
+    modulePath: serverEntry,
     env: serverEnv,
     execPath,
     execArgv,
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    shutdownGraceMs: 5_000,
   })
   const child = serverProcess
-  locatedServerPid = serverProcess.pid ?? null
+  locatedServerPid = readServerTargetPid(serverProcess)
 
   child.stdout?.on('data', chunk => recordServerOutput('stdout', chunk))
   child.stderr?.on('data', chunk => recordServerOutput('stderr', chunk))
@@ -278,7 +280,7 @@ async function spawnServer(opts: { host: string, port: number, dataDir: string, 
     console.error(message)
   })
   child.on('exit', (code, signal) => {
-    const expectation = takeExpectedServerExit(child.pid ?? null)
+    const expectation = takeExpectedServerExit(readServerTargetPid(child))
     const observedServerSignal = lastServerSignalBeforeExit
     const classification = classifyDesktopServerExit({
       signal,
@@ -297,7 +299,7 @@ async function spawnServer(opts: { host: string, port: number, dataDir: string, 
     if (classification === 'desktop-requested') {
       console.warn(
         `[desktop] Server process exited after desktop request `
-        + `(pid=${child.pid ?? 'unknown'}, code=${code}, signal=${signal}, reason=${expectation?.reason})`,
+        + `(pid=${readServerTargetPid(child) ?? 'unknown'}, code=${code}, signal=${signal}, reason=${expectation?.reason})`,
       )
       return
     }
@@ -478,19 +480,7 @@ function createServerStartupError(url: string, timeoutMs: number): Error {
  * next desktop process can reattach to the same server.
  */
 export function detachServer(): void {
-  const child = serverProcess
-  if (!child) {
-    return
-  }
-
-  isServerShutdownRequested = true
-  child.removeAllListeners('exit')
-  child.removeAllListeners('error')
-  if (child.connected) {
-    child.disconnect()
-  }
-  child.unref()
-  serverProcess = null
+  void stopServer()
 }
 
 function resolveDevNodeExecPath(): string {
@@ -691,47 +681,18 @@ export async function stopServer(timeoutMs = 5_000): Promise<void> {
   locatedServerPid = null
   removeCliServerLocator()
 
-  await new Promise<void>((resolveStop) => {
-    let resolved = false
-    let forceTimer: NodeJS.Timeout | null = null
-
-    const finish = () => {
-      if (resolved) {
-        return
-      }
-      resolved = true
-      if (forceTimer) {
-        clearTimeout(forceTimer)
-      }
-      resolveStop()
-    }
-
-    child.once('exit', finish)
-    child.once('error', finish)
-
-    if (child.exitCode !== null || child.signalCode !== null) {
-      finish()
-      return
-    }
-
-    markExpectedServerExit({
-      pid: child.pid ?? null,
-      reason: 'desktop stopServer graceful shutdown',
-      requestedSignal: 'SIGTERM',
-    })
-    child.kill('SIGTERM')
-    forceTimer = setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) {
-        markExpectedServerExit({
-          pid: child.pid ?? null,
-          reason: 'desktop stopServer force kill after timeout',
-          requestedSignal: 'SIGKILL',
-        })
-        child.kill('SIGKILL')
-      }
-      finish()
-    }, timeoutMs)
+  markExpectedServerExit({
+    pid: readServerTargetPid(child),
+    reason: 'desktop stopServer managed shutdown',
+    requestedSignal: 'SIGTERM',
   })
+  await Promise.race([
+    child.stop('SIGTERM'),
+    new Promise<void>((resolveStop) => {
+      const timer = setTimeout(resolveStop, timeoutMs + 1_000)
+      timer.unref()
+    }),
+  ])
 }
 
 async function stopLocatedServer(timeoutMs: number): Promise<void> {
@@ -830,6 +791,10 @@ export function isDesktopServerProcessCommand(commandLine: string): boolean {
   const normalizedCommand = commandLine.replaceAll('\\', '/')
   return normalizedCommand.includes(DEV_SERVER_ENTRY_PATTERN)
     || normalizedCommand.includes(PACKAGED_SERVER_ENTRY_PATTERN)
+}
+
+function readServerTargetPid(child: ManagedChildProcess | null): number | null {
+  return child?.targetPid ?? child?.pid ?? null
 }
 
 async function waitForServer(url: string, timeoutMs: number): Promise<void> {

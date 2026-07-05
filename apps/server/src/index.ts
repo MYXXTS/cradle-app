@@ -8,6 +8,14 @@ interface RuntimeServer {
   stop: () => void | Promise<void>
 }
 
+interface RuntimeApp {
+  stop: () => unknown | Promise<unknown>
+}
+
+let activeRuntimeApp: RuntimeApp | null = null
+let activeRuntimeServer: RuntimeServer | null = null
+let fatalShutdownStarted = false
+
 function serializeRuntimeError(err: unknown): Record<string, unknown> {
   if (err instanceof Error) {
     return {
@@ -49,13 +57,32 @@ async function recordFatalError(
   flushLogger()
 }
 
+async function stopActiveRuntimeBeforeExit(): Promise<void> {
+  if (fatalShutdownStarted) {
+    return
+  }
+  fatalShutdownStarted = true
+  try {
+    if (activeRuntimeServer) {
+      await activeRuntimeServer.stop()
+      return
+    }
+    await activeRuntimeApp?.stop()
+  } catch (err) {
+    getLogger().error('failed to stop runtime during fatal shutdown', { err })
+  }
+}
+
 function installProcessFatalHandlers(): void {
   process.on('unhandledRejection', (reason) => {
     void recordFatalError(
       'unhandled promise rejection',
       reason,
       OBSERVABILITY_CODES.serverUnhandledRejection
-    ).finally(() => {
+    ).finally(async () => {
+      await stopActiveRuntimeBeforeExit()
+      await shutdownTelemetry()
+      flushLogger()
       process.exit(1)
     })
   })
@@ -65,7 +92,10 @@ function installProcessFatalHandlers(): void {
       'uncaught exception',
       err,
       OBSERVABILITY_CODES.serverUncaughtException
-    ).finally(() => {
+    ).finally(async () => {
+      await stopActiveRuntimeBeforeExit()
+      await shutdownTelemetry()
+      flushLogger()
       process.exit(1)
     })
   })
@@ -96,6 +126,7 @@ async function bootstrap() {
   const logger = getLogger()
 
   const app = await createServerApp()
+  activeRuntimeApp = app
   let runtimeServer: RuntimeServer | null = null
 
   app.listen(
@@ -105,6 +136,7 @@ async function bootstrap() {
     },
     (server) => {
       runtimeServer = server
+      activeRuntimeServer = server
       void recoverPersistedRunProjections().catch((error) => {
         logger.warn('failed to recover persisted run projections', { error })
       })
@@ -135,6 +167,8 @@ async function bootstrap() {
       } else {
         await app.stop()
       }
+      activeRuntimeServer = null
+      activeRuntimeApp = null
       logger.info('graceful shutdown complete')
     } catch (err) {
       logger.error('error during graceful shutdown', { err })
@@ -150,8 +184,10 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  void recordFatalError('fatal bootstrap error', err).finally(() => {
-    void shutdownTelemetry()
+  void recordFatalError('fatal bootstrap error', err).finally(async () => {
+    await stopActiveRuntimeBeforeExit()
+    await shutdownTelemetry()
+    flushLogger()
     process.exit(1)
   })
 })

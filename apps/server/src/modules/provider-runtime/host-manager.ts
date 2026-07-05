@@ -1,4 +1,7 @@
 import type { RuntimeKind } from '../provider-contracts/types'
+import { createChildLogger } from '../../logging/logger'
+import { OBSERVABILITY_CODES } from '../observability/contract'
+import * as Observability from '../observability/service'
 
 export interface ProviderRuntimeHostKey {
   runtimeKind: RuntimeKind
@@ -56,9 +59,11 @@ interface RuntimeHostEntry extends ProviderRuntimeHostSnapshot {
 
 const DEFAULT_HOST_TTL_MS = 30 * 60 * 1000
 const DEFAULT_HOST_REAPER_INTERVAL_MS = 60 * 1000
+const logger = createChildLogger({ module: 'provider-runtime.host-manager' })
 
 export class ProviderRuntimeHostManager {
   private readonly hosts = new Map<string, RuntimeHostEntry>()
+  private readonly pendingDisposals = new Set<Promise<void>>()
   private reaperTimer: ReturnType<typeof setInterval> | null = null
 
   acquireLease(input: ProviderRuntimeHostKey & {
@@ -89,7 +94,7 @@ export class ProviderRuntimeHostManager {
         this.releaseLease(retained.hostId, retained.pinned)
         throw new Error(`Provider runtime host resource is already active with incompatible options: ${retained.hostId}`)
       }
-      this.disposeHostResource(entry)
+      await this.disposeHostResource(entry)
     }
     if (!entry.resourcePromise) {
       entry.resourceFingerprint = input.resourceFingerprint
@@ -148,12 +153,12 @@ export class ProviderRuntimeHostManager {
     }
   }
 
-  invalidateResource(hostId: string): void {
+  invalidateResource(hostId: string): Promise<void> {
     const entry = this.hosts.get(hostId)
     if (!entry) {
-      return
+      return Promise.resolve()
     }
-    this.disposeHostResource(entry)
+    return this.disposeHostResource(entry)
   }
 
   startReaper(intervalMs = DEFAULT_HOST_REAPER_INTERVAL_MS): void {
@@ -205,16 +210,18 @@ export class ProviderRuntimeHostManager {
     return this.hosts.has(hostId)
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
+    const disposals: Promise<void>[] = []
     for (const [hostId, entry] of this.hosts) {
-      this.removeHost(hostId, entry)
+      disposals.push(this.removeHost(hostId, entry))
     }
     this.hosts.clear()
+    await Promise.allSettled([...disposals, ...this.pendingDisposals])
   }
 
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     this.stopReaper()
-    this.clear()
+    await this.clear()
   }
 
   private readHostId(input: ProviderRuntimeHostKey): string {
@@ -251,12 +258,12 @@ export class ProviderRuntimeHostManager {
     return { hostId, pinned, entry }
   }
 
-  private removeHost(hostId: string, entry: RuntimeHostEntry): void {
+  private removeHost(hostId: string, entry: RuntimeHostEntry): Promise<void> {
     this.hosts.delete(hostId)
-    this.disposeHostResource(entry)
+    return this.disposeHostResource(entry)
   }
 
-  private disposeHostResource(entry: RuntimeHostEntry): void {
+  private disposeHostResource(entry: RuntimeHostEntry): Promise<void> {
     const resource = entry.resource
     const resourcePromise = entry.resourcePromise
     const disposeResource = entry.disposeResource
@@ -265,12 +272,59 @@ export class ProviderRuntimeHostManager {
     entry.hasResource = false
     entry.resourceFingerprint = undefined
     if (resource !== undefined && disposeResource) {
-      void disposeResource(resource)
-      return
+      return this.trackDisposal(this.disposeResourceWithLogging(entry, disposeResource, resource))
     }
     if (resourcePromise && disposeResource) {
-      void resourcePromise.then(disposeResource).catch(() => undefined)
+      return this.trackDisposal(resourcePromise
+        .then(resource => this.disposeResourceWithLogging(entry, disposeResource, resource))
+        .catch(error => this.recordDisposalFailure(entry, error)))
     }
+    return Promise.resolve()
+  }
+
+  private trackDisposal(disposal: Promise<void>): Promise<void> {
+    this.pendingDisposals.add(disposal)
+    disposal.finally(() => {
+      this.pendingDisposals.delete(disposal)
+    })
+    return disposal
+  }
+
+  private async disposeResourceWithLogging(
+    entry: RuntimeHostEntry,
+    disposeResource: ProviderRuntimeResourceDisposer<unknown>,
+    resource: unknown,
+  ): Promise<void> {
+    try {
+      await disposeResource(resource)
+    }
+    catch (error) {
+      this.recordDisposalFailure(entry, error)
+    }
+  }
+
+  private recordDisposalFailure(entry: RuntimeHostEntry, error: unknown): void {
+    logger.error('provider runtime resource disposal failed', {
+      error,
+      hostId: entry.hostId,
+      runtimeKind: entry.runtimeKind,
+      providerTargetId: entry.providerTargetId,
+      scopeId: entry.scopeId,
+    })
+    Observability.record({
+      source: 'server',
+      code: OBSERVABILITY_CODES.providerRuntimeDisposalFailed,
+      severity: 'error',
+      category: 'provider',
+      message: 'Provider runtime resource disposal failed.',
+      attrs: {
+        hostId: entry.hostId,
+        runtimeKind: entry.runtimeKind,
+        providerTargetId: entry.providerTargetId,
+        scopeId: entry.scopeId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
   }
 }
 

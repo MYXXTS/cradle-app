@@ -1,7 +1,7 @@
-import type { ChildProcess } from 'node:child_process'
-import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
+
+import { spawnManagedProcess, type ManagedChildProcess } from '../../../infra/managed-process'
 
 export interface ProcessMetrics {
   pid: number
@@ -13,7 +13,7 @@ export interface ProcessMetrics {
 
 export interface ProcessEntry {
   agentId: string
-  proc: ChildProcess
+  proc: ManagedChildProcess
   startedAt: number
   stderrBuf: string[]
   stdinWeb: WritableStream<Uint8Array>
@@ -56,14 +56,17 @@ export class AcpProcessManager {
 
     const { command, finalArgs } = resolveLaunchCommand(opts)
     const cwd = opts.cwd ?? process.env.HOME ?? process.cwd()
-    const proc = spawn(command, finalArgs, {
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const proc = spawnManagedProcess({
+      kind: 'spawn',
+      command,
+      args: finalArgs,
+      stdin: 'pipe',
       env: {
         ...process.env as Record<string, string>,
         ...opts.env,
       },
       cwd,
-      detached: false,
+      shutdownGraceMs: 5_000,
     })
 
     const stderrBuf: string[] = []
@@ -113,21 +116,7 @@ export class AcpProcessManager {
       return
     }
 
-    proc.kill('SIGTERM')
-
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        if (proc.exitCode === null) {
-          proc.kill('SIGKILL')
-        }
-        resolve()
-      }, 5_000)
-
-      proc.once('exit', () => {
-        clearTimeout(timer)
-        resolve()
-      })
-    })
+    await proc.stop('SIGTERM')
   }
 
   isRunning(agentId: string): boolean {
@@ -141,7 +130,7 @@ export class AcpProcessManager {
   getMetrics(): ProcessMetrics[] {
     const now = Date.now()
     return Array.from(this.processes.values(), entry => ({
-      pid: entry.proc.pid ?? -1,
+        pid: entry.proc.targetPid ?? entry.proc.pid ?? -1,
       agentId: entry.agentId,
       startedAt: entry.startedAt,
       uptimeMs: now - entry.startedAt,
@@ -153,7 +142,7 @@ export class AcpProcessManager {
     this.disposed = true
     for (const entry of this.processes.values()) {
       if (entry.proc.exitCode === null) {
-        entry.proc.kill('SIGKILL')
+        void entry.proc.stop('SIGTERM')
       }
     }
     this.processes.clear()

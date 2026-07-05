@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 type ElysiaApp = Awaited<ReturnType<typeof createServerApp>>
 
@@ -27,9 +28,11 @@ function makeTempDir(prefix: string): string {
 
 async function createProfileAndSession(app: ElysiaApp, workspaceRoot: string) {
   db().insert(workspaces).values({
-    id: 'workspace-observability',
-    name: 'Workspace Observability',
-    path: workspaceRoot,
+    ...workspaceFixture({
+      id: 'workspace-observability',
+      name: 'Workspace Observability',
+      path: workspaceRoot,
+    }),
   }).run()
 
   const credentialRes = await app.handle(new Request('http://localhost/secrets', {

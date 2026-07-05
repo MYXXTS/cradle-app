@@ -1,5 +1,4 @@
-import type { ChildProcess } from 'node:child_process'
-import { execSync, spawn, spawnSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -7,8 +6,9 @@ import { join, resolve } from 'node:path'
 import { z } from 'zod'
 
 import { getServerConfig } from '../../infra'
+import { spawnManagedProcess, type ManagedChildProcess } from '../../infra/managed-process'
 
-let chronicleProcess: ChildProcess | null = null
+let chronicleProcess: ManagedChildProcess | null = null
 let lastExitCode: number | null = null
 let lastExitAt: number | null = null
 let currentOptions: ChronicleDaemonOptions | null = null
@@ -267,22 +267,23 @@ export function getDaemonResources(): {
   rssMB: number | null
   cpuPercent: number | null
 } {
-  if (!isRunning() || !chronicleProcess?.pid) {
+  const pid = chronicleProcess ? readManagedProcessPid(chronicleProcess) : null
+  if (!isRunning() || !pid) {
     return { running: false, pid: null, rssMB: null, cpuPercent: null }
   }
 
   try {
-    const output = execSync(`ps -o rss=,pcpu= -p ${chronicleProcess.pid}`, { encoding: 'utf8', timeout: 1000 })
+    const output = execSync(`ps -o rss=,pcpu= -p ${pid}`, { encoding: 'utf8', timeout: 1000 })
     const resources = ProcessResourcesTextSchema.parse(output)
     return {
       running: true,
-      pid: chronicleProcess.pid,
+      pid,
       rssMB: Math.round(resources.rssMB * 100) / 100,
       cpuPercent: Math.round(resources.cpuPercent * 100) / 100,
     }
   }
   catch {
-    return { running: true, pid: chronicleProcess.pid, rssMB: null, cpuPercent: null }
+    return { running: true, pid, rssMB: null, cpuPercent: null }
   }
 }
 
@@ -294,14 +295,17 @@ export function startDaemon(options: ChronicleDaemonOptions): boolean {
   const args = createDaemonArgs(options)
 
   try {
-    chronicleProcess = spawn(binary, args, {
+    chronicleProcess = spawnManagedProcess({
+      kind: 'spawn',
+      command: binary,
+      args,
       env: buildChronicleEnv({
         CRADLE_URL: cradleUrl,
         CRADLE_CHRONICLE_AUDIO_CAPTURE: options.audioCaptureEnabled ? '1' : '0',
         CRADLE_CHRONICLE_AUDIO_SOURCE: options.audioSource,
       }),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: false,
+      stdin: 'ignore',
+      shutdownGraceMs: 5_000,
     })
 
     chronicleProcess.on('exit', (code) => {
@@ -340,30 +344,27 @@ export function restartDaemon(options: ChronicleDaemonOptions): boolean {
     return startDaemon(options)
   }
   pendingRestartOptions = options
-  stopCurrentDaemon()
+  void stopCurrentDaemon()
   return true
 }
 
-export function stopDaemon(): void {
+export function stopDaemon(): Promise<void> {
   pendingRestartOptions = null
-  stopCurrentDaemon()
+  return stopCurrentDaemon()
 }
 
-function stopCurrentDaemon(): void {
-  if (!chronicleProcess) { return }
-
-  chronicleProcess.kill('SIGTERM')
-
-  const pid = chronicleProcess.pid
-  setTimeout(() => {
-    if (chronicleProcess && chronicleProcess.pid === pid && chronicleProcess.exitCode === null) {
-      chronicleProcess.kill('SIGKILL')
-    }
-  }, 5000)
+async function stopCurrentDaemon(): Promise<void> {
+  const child = chronicleProcess
+  if (!child) { return }
+  await child.stop('SIGTERM')
 }
 
-export function cleanup(): void {
-  stopDaemon()
+export async function cleanup(): Promise<void> {
+  await stopDaemon()
+}
+
+function readManagedProcessPid(child: ManagedChildProcess): number | null {
+  return child.targetPid ?? child.pid ?? null
 }
 
 function buildServerUrl(): string {

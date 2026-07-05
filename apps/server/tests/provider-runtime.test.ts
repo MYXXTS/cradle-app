@@ -22,6 +22,7 @@ import {
   releaseSideConversationsByProviderTargetId,
   reserveSideConversationHostLease,
 } from '../src/modules/provider-runtime/side-conversation-registry'
+import * as Observability from '../src/modules/observability/service'
 import type { RuntimeKind } from '../src/modules/provider-contracts/types'
 
 const runtimeSession: RuntimeSession = {
@@ -35,6 +36,7 @@ const runtimeSession: RuntimeSession = {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   clearSideConversations()
   providerRuntimeHostManager.shutdown()
   shutdownInfra()
@@ -641,6 +643,36 @@ describe('provider runtime hosts', () => {
     expect(disposeResource).toHaveBeenCalledOnce()
     expect(disposeResource).toHaveBeenCalledWith(firstLease.resource)
     expect(providerRuntimeHostManager.listHosts()).toEqual([])
+  })
+
+  it('records observability when resource disposal fails', async () => {
+    const resource = { id: 'resource-1' }
+    const disposalError = new Error('dispose failed')
+    const recordSpy = vi.spyOn(Observability, 'record').mockImplementation(() => undefined)
+    const lease = await providerRuntimeHostManager.acquireResource({
+      runtimeKind: 'codex',
+      providerTargetId: 'provider-target',
+      scopeId: 'session-1',
+      createResource: () => resource,
+      disposeResource: vi.fn(async () => {
+        throw disposalError
+      }),
+    })
+
+    lease.release()
+
+    await vi.waitFor(() => expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'PROVIDER_RUNTIME_DISPOSAL_FAILED',
+      severity: 'error',
+      category: 'provider',
+      attrs: expect.objectContaining({
+        hostId: 'codex:provider-target:session-1',
+        runtimeKind: 'codex',
+        providerTargetId: 'provider-target',
+        scopeId: 'session-1',
+        error: 'dispose failed',
+      }),
+    })))
   })
 
   it('retains resources while pinned leases are alive', async () => {

@@ -1,5 +1,5 @@
 /* Manages the cradle-mac-bridge sidecar process for desktop-owned macOS APIs. */
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { ChildProcess, ChildProcessWithoutNullStreams } from 'node:child_process'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, statSync } from 'node:fs'
@@ -32,6 +32,7 @@ import {
   MacScreenCaptureKitDiagnosticsSchema,
   MacWindowRecordingStartRequestSchema,
 } from './mac-bridge-protocol'
+import { spawnManagedProcess, type ManagedChildProcess } from './managed-process'
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 const MAC_BRIDGE_RESOURCE_DIR = 'mac-bridge'
@@ -59,6 +60,7 @@ export interface MacBridgeManagerOptions {
 }
 
 type MacBridgeEventName = 'hotkeyTriggered'
+type MacBridgeChildProcess = ChildProcess | ManagedChildProcess | ChildProcessWithoutNullStreams
 
 function findWorkspaceRoot(anchors: string[]): string | null {
   for (const anchor of anchors) {
@@ -143,12 +145,12 @@ export class MacBridgeManager {
   private readonly events = new EventEmitter()
   private readonly options: Required<Pick<MacBridgeManagerOptions, 'args' | 'requestTimeoutMs'>> & MacBridgeManagerOptions
   private readonly pendingRequests = new Map<string, PendingRequest>()
-  private child: ChildProcessWithoutNullStreams | null = null
+  private child: MacBridgeChildProcess | null = null
   private nextRequestId = 1
   private startedAt: string | null = null
   private lastError: string | null = null
   private binaryPath: string | null = null
-  private stoppingChild: ChildProcessWithoutNullStreams | null = null
+  private stoppingChild: MacBridgeChildProcess | null = null
   private runningBinaryPath: string | null = null
   private runningBinarySignature: string | null = null
 
@@ -169,7 +171,7 @@ export class MacBridgeManager {
       running: this.child !== null && this.child.exitCode === null,
       platform,
       binaryPath,
-      pid: this.child?.pid ?? null,
+      pid: this.child ? readManagedTargetPid(this.child) : null,
       startedAt: this.startedAt,
       lastError: this.lastError,
     }
@@ -197,12 +199,25 @@ export class MacBridgeManager {
       return this.getStatus()
     }
 
-    const spawnProcess = this.options.spawnProcess ?? spawn
-    const child = spawnProcess(status.binaryPath, this.options.args, {
-      cwd: this.options.cwd,
-      env: this.options.env ?? process.env,
-      stdio: 'pipe',
-    }) as ChildProcessWithoutNullStreams
+    const child = this.options.spawnProcess
+      ? this.options.spawnProcess(status.binaryPath, this.options.args, {
+          cwd: this.options.cwd,
+          env: this.options.env ?? process.env,
+          stdio: 'pipe',
+        }) as ChildProcessWithoutNullStreams
+      : spawnManagedProcess({
+          kind: 'spawn',
+          command: status.binaryPath,
+          args: this.options.args,
+          cwd: this.options.cwd,
+          env: this.options.env ?? process.env,
+          stdin: 'pipe',
+          shutdownGraceMs: 2_000,
+        })
+
+    if (!child.stdout || !child.stderr || !child.stdin) {
+      throw createBridgeError('Mac Bridge process did not expose stdio pipes', 'mac-bridge-stdio-unavailable')
+    }
 
     this.child = child
     this.startedAt = new Date().toISOString()
@@ -211,7 +226,7 @@ export class MacBridgeManager {
     this.runningBinarySignature = readBinarySignature(status.binaryPath)
     console.debug('[mac-bridge] started:', {
       binaryPath: status.binaryPath,
-      pid: child.pid ?? null,
+      pid: readManagedTargetPid(child),
     })
 
     const stdout = createInterface({ input: child.stdout })
@@ -272,10 +287,10 @@ export class MacBridgeManager {
         finish()
         return
       }
-      child.kill('SIGTERM')
+      stopMacBridgeChild(child, 'SIGTERM')
       forceTimer = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) {
-          child.kill('SIGKILL')
+          stopMacBridgeChild(child, 'SIGKILL')
         }
         finish()
       }, 2_000)
@@ -284,9 +299,11 @@ export class MacBridgeManager {
 
   async request<T>(method: string, params?: unknown, options: { timeoutMs?: number } = {}): Promise<T> {
     const status = await this.start()
-    if (!status.running || !this.child?.stdin.writable) {
+    const child = this.child
+    if (!status.running || !child?.stdin?.writable) {
       throw createBridgeError(status.lastError ?? 'Mac Bridge is not running', 'mac-bridge-unavailable')
     }
+    const stdin = child.stdin
 
     const id = String(this.nextRequestId++)
     const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs
@@ -301,7 +318,7 @@ export class MacBridgeManager {
         reject: rejectRequest,
         timer,
       })
-      this.child!.stdin.write(`${JSON.stringify({ id, method, params })}\n`)
+      stdin.write(`${JSON.stringify({ id, method, params })}\n`)
     })
   }
 
@@ -487,4 +504,16 @@ export class MacBridgeManager {
       this.pendingRequests.delete(id)
     }
   }
+}
+
+function readManagedTargetPid(child: MacBridgeChildProcess): number | null {
+  return 'targetPid' in child ? child.targetPid ?? child.pid ?? null : child.pid ?? null
+}
+
+function stopMacBridgeChild(child: MacBridgeChildProcess, signal: NodeJS.Signals): void {
+  if ('stop' in child && signal === 'SIGTERM') {
+    void child.stop(signal)
+    return
+  }
+  child.kill(signal)
 }

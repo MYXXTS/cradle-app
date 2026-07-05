@@ -32,6 +32,10 @@ export default defineConfig({
         external: nodeRuntimeExternals,
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          'managed-process-runner': resolve(__dirname, 'src/main/managed-process-runner.ts'),
+        },
+        output: {
+          entryFileNames: '[name].js',
         },
       },
     },

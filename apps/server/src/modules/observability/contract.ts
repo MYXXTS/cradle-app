@@ -28,6 +28,7 @@ export const OBSERVABILITY_CODES = {
   turnStreamFailed: 'TURN_STREAM_FAILED',
   domainEventHandlerFailed: 'DOMAIN_EVENT_HANDLER_FAILED',
   providerEmptyEventStream: 'PROVIDER_EMPTY_EVENT_STREAM',
+  providerRuntimeDisposalFailed: 'PROVIDER_RUNTIME_DISPOSAL_FAILED',
   rendererUnhandledError: 'RENDERER_UNHANDLED_ERROR',
   rendererUnhandledRejection: 'RENDERER_UNHANDLED_REJECTION',
   rendererRenderError: 'RENDERER_RENDER_ERROR',
