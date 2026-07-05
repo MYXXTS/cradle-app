@@ -1375,7 +1375,7 @@ export class CodexProvider implements ChatRuntime {
       }
     }
     finally {
-      notificationClient.close()
+      await notificationClient.close()
     }
 
     const finalTitle = await readLatestThreadTitle(client, threadContext.threadId)

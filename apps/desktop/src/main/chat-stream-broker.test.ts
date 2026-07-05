@@ -5,6 +5,7 @@ import {
   DESKTOP_CHAT_REPLAY_MAX_CHUNKS,
   DESKTOP_CHAT_STREAM_CHUNK_CHANNEL,
   DESKTOP_CHAT_STREAM_CLOSED_CHANNEL,
+  DESKTOP_CHAT_STREAM_ERROR_CHANNEL,
 } from './chat-stream-broker'
 
 type Listener = () => void
@@ -523,6 +524,121 @@ describe('chat stream broker', () => {
     ])
 
     responseStream.controller.enqueue(encodeSse('[DONE]'))
+
+    await vi.waitFor(() => {
+      expect(broker.diagnostics().streams).toHaveLength(0)
+    })
+  })
+
+  it('times out a response upstream before headers and allows a later response for the same session', async () => {
+    const recoveredStream = createControlledSseResponse({ 'x-cradle-run-id': 'run-recovered' })
+    const fetchFn = vi
+      .fn()
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason ?? new DOMException('This operation was aborted', 'AbortError'))
+          }, { once: true })
+        })
+      })
+      .mockResolvedValueOnce(recoveredStream.response)
+    const broker = new ChatStreamBroker({
+      serverUrl: 'http://127.0.0.1:21423',
+      fetchFn: fetchFn as typeof fetch,
+      upstreamOpenTimeoutMs: 5,
+    })
+    const firstSender = new FakeWebContents()
+    const secondSender = new FakeWebContents()
+
+    await expect(broker.startResponse(firstSender as never, {
+      sessionId: 'session-stuck-before-headers',
+      body: { text: 'stuck turn' },
+    })).rejects.toThrow('Chat stream upstream did not return response headers within 5ms')
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(readChannelPayloads(firstSender, DESKTOP_CHAT_STREAM_ERROR_CHANNEL)).toMatchObject([
+      {
+        sessionId: 'session-stuck-before-headers',
+        runId: null,
+        message: 'Chat stream upstream did not return response headers within 5ms',
+      },
+    ])
+    expect(broker.diagnostics().streams).toHaveLength(0)
+
+    const handle = await broker.startResponse(secondSender as never, {
+      sessionId: 'session-stuck-before-headers',
+      body: { text: 'next turn' },
+    })
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(handle.runId).toBe('run-recovered')
+    expect(broker.diagnostics().streams).toMatchObject([
+      {
+        sessionId: 'session-stuck-before-headers',
+        mode: 'response',
+        runId: 'run-recovered',
+        subscriberCount: 1,
+      },
+    ])
+
+    recoveredStream.controller.enqueue(encodeSse('[DONE]'))
+
+    await vi.waitFor(() => {
+      expect(broker.diagnostics().streams).toHaveLength(0)
+    })
+  })
+
+  it('replaces an in-flight response request when it has not returned headers yet', async () => {
+    const recoveredStream = createControlledSseResponse({ 'x-cradle-run-id': 'run-replaced' })
+    const fetchFn = vi
+      .fn()
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason ?? new DOMException('This operation was aborted', 'AbortError'))
+          }, { once: true })
+        })
+      })
+      .mockResolvedValueOnce(recoveredStream.response)
+    const broker = new ChatStreamBroker({
+      serverUrl: 'http://127.0.0.1:21423',
+      fetchFn: fetchFn as typeof fetch,
+    })
+    const firstSender = new FakeWebContents()
+    const secondSender = new FakeWebContents()
+
+    const firstHandlePromise = broker.startResponse(firstSender as never, {
+      sessionId: 'session-replace-pending-response',
+      body: { text: 'stuck turn' },
+    })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    const secondHandle = await broker.startResponse(secondSender as never, {
+      sessionId: 'session-replace-pending-response',
+      body: { text: 'replacement turn' },
+    })
+    const firstHandle = await firstHandlePromise
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(firstHandle).toMatchObject({
+      sessionId: 'session-replace-pending-response',
+      runId: null,
+    })
+    expect(secondHandle.runId).toBe('run-replaced')
+    expect(readChannelPayloads(firstSender, DESKTOP_CHAT_STREAM_CLOSED_CHANNEL)).toMatchObject([
+      { streamId: firstHandle.streamId, reason: 'aborted' },
+    ])
+    expect(broker.diagnostics().streams).toMatchObject([
+      {
+        sessionId: 'session-replace-pending-response',
+        mode: 'response',
+        runId: 'run-replaced',
+        subscriberCount: 1,
+      },
+    ])
+
+    recoveredStream.controller.enqueue(encodeSse('[DONE]'))
 
     await vi.waitFor(() => {
       expect(broker.diagnostics().streams).toHaveLength(0)

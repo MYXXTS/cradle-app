@@ -33,7 +33,7 @@ export async function listCodexChatgptModels(input: {
     return projectCodexModelListResponse(response)
   }
   finally {
-    client.close()
+    await client.close()
   }
 }
 
@@ -55,7 +55,7 @@ export async function listCodexApiKeyModels(input: {
     return projectCodexModelListResponse(response)
   }
   finally {
-    client.close()
+    await client.close()
   }
 }
 

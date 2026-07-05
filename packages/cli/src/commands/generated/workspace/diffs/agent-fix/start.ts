@@ -56,6 +56,12 @@ const spec = {
       "required": false,
       "target": "body.modelId",
       "type": "string"
+    },
+    {
+      "name": "outputLocale",
+      "required": false,
+      "target": "body.outputLocale",
+      "type": "string"
     }
   ],
   "method": "post",

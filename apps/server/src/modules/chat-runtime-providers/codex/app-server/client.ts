@@ -1,7 +1,8 @@
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
+import type { Readable, Writable } from 'node:stream'
 
+import { spawnManagedProcess, type ManagedChildProcess } from '../../../../infra/managed-process'
 import type { ClientInfo } from '../app-server-protocol/ClientInfo'
 import { syncCodexAppServerLogInsertBlockerFromFeatureFlag } from './log-insert-blocker'
 import { prepareCodexAppServerHome } from './runtime-home'
@@ -60,7 +61,8 @@ export function buildCradleCodexAppServerEnv(input: {
 }
 
 export class CodexAppServerClient {
-  private readonly child: ChildProcessWithoutNullStreams
+  private readonly child: ManagedChildProcess
+  private readonly childStdin: Writable
   private readonly pendingRequests = new Map<RequestId, {
     resolve: (value: unknown) => void
     reject: (error: Error) => void
@@ -99,16 +101,30 @@ export class CodexAppServerClient {
       env.OPENAI_API_KEY = options.apiKey
     }
 
-    this.child = spawn(this.codexPath, args, { env })
-    this.child.stderr.on('data', (chunk: Buffer) => {
+    this.child = spawnManagedProcess({
+      kind: 'spawn',
+      command: this.codexPath,
+      args,
+      env,
+      stdin: 'pipe',
+      shutdownGraceMs: 5_000,
+    })
+    const childStdin = this.child.stdin
+    const childStdout = this.child.stdout
+    const childStderr = this.child.stderr
+    if (!childStdin || !childStdout || !childStderr) {
+      throw new Error('Codex app-server process did not expose stdio pipes')
+    }
+    this.childStdin = childStdin
+    childStderr.on('data', (chunk: Buffer) => {
       this.stderrText += chunk.toString('utf8')
     })
-    this.child.stdin.on('error', error => this.terminate(error))
+    childStdin.on('error', error => this.terminate(error))
     this.child.once('error', error => this.terminate(error))
     this.child.once('exit', (code, signal) => this.terminate(this.createExitError(code, signal)))
     this.child.once('close', (code, signal) => this.terminate(this.createExitError(code, signal)))
 
-    const lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity })
+    const lines = createInterface({ input: childStdout as Readable, crlfDelay: Infinity })
     lines.on('line', line => this.handleLine(line))
   }
 
@@ -181,11 +197,11 @@ export class CodexAppServerClient {
     })
   }
 
-  close(): void {
+  async close(): Promise<void> {
     if (this.closed) {
       return
     }
-    this.child.kill('SIGTERM')
+    await this.child.stop('SIGTERM')
     this.terminate(new Error('Codex app-server closed'))
   }
 
@@ -321,7 +337,7 @@ export class CodexAppServerClient {
     }
     return new Promise((resolve, reject) => {
       try {
-        this.child.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+        this.childStdin.write(`${JSON.stringify(payload)}\n`, (error) => {
           if (!error) {
             resolve()
             return

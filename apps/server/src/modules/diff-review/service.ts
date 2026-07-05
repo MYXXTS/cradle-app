@@ -75,6 +75,7 @@ import type {
   ReviewGuideStatus,
   ReviewGuideStepView,
   ReviewGuideView,
+  ReviewOutputLocale,
   ReviewRangeAnchorInput,
   ReviewRangeAnchorView,
   ReviewSourceKind,
@@ -98,6 +99,7 @@ export type {
   ReviewFileDiffView,
   ReviewGuideStepView,
   ReviewGuideView,
+  ReviewOutputLocale,
   ReviewRangeAnchorView,
   ReviewSourceReadinessView,
   ReviewSubmissionView,
@@ -114,6 +116,13 @@ const GUIDE_RUNTIME_SETTINGS: ChatRuntimeSettings = {
   accessMode: 'full-access',
   interactionMode: 'default'
 }
+const DEFAULT_OUTPUT_LOCALE: ReviewOutputLocale = 'en-US'
+const OUTPUT_LOCALE_LABELS = {
+  'en-US': 'English (US)',
+  'zh-CN': 'Simplified Chinese (zh-CN)',
+  'ja-JP': 'Japanese (ja-JP)',
+  'es-ES': 'Spanish (es-ES)',
+} satisfies Record<ReviewOutputLocale, string>
 
 interface ReviewSourceAdapter {
   refreshStored: (workspaceId: string, source: DiffReviewSource) => Promise<DiffReviewView>
@@ -1776,11 +1785,20 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
+function outputLocaleLabel(locale: ReviewOutputLocale): string {
+  return OUTPUT_LOCALE_LABELS[locale]
+}
+
+function normalizeOutputLocale(locale?: ReviewOutputLocale | null): ReviewOutputLocale {
+  return locale ?? DEFAULT_OUTPUT_LOCALE
+}
+
 function buildGuideAgentInstruction(input: {
   review: DiffReview
   revision: DiffReviewRevision
   files: DiffReviewFile[]
   threads: ReviewThreadView[]
+  outputLocale: ReviewOutputLocale
 }): string {
   const files = input.files.map((file) => ({
     id: file.id,
@@ -1846,6 +1864,10 @@ function buildGuideAgentInstruction(input: {
     '',
     'Artifact shape:',
     '{"title":"string","steps":[{"title":"string","rationale":"string","threadIds":["thread-id"],"paths":["path"],"ranges":[{"path":"path","side":"head|base","startLine":1,"endLine":1}]}]}',
+    '',
+    'Output language:',
+    `- Write the artifact "title", every step "title", and every step "rationale" in ${outputLocaleLabel(input.outputLocale)}.`,
+    '- Keep file paths, ids, commands, code identifiers, branch names, and quoted repository text unchanged.',
     '',
     'Rules:',
     '- The artifact "title" is the headline a reader sees before diving in. Keep it short (under 70 characters), specific to the change, and free of trailing punctuation. Do not echo the review title verbatim — write a fresh framing of what this change accomplishes.',
@@ -2301,6 +2323,7 @@ export async function generateGuide(input: {
   runtimeKind?: RuntimeKind
   modelId?: string | null
   force?: boolean
+  outputLocale?: ReviewOutputLocale | null
   userId?: string
 }): Promise<DiffReviewView> {
   const review = getReviewRow(input.workspaceId, input.reviewId)
@@ -2347,7 +2370,8 @@ export async function generateGuide(input: {
   })
 
   const threads = loadThreads(review.id)
-  const instruction = buildGuideAgentInstruction({ review, revision, files, threads })
+  const outputLocale = normalizeOutputLocale(input.outputLocale)
+  const instruction = buildGuideAgentInstruction({ review, revision, files, threads, outputLocale })
   const inputHash = hashText(
     JSON.stringify({
       revisionId: revision.id,
@@ -2355,6 +2379,7 @@ export async function generateGuide(input: {
       providerTargetId: input.providerTargetId,
       runtimeKind,
       modelId: input.modelId ?? null,
+      outputLocale,
       instructionHash: hashText(instruction)
     })
   )
@@ -2563,6 +2588,7 @@ function buildCommitPlanAgentPrompt(input: {
   revision: DiffReviewRevision | null
   agentFix: DiffReviewAgentFix
   files: DiffReviewFile[]
+  outputLocale: ReviewOutputLocale
 }): string {
   const files = input.files.map((file) => ({
     id: file.id,
@@ -2614,6 +2640,11 @@ function buildCommitPlanAgentPrompt(input: {
     'Artifact shape:',
     '{"rationale":"string","groups":[{"title":"string","message":"type(scope): summary","rationale":"string","fileIds":["changed-file-id"],"dependsOn":[1]}]}',
     '',
+    'Output language:',
+    `- Write the artifact "rationale", every group "title", and every group "rationale" in ${outputLocaleLabel(input.outputLocale)}.`,
+    '- The group "message" field is a git commit subject: follow this repository\'s existing commit style and language. Do not translate or localize commit messages solely because of the output language.',
+    '- Keep file ids, paths, commands, code identifiers, branch names, and quoted repository text unchanged.',
+    '',
     'Rules:',
     '- Prefer 1 to 6 commit groups. Use one group for a single coherent change.',
     '- Every changed file id from the provided file list must appear in at least one group.',
@@ -2657,13 +2688,15 @@ function buildAgentFixPrompt(input: {
   thread: DiffReviewThread | null
   comments: DiffReviewComment[]
   files: DiffReviewFile[]
+  outputLocale: ReviewOutputLocale
 }): string {
   if (input.agentFix.expectedOutput === 'commit') {
     return buildCommitPlanAgentPrompt({
       review: input.review,
       revision: input.revision,
       agentFix: input.agentFix,
-      files: input.files
+      files: input.files,
+      outputLocale: input.outputLocale
     })
   }
 
@@ -3096,6 +3129,7 @@ export async function startAgentFix(input: {
   providerTargetId?: string | null
   runtimeKind?: RuntimeKind | null
   modelId?: string | null
+  outputLocale?: ReviewOutputLocale | null
   userId?: string
 }): Promise<DiffReviewView> {
   return startAgentFixRun(input, { rerun: false })
@@ -3110,6 +3144,7 @@ async function startAgentFixRun(
     providerTargetId?: string | null
     runtimeKind?: RuntimeKind | null
     modelId?: string | null
+    outputLocale?: ReviewOutputLocale | null
     userId?: string
   },
   options: { rerun: boolean }
@@ -3135,6 +3170,7 @@ async function startAgentFixRun(
   const agentId =
     input.agentId?.trim() || (providerTargetId ? undefined : agentFix.profileId) || undefined
   const runtimeKind = input.runtimeKind?.trim() || undefined
+  const outputLocale = normalizeOutputLocale(input.outputLocale)
   if (!agentId && !providerTargetId) {
     throw new AppError({
       code: 'diff_review_agent_fix_target_missing',
@@ -3203,7 +3239,7 @@ async function startAgentFixRun(
     })
     const run = await ChatRuntime.createRun({
       sessionId: session.id,
-      text: buildAgentFixPrompt({ review, revision, agentFix, thread, comments, files }),
+      text: buildAgentFixPrompt({ review, revision, agentFix, thread, comments, files, outputLocale }),
       modelId: input.modelId ?? agentRow?.modelId ?? undefined,
       thinkingEffort: agentRow?.thinkingEffort ?? undefined
     })
@@ -3264,6 +3300,7 @@ export async function rerunAgentFix(input: {
   providerTargetId?: string | null
   runtimeKind?: RuntimeKind | null
   modelId?: string | null
+  outputLocale?: ReviewOutputLocale | null
   userId?: string
 }): Promise<DiffReviewView> {
   return startAgentFixRun(input, { rerun: true })

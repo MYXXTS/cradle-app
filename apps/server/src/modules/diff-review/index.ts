@@ -271,6 +271,7 @@ export const diffReview = new Elysia({
       runtimeKind?: string
       modelId?: string | null
       force?: boolean
+      outputLocale?: DiffReview.ReviewOutputLocale | null
     }
     return await DiffReview.generateGuide({
       workspaceId: params.workspaceId,
@@ -279,6 +280,7 @@ export const diffReview = new Elysia({
       runtimeKind: input.runtimeKind,
       modelId: input.modelId,
       force: input.force,
+      outputLocale: input.outputLocale,
     })
   }, {
     detail: {
@@ -350,6 +352,7 @@ export const diffReview = new Elysia({
       providerTargetId?: string | null
       runtimeKind?: string | null
       modelId?: string | null
+      outputLocale?: DiffReview.ReviewOutputLocale | null
     }
     return await DiffReview.startAgentFix({
       workspaceId: params.workspaceId,
@@ -359,6 +362,7 @@ export const diffReview = new Elysia({
       providerTargetId: input.providerTargetId,
       runtimeKind: input.runtimeKind,
       modelId: input.modelId,
+      outputLocale: input.outputLocale,
     })
   }, {
     detail: {
@@ -413,6 +417,7 @@ export const diffReview = new Elysia({
       providerTargetId?: string | null
       runtimeKind?: string | null
       modelId?: string | null
+      outputLocale?: DiffReview.ReviewOutputLocale | null
     }
     return await DiffReview.rerunAgentFix({
       workspaceId: params.workspaceId,
@@ -422,6 +427,7 @@ export const diffReview = new Elysia({
       providerTargetId: input.providerTargetId,
       runtimeKind: input.runtimeKind,
       modelId: input.modelId,
+      outputLocale: input.outputLocale,
     })
   }, {
     detail: {

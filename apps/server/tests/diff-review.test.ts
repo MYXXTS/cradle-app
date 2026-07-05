@@ -779,6 +779,7 @@ describe('diff-review capability', () => {
         {
           providerTargetId: 'provider-target-diff-review-guide',
           modelId: 'gpt-5-codex',
+          outputLocale: 'zh-CN',
         },
       )
 
@@ -816,8 +817,11 @@ describe('diff-review capability', () => {
           },
         },
       })
-      expect(JSON.stringify(runtime.streamInputs[0]?.message)).toContain('git diff --stat HEAD')
-      expect(JSON.stringify(runtime.streamInputs[0]?.message)).not.toContain('diff --git a/README.md b/README.md')
+      const guidePrompt = JSON.stringify(runtime.streamInputs[0]?.message)
+      expect(guidePrompt).toContain('git diff --stat HEAD')
+      expect(guidePrompt).toContain('Simplified Chinese (zh-CN)')
+      expect(guidePrompt).toContain('artifact \\"title\\", every step \\"title\\", and every step \\"rationale\\"')
+      expect(guidePrompt).not.toContain('diff --git a/README.md b/README.md')
       expect(completed.guide).toMatchObject({
         revisionId: review.currentRevisionId,
         status: 'ready',
@@ -1160,6 +1164,7 @@ describe('diff-review capability', () => {
         {
           providerTargetId: 'provider-target-diff-review-commit-plan-agent',
           runtimeKind: 'standard',
+          outputLocale: 'zh-CN',
         },
       )
       expect(started.agentFixes.find(item => item.id === agentFix.id)).toMatchObject({
@@ -1173,6 +1178,10 @@ describe('diff-review capability', () => {
           }),
         ]),
       )
+      const commitPlanPrompt = JSON.stringify(runtime.streamInputs[0]?.message)
+      expect(commitPlanPrompt).toContain('Simplified Chinese (zh-CN)')
+      expect(commitPlanPrompt).toContain('artifact \\"rationale\\", every group \\"title\\", and every group \\"rationale\\"')
+      expect(commitPlanPrompt).toContain('Do not translate or localize commit messages solely because of the output language.')
 
       const completed = await waitForCondition(async () => {
         const reloaded = await getJson<DiffReviewResponse>(

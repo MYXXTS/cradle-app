@@ -3666,7 +3666,16 @@ describe('chat runtime capability', () => {
         expect(runtime.streamInputs).toHaveLength(2)
       }, 'snapshot-mismatched steer item to drain onto the next run')
       expect(runtime.steerInputs).toHaveLength(0)
-      expect(await listChatQueue(app, 'session-live-steer-snapshot')).toEqual([])
+      const drainedQueue = await listChatQueue(app, 'session-live-steer-snapshot')
+      expect(drainedQueue).toEqual([
+        expect.objectContaining({
+          mode: 'queue',
+          status: 'completed',
+          text: 'Use a different provider target.',
+          providerTargetId: 'provider-target-live-steer-other',
+          startedRunId: expect.any(String)
+        })
+      ])
     } finally {
       runtime.release()
       if (runChunksPromise) {

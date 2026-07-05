@@ -2,6 +2,7 @@ import type {
   GetWorkspacesByWorkspaceIdDiffReviewsResponse,
   PostWorkspacesByWorkspaceIdDiffReviewsLocalWorkingTreeResponse,
 } from '~/api-gen/types.gen'
+import type { SupportedLocale } from '~/i18n/locales'
 
 /** A single Cradle diff review, regardless of how it was sourced. */
 export type CradleDiffReview
@@ -32,6 +33,7 @@ export interface GenerateGuideInput {
   runtimeKind?: string
   modelId?: string | null
   force?: boolean
+  outputLocale?: SupportedLocale | null
 }
 
 /** Route param token that selects the live working-tree review (no persisted id). */

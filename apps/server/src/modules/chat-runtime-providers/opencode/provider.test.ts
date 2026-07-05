@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type {
   AssistantMessage as OpencodeAssistantMessage,
-  Event as OpencodeEvent,
+  Event as OpencodeLegacyEvent,
   Part as OpencodePart,
-  Permission as OpencodePermission,
 } from '@opencode-ai/sdk'
+import type { Event as OpencodeRootEvent } from '@opencode-ai/sdk/v2'
 import type {
   RuntimeSession,
   RuntimeToolApprovalRequest,
@@ -17,38 +17,63 @@ import type { OpencodeRuntimeResource } from './runtime-context'
 import { formatOpencodeAssistantError, OpencodeProvider } from './provider'
 
 type OpencodeAssistantError = NonNullable<OpencodeAssistantMessage['error']>
+type OpencodeEvent = OpencodeLegacyEvent | OpencodeRootEvent
 
 class AsyncEventStream<T> implements AsyncIterable<T> {
-  private readonly values: T[] = []
-  private readonly waiters: Array<(value: IteratorResult<T>) => void> = []
+  private readonly backlog: T[] = []
+  private readonly subscribers = new Set<{
+    values: T[]
+    waiters: Array<(value: IteratorResult<T>) => void>
+  }>()
   private closed = false
 
   push(value: T): void {
-    const waiter = this.waiters.shift()
-    if (waiter) {
-      waiter({ value, done: false })
+    if (this.subscribers.size === 0) {
+      this.backlog.push(value)
       return
     }
-    this.values.push(value)
+    for (const subscriber of this.subscribers) {
+      const waiter = subscriber.waiters.shift()
+      if (waiter) {
+        waiter({ value, done: false })
+        continue
+      }
+      subscriber.values.push(value)
+    }
   }
 
   close(): void {
     this.closed = true
-    for (const waiter of this.waiters.splice(0)) {
-      waiter({ value: undefined, done: true })
+    for (const subscriber of this.subscribers) {
+      for (const waiter of subscriber.waiters.splice(0)) {
+        waiter({ value: undefined, done: true })
+      }
     }
+    this.subscribers.clear()
   }
 
   [Symbol.asyncIterator](): AsyncIterator<T> {
+    const subscriber = {
+      values: this.backlog.splice(0),
+      waiters: [] as Array<(value: IteratorResult<T>) => void>,
+    }
+    this.subscribers.add(subscriber)
     return {
       next: async () => {
-        if (this.values.length > 0) {
-          return { value: this.values.shift()!, done: false }
+        if (subscriber.values.length > 0) {
+          return { value: subscriber.values.shift()!, done: false }
         }
         if (this.closed) {
           return { value: undefined, done: true }
         }
-        return await new Promise<IteratorResult<T>>(resolve => this.waiters.push(resolve))
+        return await new Promise<IteratorResult<T>>(resolve => subscriber.waiters.push(resolve))
+      },
+      return: async () => {
+        this.subscribers.delete(subscriber)
+        for (const waiter of subscriber.waiters.splice(0)) {
+          waiter({ value: undefined, done: true })
+        }
+        return { value: undefined, done: true }
       },
     }
   }
@@ -73,7 +98,7 @@ function createRuntimeSession(resource: OpencodeRuntimeResource): RuntimeSession
   }
 }
 
-function assistantMessage(input: Partial<OpencodeAssistantMessage> = {}): OpencodeAssistantMessage {
+function assistantMessage(input: Partial<OpencodeAssistantMessage> = {}): OpencodeAssistantMessage & { agent: string } {
   return {
     id: input.id ?? 'msg_assistant',
     sessionID: input.sessionID ?? 'ses_1',
@@ -83,6 +108,7 @@ function assistantMessage(input: Partial<OpencodeAssistantMessage> = {}): Openco
     modelID: input.modelID ?? 'gpt-5',
     providerID: input.providerID ?? 'openai',
     mode: input.mode ?? 'build',
+    agent: 'build',
     path: input.path ?? { cwd: '/tmp/workspace', root: '/tmp/workspace' },
     cost: input.cost ?? 0,
     tokens: input.tokens ?? {
@@ -161,6 +187,8 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
     error: undefined,
   }))
   const postPermission = vi.fn(async () => ({ data: true, error: undefined }))
+  const permissionReply = vi.fn(async () => ({ data: undefined, error: undefined }))
+  const questionList = vi.fn(async () => ({ data: { data: state.sessionQuestionRequestsData }, error: undefined }))
   const questionReply = vi.fn(async () => ({ data: undefined, error: undefined }))
   const questionReject = vi.fn(async () => ({ data: undefined, error: undefined }))
   const session = {
@@ -200,11 +228,17 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
       postSessionIdPermissionsPermissionId: postPermission,
     },
     v2Client: {
+      event: {
+        subscribe: vi.fn(async () => ({ stream: events })),
+      },
       v2: {
         session: {
           context: vi.fn(async () => ({ data: { data: state.sessionContextMessagesData }, error: undefined })),
+          permission: {
+            reply: permissionReply,
+          },
           question: {
-            list: vi.fn(async () => ({ data: { data: state.sessionQuestionRequestsData }, error: undefined })),
+            list: questionList,
             reply: questionReply,
             reject: questionReject,
           },
@@ -222,6 +256,8 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
     promptAsync,
     message,
     postPermission,
+    permissionReply,
+    questionList,
     questionReply,
     questionReject,
     session,
@@ -969,6 +1005,53 @@ describe('OpencodeProvider streamTurn', () => {
     await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
+  it('fails fast when the event stream subscription fails before async prompt recovery is ready', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const subscribeError = new Error('SSE unavailable')
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }
+    const recordObservability = vi.fn()
+    vi.mocked(fake.resource.v2Client.event.subscribe).mockRejectedValueOnce(subscribeError)
+    const provider = new OpencodeProvider({
+      readSecret: () => 'secret',
+      logger,
+      recordObservability,
+    })
+    const stream = provider.streamTurn({
+      runId: 'run-subscribe-failed',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Implement this' }],
+      },
+      workspacePath: '/tmp/workspace',
+    })
+
+    await expect(stream.next()).rejects.toThrow('event stream subscription failed before async prompt recovery was initialized')
+    expect(logger.warn).toHaveBeenCalledWith('opencode event stream subscription failed', expect.objectContaining({
+      error: subscribeError,
+      sessionId: 'ses_1',
+      workspacePath: '/tmp/workspace',
+    }))
+    expect(recordObservability).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'OPENCODE_EVENT_STREAM_SUBSCRIBE_FAILED',
+      severity: 'warn',
+      category: 'provider',
+      attrs: expect.objectContaining({
+        runtimeKind: 'opencode',
+        providerSessionId: 'ses_1',
+        workspacePath: '/tmp/workspace',
+      }),
+    }))
+  })
+
   it('recovers terminal async prompts from history when the OpenCode event stream ends', async () => {
     const events = new AsyncEventStream<OpencodeEvent>()
     const fake = createFakeResource(events)
@@ -1442,18 +1525,22 @@ describe('OpencodeProvider streamTurn', () => {
 
     const firstChunk = stream.next()
     await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
-    const permission: OpencodePermission = {
-      id: 'perm-1',
-      type: 'bash',
-      pattern: 'rm -rf build',
-      sessionID: 'ses_1',
-      messageID: 'msg_assistant',
-      callID: 'call-1',
-      title: 'Run command',
-      metadata: { reason: 'destructive command' },
-      time: { created: 10 },
-    }
-    events.push({ type: 'permission.updated', properties: permission })
+    events.push({
+      id: 'evt_permission_asked',
+      type: 'permission.asked',
+      properties: {
+        id: 'perm-1',
+        sessionID: 'ses_1',
+        permission: 'bash',
+        patterns: ['rm -rf build'],
+        metadata: { reason: 'destructive command' },
+        always: [],
+        tool: {
+          messageID: 'msg_assistant',
+          callID: 'call-1',
+        },
+      },
+    })
 
     await expect(firstChunk).resolves.toMatchObject({
       done: false,
@@ -1476,15 +1563,16 @@ describe('OpencodeProvider streamTurn', () => {
     })
     expect(requestToolApproval).toHaveBeenCalledWith(expect.objectContaining({
       providerRequestId: 'perm-1',
-      providerMethod: 'permission.updated',
+      providerMethod: 'permission.asked',
       toolCallId: 'server-request-perm-1',
     }))
 
     approvalResolver.resolve?.({ requestId: 'perm-1', approved: true })
-    await vi.waitFor(() => expect(fake.postPermission).toHaveBeenCalledWith(expect.objectContaining({
-      path: { id: 'ses_1', permissionID: 'perm-1' },
-      body: { response: 'once' },
-    })))
+    await vi.waitFor(() => expect(fake.permissionReply).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      requestID: 'perm-1',
+      reply: 'once',
+    }))
     await expect(stream.next()).resolves.toMatchObject({
       done: false,
       value: {
@@ -1499,22 +1587,6 @@ describe('OpencodeProvider streamTurn', () => {
   it('bridges OpenCode question tools through runtime user input and replies to the session question request', async () => {
     const events = new AsyncEventStream<OpencodeEvent>()
     const fake = createFakeResource(events)
-    fake.state.sessionQuestionRequestsData.push({
-      id: 'question-request-1',
-      sessionID: 'ses_1',
-      questions: [{
-        question: '你想怎么尝试？',
-        header: '尝试 subAgent',
-        options: [
-          { label: '跑测试验证', description: '运行 provider.test.ts 和 subagent-bridge.test.ts 确认所有测试通过' },
-          { label: '提交后试', description: '先提交改动，再在运行的 app 里试' },
-        ],
-      }],
-      tool: {
-        messageID: 'msg_assistant',
-        callID: 'call_question_1',
-      },
-    })
     const userInputResolver: {
       resolve?: (resolution: RuntimeUserInputResolution) => void
     } = {}
@@ -1588,6 +1660,29 @@ describe('OpencodeProvider streamTurn', () => {
         }),
       },
     })
+    expect(requestUserInput).not.toHaveBeenCalled()
+
+    events.push({
+      id: 'evt_question_asked',
+      type: 'question.v2.asked',
+      properties: {
+        id: 'question-request-1',
+        sessionID: 'ses_1',
+        questions: [{
+          question: '你想怎么尝试？',
+          header: '尝试 subAgent',
+          options: [
+            { label: '跑测试验证', description: '运行 provider.test.ts 和 subagent-bridge.test.ts 确认所有测试通过' },
+            { label: '提交后试', description: '先提交改动，再在运行的 app 里试' },
+          ],
+        }],
+        tool: {
+          messageID: 'msg_assistant',
+          callID: 'call_question_1',
+        },
+      },
+    })
+
     await vi.waitFor(() => expect(requestUserInput).toHaveBeenCalledWith(expect.objectContaining({
       providerRequestId: 'question-request-1',
       providerMethod: 'question',
@@ -1620,4 +1715,149 @@ describe('OpencodeProvider streamTurn', () => {
     expect(fake.questionReject).not.toHaveBeenCalled()
     await stream.return(undefined)
   })
+
+  it('bridges OpenCode question requests from v2 events when the root tool event arrives before list visibility', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const userInputResolver: {
+      resolve?: (resolution: RuntimeUserInputResolution) => void
+    } = {}
+    const requestUserInput = vi.fn((_request: RuntimeUserInputRequest) =>
+      new Promise<RuntimeUserInputResolution>(resolve => {
+        userInputResolver.resolve = resolve
+      }))
+    const provider = new OpencodeProvider({
+      readSecret: () => 'secret',
+      requestUserInput,
+    })
+    const stream = provider.streamTurn({
+      runId: 'run-question-race',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Ask before continuing' }],
+      },
+      workspacePath: '/tmp/workspace',
+    })
+
+    const firstChunk = stream.next()
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    events.push({
+      type: 'message.updated',
+      properties: { info: assistantMessage({ time: { created: 1 }, finish: undefined }) },
+    })
+    events.push({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'part_question',
+          sessionID: 'ses_1',
+          messageID: 'msg_assistant',
+          type: 'tool',
+          callID: 'call_question_missing',
+          tool: 'question',
+          state: {
+            status: 'running',
+            input: {
+              questions: [{
+                question: 'Should I continue?',
+                header: 'Confirm next step',
+                options: [
+                  { label: 'Continue', description: 'Proceed with the change' },
+                  { label: 'Stop', description: 'Do not continue' },
+                ],
+              }],
+            },
+            time: { start: 10 },
+          },
+        } satisfies OpencodePart,
+      },
+    })
+
+    await expect(firstChunk).resolves.toMatchObject({
+      done: false,
+      value: { type: 'tool-input-start', toolCallId: 'call_question_missing', toolName: 'question' },
+    })
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'tool-input-available',
+        toolCallId: 'call_question_missing',
+      },
+    })
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'tool-output-available',
+        toolCallId: 'call_question_missing',
+      },
+    })
+    expect(fake.questionList).not.toHaveBeenCalled()
+    expect(requestUserInput).not.toHaveBeenCalled()
+
+    events.push({
+      id: 'evt_question_asked',
+      type: 'question.v2.asked',
+      properties: {
+        id: 'question-request-race',
+        sessionID: 'ses_1',
+        questions: [{
+          question: 'Should I continue?',
+          header: 'Confirm next step',
+          options: [
+            { label: 'Continue', description: 'Proceed with the change' },
+            { label: 'Stop', description: 'Do not continue' },
+          ],
+        }],
+        tool: {
+          messageID: 'msg_assistant',
+          callID: 'call_question_missing',
+        },
+      },
+    })
+
+    await vi.waitFor(() => expect(requestUserInput).toHaveBeenCalledWith(expect.objectContaining({
+      providerRequestId: 'question-request-race',
+      providerMethod: 'question',
+      toolCallId: 'call_question_missing',
+      questions: [{
+        id: 'question-1',
+        header: 'Confirm next step',
+        question: 'Should I continue?',
+        isOther: false,
+        isSecret: false,
+        multiSelect: false,
+        options: [
+          { label: 'Continue', description: 'Proceed with the change' },
+          { label: 'Stop', description: 'Do not continue' },
+        ],
+      }],
+    })))
+
+    userInputResolver.resolve?.({
+      requestId: 'question-request-race',
+      answers: { 'question-1': ['Continue'] },
+    })
+    await vi.waitFor(() => expect(fake.questionReply).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      requestID: 'question-request-race',
+      questionV2Reply: {
+        answers: [['Continue']],
+      },
+    }))
+    expect(fake.questionReject).not.toHaveBeenCalled()
+    await expect(stream.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'data-runtime-event',
+        data: {
+          kind: 'opencode.question.v2.asked',
+        },
+      },
+    })
+    await stream.return(undefined)
+  })
+
 })

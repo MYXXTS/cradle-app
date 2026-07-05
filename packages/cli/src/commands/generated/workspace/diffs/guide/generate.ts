@@ -50,6 +50,12 @@ const spec = {
       "required": false,
       "target": "body.force",
       "type": "boolean"
+    },
+    {
+      "name": "outputLocale",
+      "required": false,
+      "target": "body.outputLocale",
+      "type": "string"
     }
   ],
   "method": "post",

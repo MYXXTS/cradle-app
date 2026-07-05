@@ -11959,6 +11959,7 @@ export type PostWorkspacesByWorkspaceIdDiffReviewsByReviewIdGuideGenerateData = 
         runtimeKind?: string;
         modelId?: string | null;
         force?: boolean;
+        outputLocale?: string | null;
     };
     path: {
         workspaceId: string;
@@ -12646,6 +12647,7 @@ export type PostWorkspacesByWorkspaceIdDiffReviewsByReviewIdAgentFixesByAgentFix
         providerTargetId?: string | null;
         runtimeKind?: string | null;
         modelId?: string | null;
+        outputLocale?: string | null;
     };
     path: {
         workspaceId: string;
@@ -13132,6 +13134,7 @@ export type PostWorkspacesByWorkspaceIdDiffReviewsByReviewIdAgentFixesByAgentFix
         providerTargetId?: string | null;
         runtimeKind?: string | null;
         modelId?: string | null;
+        outputLocale?: string | null;
     };
     path: {
         workspaceId: string;

@@ -2145,7 +2145,8 @@ export const zPostWorkspacesByWorkspaceIdDiffReviewsByReviewIdGuideGenerateBody 
     providerTargetId: z.string().min(1),
     runtimeKind: z.string().min(1).optional(),
     modelId: z.string().min(1).nullish(),
-    force: z.boolean().optional()
+    force: z.boolean().optional(),
+    outputLocale: z.string().nullish()
 });
 
 export const zPostWorkspacesByWorkspaceIdDiffReviewsByReviewIdGuideGeneratePath = z.object({
@@ -2186,7 +2187,8 @@ export const zPostWorkspacesByWorkspaceIdDiffReviewsByReviewIdAgentFixesByAgentF
     agentId: z.string().min(1).nullish(),
     providerTargetId: z.string().min(1).nullish(),
     runtimeKind: z.string().min(1).nullish(),
-    modelId: z.string().min(1).nullish()
+    modelId: z.string().min(1).nullish(),
+    outputLocale: z.string().nullish()
 });
 
 export const zPostWorkspacesByWorkspaceIdDiffReviewsByReviewIdAgentFixesByAgentFixIdStartPath = z.object({
@@ -2213,7 +2215,8 @@ export const zPostWorkspacesByWorkspaceIdDiffReviewsByReviewIdAgentFixesByAgentF
     agentId: z.string().min(1).nullish(),
     providerTargetId: z.string().min(1).nullish(),
     runtimeKind: z.string().min(1).nullish(),
-    modelId: z.string().min(1).nullish()
+    modelId: z.string().min(1).nullish(),
+    outputLocale: z.string().nullish()
 });
 
 export const zPostWorkspacesByWorkspaceIdDiffReviewsByReviewIdAgentFixesByAgentFixIdRerunPath = z.object({

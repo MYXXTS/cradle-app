@@ -11,14 +11,13 @@
  * workspace. Per-session process spawning and the host-manager lease/reaper
  * machinery do not apply here.
  *
- * The server is spawned directly (rather than via the SDK's `createOpencode`)
- * so Cradle retains the `ChildProcess` and can report its pid/RSS/CPU to the
- * Resource Panel and Grafana. The HTTP client is still built with the SDK's
- * `createOpencodeClient`.
+ * The server is spawned through Cradle's managed-process runner (rather than
+ * via the SDK's `createOpencode`) so Cradle retains the process owner and can
+ * report pid/RSS/CPU to the Resource Panel and Grafana. The HTTP client is
+ * still built with the SDK's `createOpencodeClient`.
  */
 
-import type { ChildProcess } from 'node:child_process'
-import { execSync, spawn } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
@@ -30,6 +29,7 @@ import type { OpencodeClient as OpencodeV2Client } from '@opencode-ai/sdk/v2'
 import { createOpencodeClient as createOpencodeV2Client } from '@opencode-ai/sdk/v2'
 
 import { createChildLogger } from '../../../logging/logger'
+import { spawnManagedProcess, type ManagedChildProcess } from '../../../infra/managed-process'
 import type { RuntimeLiveResourceLease } from '../../chat-runtime/runtime-provider-types'
 import type { RuntimeKind } from '../../provider-contracts/types'
 import { createDetachedProcessHostLease } from '../kit/process-host'
@@ -48,17 +48,17 @@ export interface OpencodeRuntimeResource {
   v2Client: OpencodeV2Client
   server: {
     url: string
-    close: () => void
+    close: () => Promise<void>
   }
 }
 
 interface OpencodeServerInstance {
   client: OpencodeClient
   v2Client: OpencodeV2Client
-  process: ChildProcess
+  process: ManagedChildProcess
   url: string
   startedAt: number
-  close: () => void
+  close: () => Promise<void>
 }
 
 interface OpencodeServerResources {
@@ -105,8 +105,8 @@ export async function stopOpencodeServer(): Promise<void> {
   }
   try {
     const instance = await pending
-    instance.close()
-    logger.info('opencode server stopped', { childPid: instance.process.pid ?? null })
+    await instance.close()
+    logger.info('opencode server stopped', { childPid: readManagedProcessPid(instance.process) })
   }
   catch (error) {
     logger.warn('opencode server stop failed', { error: formatError(error) })
@@ -121,7 +121,7 @@ export async function stopOpencodeServer(): Promise<void> {
  */
 export function getOpencodeServerResources(): OpencodeServerResources {
   const instance = currentInstance()
-  const pid = instance?.process.pid ?? null
+  const pid = instance ? readManagedProcessPid(instance.process) : null
   if (!instance || !pid) {
     return {
       running: false,
@@ -173,23 +173,21 @@ async function spawnOpencodeServerInstance(): Promise<OpencodeServerInstance> {
     process: proc,
     url,
     startedAt,
-    close: () => {
-      stopProcess(proc)
-    },
+    close: () => stopProcess(proc),
   }
   spawnedInstance = instance
   proc.once('exit', (code, signal) => {
-    logger.warn('opencode server exited', { childPid: proc.pid ?? null, code, signal })
+    logger.warn('opencode server exited', { childPid: readManagedProcessPid(proc), code, signal })
     if (spawnedInstance === instance) {
       spawnedInstance = null
       instancePromise = null
     }
   })
-  logger.info('opencode server started', { url, port, childPid: proc.pid ?? null })
+  logger.info('opencode server started', { url, port, childPid: readManagedProcessPid(proc) })
   return instance
 }
 
-function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, url: string }> {
+function launchOpencodeServer(port: number): Promise<{ process: ManagedChildProcess, url: string }> {
   return new Promise((resolve, reject) => {
     const args = ['serve', `--hostname=127.0.0.1`, `--port=${port}`]
     const cwd = resolveOpencodeRuntimeDirectory()
@@ -197,7 +195,10 @@ function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, ur
     const dbPath = resolveOpencodeDatabasePath()
     mkdirSync(cwd, { recursive: true })
     mkdirSync(configDir, { recursive: true })
-    const proc = spawn('opencode', args, {
+    const proc = spawnManagedProcess({
+      kind: 'spawn',
+      command: 'opencode',
+      args,
       cwd,
       env: {
         ...process.env,
@@ -206,7 +207,8 @@ function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, ur
         OPENCODE_DB: dbPath,
         OPENCODE_DISABLE_PROJECT_CONFIG: '1',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdin: 'ignore',
+      shutdownGraceMs: 3_000,
     })
 
     let output = ''
@@ -216,7 +218,7 @@ function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, ur
         return
       }
       settled = true
-      stopProcess(proc)
+      void stopProcess(proc)
       reject(new Error(`Timeout waiting for opencode server to start after ${SERVER_STARTUP_TIMEOUT_MS}ms`))
     }, SERVER_STARTUP_TIMEOUT_MS)
 
@@ -229,7 +231,7 @@ function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, ur
         if (!match) {
           settled = true
           clearTimeout(startupTimeout)
-          stopProcess(proc)
+          void stopProcess(proc)
           reject(new Error(`Failed to parse opencode server url from output: ${line}`))
           return
         }
@@ -271,11 +273,15 @@ function launchOpencodeServer(port: number): Promise<{ process: ChildProcess, ur
   })
 }
 
-function stopProcess(proc: ChildProcess): void {
+async function stopProcess(proc: ManagedChildProcess): Promise<void> {
   if (proc.exitCode !== null || proc.signalCode !== null) {
     return
   }
-  proc.kill('SIGTERM')
+  await proc.stop('SIGTERM')
+}
+
+function readManagedProcessPid(proc: ManagedChildProcess): number | null {
+  return proc.targetPid ?? proc.pid ?? null
 }
 
 function readProcessResourceUsage(pid: number): { rssMB: number, cpuPercent: number } | null {
@@ -327,7 +333,7 @@ export async function ensureOpencodeServerConfig(input: {
     if (!ignoredLateConfigFingerprints.has(nextFingerprint)) {
       ignoredLateConfigFingerprints.add(nextFingerprint)
       logger.warn('opencode server startup config changed after shared server start; keeping server alive', {
-        childPid: spawnedInstance?.process.pid ?? null,
+        childPid: spawnedInstance ? readManagedProcessPid(spawnedInstance.process) : null,
       })
     }
     return

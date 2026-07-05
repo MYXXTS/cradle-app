@@ -269,7 +269,7 @@ export class CodexAppServerBridge {
       return hostLease
     }
     catch (error) {
-      invalidateCodexAppServerHost(hostLease.hostId)
+      await invalidateCodexAppServerHost(hostLease.hostId)
       hostLease.release()
       throw error
     }

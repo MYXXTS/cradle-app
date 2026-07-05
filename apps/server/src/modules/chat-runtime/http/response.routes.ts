@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 
+import { createChildLogger } from '../../../logging/logger'
 import { ChatRuntimeModel } from '../model'
 import { bindReadableStreamToAbortSignal } from '../stream/sse'
 import { readChatThinkingEffort, readOptionalModelId } from './request-normalizers'
@@ -8,6 +9,10 @@ import type { ChatRuntimeService } from './runtime-loader'
 
 type StreamResponseInput = Parameters<ChatRuntimeService['streamResponse']>[0]
 
+const DESKTOP_UPSTREAM_REQUEST_ID_HEADER = 'x-cradle-desktop-chat-upstream-id'
+const DESKTOP_UPSTREAM_MODE_HEADER = 'x-cradle-desktop-chat-upstream-mode'
+const responseLogger = createChildLogger({ module: 'chat-runtime.response' })
+
 export const chatRuntimeResponseRoutes = new Elysia({
   detail: { tags: ['chat-runtime'] }
 })
@@ -15,28 +20,70 @@ export const chatRuntimeResponseRoutes = new Elysia({
   .post(
     '/sessions/:sessionId/response',
     async ({ params, body, request }) => {
-      const runtime = await loadChatRuntime()
-      const response = await runtime.streamResponse({
+      const startedAtMs = performance.now()
+      const desktopUpstreamRequestId = request.headers.get(DESKTOP_UPSTREAM_REQUEST_ID_HEADER)?.trim() || null
+      const desktopUpstreamMode = request.headers.get(DESKTOP_UPSTREAM_MODE_HEADER)?.trim() || null
+      let accepted = false
+      const baseFields = {
         sessionId: params.sessionId,
-        text: body.text ?? '',
-        files: body.files,
-        contextParts: body.contextParts,
-        messages: body.messages as StreamResponseInput['messages'],
-        providerTargetId: body.providerTargetId?.trim() || undefined,
-        modelId: readOptionalModelId(body.modelId),
-        thinkingEffort: readChatThinkingEffort(body.thinkingEffort),
-        runtimeSettings: body.runtimeSettings
-      })
-      return new Response(bindReadableStreamToAbortSignal(response.stream, request.signal), {
-        headers: {
-          'content-type': 'text/event-stream',
-          'cache-control': 'no-cache',
-          connection: 'keep-alive',
-          'x-cradle-run-id': response.runId,
-          'x-cradle-assistant-message-id': response.assistantMessageId,
-          'x-cradle-user-message-id': response.userMessageId
+        desktopUpstreamRequestId,
+        desktopUpstreamMode,
+      }
+
+      const logAbortBeforeHeaders = () => {
+        if (accepted) {
+          return
         }
-      })
+        responseLogger.warn('chat response request aborted before headers', {
+          ...baseFields,
+          durationMs: Math.round(performance.now() - startedAtMs),
+        })
+      }
+      request.signal.addEventListener('abort', logAbortBeforeHeaders, { once: true })
+
+      responseLogger.info('chat response request received', baseFields)
+
+      try {
+        const runtime = await loadChatRuntime()
+        const response = await runtime.streamResponse({
+          sessionId: params.sessionId,
+          text: body.text ?? '',
+          files: body.files,
+          contextParts: body.contextParts,
+          messages: body.messages as StreamResponseInput['messages'],
+          providerTargetId: body.providerTargetId?.trim() || undefined,
+          modelId: readOptionalModelId(body.modelId),
+          thinkingEffort: readChatThinkingEffort(body.thinkingEffort),
+          runtimeSettings: body.runtimeSettings
+        })
+        accepted = true
+        request.signal.removeEventListener('abort', logAbortBeforeHeaders)
+        responseLogger.info('chat response request accepted', {
+          ...baseFields,
+          runId: response.runId,
+          assistantMessageId: response.assistantMessageId,
+          userMessageId: response.userMessageId,
+          durationMs: Math.round(performance.now() - startedAtMs),
+        })
+        return new Response(bindReadableStreamToAbortSignal(response.stream, request.signal), {
+          headers: {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive',
+            'x-cradle-run-id': response.runId,
+            'x-cradle-assistant-message-id': response.assistantMessageId,
+            'x-cradle-user-message-id': response.userMessageId
+          }
+        })
+      } catch (err) {
+        request.signal.removeEventListener('abort', logAbortBeforeHeaders)
+        responseLogger.error('chat response request failed before headers', {
+          ...baseFields,
+          durationMs: Math.round(performance.now() - startedAtMs),
+          err,
+        })
+        throw err
+      }
     },
     {
       detail: {

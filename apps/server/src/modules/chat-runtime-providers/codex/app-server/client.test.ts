@@ -14,10 +14,15 @@ import {
 } from './client'
 
 const spawnMock = vi.hoisted(() => vi.fn())
+const managedProcessMock = vi.hoisted(() => vi.fn())
 const syncLogInsertBlockerMock = vi.hoisted(() => vi.fn())
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
+}))
+
+vi.mock('../../../../infra/managed-process', () => ({
+  spawnManagedProcess: managedProcessMock,
 }))
 
 vi.mock('./log-insert-blocker', () => ({
@@ -57,7 +62,24 @@ function createAppServerProcess() {
   child.stdout = stdout
   child.stderr = stderr
   child.kill = vi.fn()
-  return child
+  return asManagedProcess(child)
+}
+
+function asManagedProcess<T extends object>(child: T): T & {
+  targetPid: number | null
+  exitCode: number | null
+  signalCode: NodeJS.Signals | null
+  stop: ReturnType<typeof vi.fn>
+} {
+  return Object.assign(child, {
+    targetPid: 1234,
+    exitCode: null,
+    signalCode: null,
+    stop: vi.fn(async (signal: NodeJS.Signals = 'SIGTERM') => {
+      const kill = (child as { kill?: (signal?: NodeJS.Signals) => unknown }).kill
+      kill?.(signal)
+    }),
+  })
 }
 
 describe('resolveCodexAppServerHome', () => {
@@ -145,13 +167,13 @@ describe('isCodexAppServerUnknownMethodError', () => {
 
 describe('codexAppServerClient', () => {
   it('passes Cradle context environment into the app-server process', () => {
-    spawnMock.mockReturnValueOnce({
+    managedProcessMock.mockReturnValueOnce(asManagedProcess({
       stdin: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
       stdout: new Readable({ read: () => undefined }),
       stderr: new EventEmitter(),
       once: vi.fn(),
       kill: vi.fn(),
-    })
+    }))
 
     const client = new CodexAppServerClient({
       codexPath: 'codex-test',
@@ -161,10 +183,11 @@ describe('codexAppServerClient', () => {
       }),
     })
 
-    expect(spawnMock).toHaveBeenCalledWith(
-      'codex-test',
-      ['app-server', '--listen', 'stdio://'],
+    expect(managedProcessMock).toHaveBeenCalledWith(
       expect.objectContaining({
+        kind: 'spawn',
+        command: 'codex-test',
+        args: ['app-server', '--listen', 'stdio://'],
         env: expect.objectContaining({
           CRADLE_CHAT_SESSION_ID: 'chat-session-1',
           CRADLE_WORKSPACE_ID: 'workspace-1',
@@ -176,7 +199,7 @@ describe('codexAppServerClient', () => {
 
   it('uses the desktop-provided bundled Codex runtime when no explicit path is set', () => {
     const child = createAppServerProcess()
-    spawnMock.mockReturnValueOnce(child)
+    managedProcessMock.mockReturnValueOnce(child)
 
     const client = new CodexAppServerClient({
       env: {
@@ -184,10 +207,11 @@ describe('codexAppServerClient', () => {
       },
     })
 
-    expect(spawnMock).toHaveBeenCalledWith(
-      '/Applications/Cradle.app/Contents/Resources/codex',
-      ['app-server', '--listen', 'stdio://'],
-      expect.any(Object),
+    expect(managedProcessMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: '/Applications/Cradle.app/Contents/Resources/codex',
+        args: ['app-server', '--listen', 'stdio://'],
+      }),
     )
     client.close()
   })
@@ -196,7 +220,7 @@ describe('codexAppServerClient', () => {
     const stdout = new PassThrough()
     let writtenLine = ''
 
-    spawnMock.mockReturnValueOnce({
+    managedProcessMock.mockReturnValueOnce(asManagedProcess({
       stdin: new Writable({
         write: (chunk, _encoding, callback) => {
           writtenLine += chunk.toString('utf8')
@@ -216,7 +240,7 @@ describe('codexAppServerClient', () => {
       stderr: new EventEmitter(),
       once: vi.fn(),
       kill: vi.fn(),
-    })
+    }))
 
     const client = new CodexAppServerClient({
       codexPath: 'codex-test',
@@ -241,29 +265,28 @@ describe('codexAppServerClient', () => {
     const stdout = new PassThrough()
     let writtenLine = ''
 
-    spawnMock
-      .mockReturnValueOnce({
-        stdin: new Writable({
-          write: (chunk, _encoding, callback) => {
-            writtenLine += chunk.toString('utf8')
-            stdout.write(`${JSON.stringify({
-              id: 1,
-              result: {
-                userAgent: 'codex/0.135.0',
-                codexHome: '/tmp/codex-home',
-                platformFamily: 'unix',
-                platformOs: 'macos',
-              },
-            })}\n`)
-            callback()
-          },
-        }),
-        stdout,
-        stderr: new EventEmitter(),
-        once: vi.fn(),
-        kill: vi.fn(),
-      })
-      .mockReturnValueOnce(createCodexVersionProcess('codex-cli 0.135.0\n'))
+    managedProcessMock.mockReturnValueOnce(asManagedProcess({
+      stdin: new Writable({
+        write: (chunk, _encoding, callback) => {
+          writtenLine += chunk.toString('utf8')
+          stdout.write(`${JSON.stringify({
+            id: 1,
+            result: {
+              userAgent: 'codex/0.135.0',
+              codexHome: '/tmp/codex-home',
+              platformFamily: 'unix',
+              platformOs: 'macos',
+            },
+          })}\n`)
+          callback()
+        },
+      }),
+      stdout,
+      stderr: new EventEmitter(),
+      once: vi.fn(),
+      kill: vi.fn(),
+    }))
+    spawnMock.mockReturnValueOnce(createCodexVersionProcess('codex-cli 0.135.0\n'))
 
     const client = new CodexAppServerClient({
       codexPath: 'codex-native-test',
@@ -286,7 +309,7 @@ describe('codexAppServerClient', () => {
 
   it('rejects pending requests when the app-server process closes without an exit event', async () => {
     const child = createAppServerProcess()
-    spawnMock.mockReturnValueOnce(child)
+    managedProcessMock.mockReturnValueOnce(child)
     const client = new CodexAppServerClient({ codexPath: 'codex-test' })
 
     const request = client.request('config/read')
@@ -298,7 +321,7 @@ describe('codexAppServerClient', () => {
 
   it('marks the client closed after process spawn errors', async () => {
     const child = createAppServerProcess()
-    spawnMock.mockReturnValueOnce(child)
+    managedProcessMock.mockReturnValueOnce(child)
     const client = new CodexAppServerClient({ codexPath: 'codex-test' })
 
     const request = client.request('config/read')
@@ -310,7 +333,7 @@ describe('codexAppServerClient', () => {
 
   it('wakes notification waiters when the app-server process terminates', async () => {
     const child = createAppServerProcess()
-    spawnMock.mockReturnValueOnce(child)
+    managedProcessMock.mockReturnValueOnce(child)
     const client = new CodexAppServerClient({ codexPath: 'codex-test' })
 
     const notification = client.nextNotification()
@@ -337,7 +360,7 @@ describe('codexAppServerClient', () => {
     child.stdout = stdout
     child.stderr = new PassThrough()
     child.kill = vi.fn()
-    spawnMock.mockReturnValueOnce(child)
+    managedProcessMock.mockReturnValueOnce(asManagedProcess(child))
 
     const client = new CodexAppServerClient({
       codexPath: 'codex-test',

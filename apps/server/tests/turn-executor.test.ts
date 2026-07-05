@@ -161,4 +161,30 @@ describe('executeRun cancel/finalize race (turn-executor)', () => {
       expect(finalChunk).toMatchObject({ type: 'error' })
     })
   })
+
+  it('releases the active run and drains the queue when completion throws', async () => {
+    await withTempDataDir(async () => {
+      const sessionId = `session-${randomUUID()}`
+      const runId = `run-${randomUUID()}`
+      const runtime = createStreamingRuntime([{ type: 'finish', finishReason: 'stop' }])
+      const activeRun = createActiveRun({ runId, sessionId, runtime })
+      const failure = new Error('snapshot finalization failed')
+      const deps = createDeps({
+        finalizeSnapshot: vi.fn(() => {
+          throw failure
+        }),
+      })
+
+      await expect(executeRun(
+        activeRun,
+        { message: { id: 'msg-1', role: 'user', parts: [] }, profile: null },
+        deps,
+      )).rejects.toThrow(failure)
+
+      expect(deps.releaseActiveRun).toHaveBeenCalledTimes(1)
+      expect(deps.releaseActiveRun).toHaveBeenCalledWith(activeRun)
+      expect(deps.scheduleQueueDrain).toHaveBeenCalledTimes(1)
+      expect(deps.scheduleQueueDrain).toHaveBeenCalledWith(sessionId)
+    })
+  })
 })

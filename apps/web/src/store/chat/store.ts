@@ -498,6 +498,8 @@ export const useChatStore = createChatStore()
 
 const EMPTY_IDS: string[] = []
 const idsCache = new WeakMap<UIMessage[], string[]>()
+const EMPTY_STREAMING_MESSAGE_IDS = new Set<string>()
+let streamingMessageIdsCache: Set<string> | null = null
 
 function cachedIds(messages: UIMessage[]): string[] {
   if (messages === EMPTY_MESSAGES) { return EMPTY_IDS }
@@ -526,14 +528,29 @@ function readRunStateMessageId(runState: ChatRunState): string | null {
 }
 
 function readStreamingMessageIds(state: ChatState): Set<string> {
-  const ids = new Set<string>()
+  const ids: string[] = []
   for (const runState of state.runStateMap.values()) {
     const messageId = readRunStateMessageId(runState)
     if (messageId && (runState.phase === 'submitting' || runState.phase === 'streaming')) {
-      ids.add(messageId)
+      if (!ids.includes(messageId)) {
+        ids.push(messageId)
+      }
     }
   }
-  return ids
+  if (ids.length === 0) {
+    return EMPTY_STREAMING_MESSAGE_IDS
+  }
+  const cachedIds = streamingMessageIdsCache
+  if (
+    cachedIds
+    && cachedIds.size === ids.length
+    && ids.every(id => cachedIds.has(id))
+  ) {
+    return cachedIds
+  }
+
+  streamingMessageIdsCache = new Set(ids)
+  return streamingMessageIdsCache
 }
 
 function isStreamingMessageId(state: ChatState, messageId: string): boolean {

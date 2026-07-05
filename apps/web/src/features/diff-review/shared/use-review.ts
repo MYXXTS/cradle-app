@@ -22,6 +22,9 @@ import {
   putWorkspacesByWorkspaceIdDiffReviewsPreferences,
 } from '~/api-gen/sdk.gen'
 import type { RuntimeKind } from '~/features/agent-runtime/types'
+import { getI18n } from '~/i18n/instance'
+import type { SupportedLocale } from '~/i18n/locales'
+import { DEFAULT_LOCALE, normalizeLocale } from '~/i18n/locales'
 import { queryRefreshPolicies } from '~/lib/query-refresh-policy'
 
 import { reviewListQueryKey, reviewQueryKey } from './diff-items'
@@ -40,6 +43,16 @@ export interface UseReviewArgs {
   workspaceId: string
   repositoryPath?: string | null
   reviewId: string
+}
+
+function currentOutputLocale(): SupportedLocale {
+  try {
+    const i18n = getI18n()
+    return normalizeLocale(i18n.resolvedLanguage ?? i18n.language)
+  }
+  catch {
+    return DEFAULT_LOCALE
+  }
 }
 
 /**
@@ -335,6 +348,7 @@ export function useReview({ workspaceId, repositoryPath, reviewId }: UseReviewAr
       providerTargetId?: string | null
       runtimeKind?: RuntimeKind | null
       modelId?: string | null
+      outputLocale?: SupportedLocale | null
     }) => {
       const review = reviewQuery.data
       if (!review) {
@@ -347,6 +361,7 @@ export function useReview({ workspaceId, repositoryPath, reviewId }: UseReviewAr
           providerTargetId: input.providerTargetId ?? null,
           runtimeKind: input.runtimeKind ?? null,
           modelId: input.modelId ?? null,
+          outputLocale: input.outputLocale ?? currentOutputLocale(),
         },
         throwOnError: true,
       })
@@ -384,6 +399,7 @@ export function useReview({ workspaceId, repositoryPath, reviewId }: UseReviewAr
       providerTargetId?: string | null
       runtimeKind?: RuntimeKind | null
       modelId?: string | null
+      outputLocale?: SupportedLocale | null
     }) => {
       const review = reviewQuery.data
       if (!review) {
@@ -396,6 +412,7 @@ export function useReview({ workspaceId, repositoryPath, reviewId }: UseReviewAr
           providerTargetId: input.providerTargetId ?? null,
           runtimeKind: input.runtimeKind ?? null,
           modelId: input.modelId ?? null,
+          outputLocale: input.outputLocale ?? currentOutputLocale(),
         },
         throwOnError: true,
       })
@@ -442,6 +459,7 @@ export function useReview({ workspaceId, repositoryPath, reviewId }: UseReviewAr
           runtimeKind: input.runtimeKind,
           modelId: input.modelId ?? null,
           force: input.force,
+          outputLocale: input.outputLocale ?? currentOutputLocale(),
         },
         throwOnError: true,
       })

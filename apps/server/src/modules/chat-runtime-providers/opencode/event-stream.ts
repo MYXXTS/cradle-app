@@ -1,9 +1,10 @@
 import type {
   AssistantMessage as OpencodeAssistantMessage,
-  Event as OpencodeEvent,
+  Event as OpencodeLegacyEvent,
   Part as OpencodePart,
   ToolPart as OpencodeToolPart,
 } from '@opencode-ai/sdk'
+import type { Event as OpencodeRootEvent } from '@opencode-ai/sdk/v2'
 import type { UIMessageChunk } from 'ai'
 
 import type { TokenUsage } from '../../chat-runtime/runtime-provider-types'
@@ -20,7 +21,7 @@ type OpencodeMessagePartDeltaEvent = {
   }
 }
 
-export type OpencodeStreamEvent = OpencodeEvent | OpencodeMessagePartDeltaEvent
+export type OpencodeStreamEvent = OpencodeLegacyEvent | OpencodeRootEvent | OpencodeMessagePartDeltaEvent
 
 interface TextPartProjection {
   kind: 'text' | 'reasoning'
@@ -65,7 +66,8 @@ export class OpencodeEventStreamProjector {
         }
         this.messageRoles.set(event.properties.info.id, event.properties.info.role)
         if (event.properties.info.role === 'assistant') {
-          this._usage = readTokenUsage(event.properties.info)
+          const info = event.properties.info as OpencodeAssistantMessage
+          this._usage = readTokenUsage(info)
           return this.projectKnownMessageParts(event.properties.info.id)
         }
         return []
@@ -93,7 +95,7 @@ export class OpencodeEventStreamProjector {
         if (this.ignoredMessageIds.has(event.properties.part.messageID)) {
           return []
         }
-        return this.projectPart(event.properties.part)
+        return this.projectPart(event.properties.part as OpencodePart)
 
       case 'message.part.removed':
         if (event.properties.sessionID !== this.sessionId) {
@@ -350,7 +352,7 @@ export function readOpencodeTerminalAssistantForTurn(
   if (event.type !== 'message.updated') {
     return null
   }
-  const info = event.properties.info
+  const info = event.properties.info as OpencodeAssistantMessage
   if (
     info.role !== 'assistant'
     || info.sessionID !== input.sessionId
@@ -403,21 +405,24 @@ function readFinishReason(finish: string | undefined): Extract<UIMessageChunk, {
   }
 }
 
-function formatOpencodeStreamError(error: OpencodeAssistantMessage['error'] | undefined): string {
-  if (!error) {
+function formatOpencodeStreamError(error: OpencodeAssistantMessage['error'] | unknown): string {
+  const streamError = error as OpencodeAssistantMessage['error'] | undefined
+  if (!streamError) {
     return 'OpenCode session failed.'
   }
-  switch (error.name) {
+  switch (streamError.name) {
     case 'ProviderAuthError':
-      return `Provider authentication failed for ${error.data.providerID}: ${error.data.message}`
+      return `Provider authentication failed for ${streamError.data.providerID}: ${streamError.data.message}`
     case 'UnknownError':
     case 'MessageAbortedError':
-      return error.data.message
+      return streamError.data.message
     case 'MessageOutputLengthError':
-      return `Message output length exceeded: ${JSON.stringify(error.data)}`
+      return `Message output length exceeded: ${JSON.stringify(streamError.data)}`
     case 'APIError':
-      return error.data.statusCode === undefined
-        ? error.data.message
-        : `${error.data.statusCode}: ${error.data.message}`
+      return streamError.data.statusCode === undefined
+        ? streamError.data.message
+        : `${streamError.data.statusCode}: ${streamError.data.message}`
+    default:
+      return JSON.stringify(streamError)
   }
 }

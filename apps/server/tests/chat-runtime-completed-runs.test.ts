@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 
 function createTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -29,9 +30,11 @@ describe('chat runtime completed runs projection', () => {
       const bindingId = randomUUID()
 
       store.insert(workspaces).values({
-        id: workspaceId,
-        name: 'Notification Workspace',
-        path: workspaceRoot,
+        ...workspaceFixture({
+          id: workspaceId,
+          name: 'Notification Workspace',
+          path: workspaceRoot,
+        }),
       }).run()
       store.run(sql`
         INSERT INTO sessions (id, workspace_id, title, runtime_kind)

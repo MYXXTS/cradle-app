@@ -237,11 +237,14 @@ export interface ReviewGuideView {
   steps: ReviewGuideStepView[]
 }
 
+export type ReviewOutputLocale = 'en-US' | 'zh-CN' | 'ja-JP' | 'es-ES'
+
 export interface ReviewGuideGenerateInput {
   providerTargetId: string
   runtimeKind?: RuntimeKind
   modelId?: string | null
   force?: boolean
+  outputLocale?: ReviewOutputLocale | null
 }
 
 export interface ReviewSourceReadinessView {

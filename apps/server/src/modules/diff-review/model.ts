@@ -153,6 +153,12 @@ const event = t.Object({
 })
 
 const guideRuntimeKind = t.String({ minLength: 1 })
+const outputLocale = t.Union([
+  t.Literal('en-US'),
+  t.Literal('zh-CN'),
+  t.Literal('ja-JP'),
+  t.Literal('es-ES'),
+])
 const guideStatus = t.Union([
   t.Literal('pending'),
   t.Literal('running'),
@@ -371,6 +377,7 @@ export const DiffReviewModel = {
     providerTargetId: t.Optional(t.Nullable(t.String({ minLength: 1 }))),
     runtimeKind: t.Optional(t.Nullable(t.String({ minLength: 1 }))),
     modelId: t.Optional(t.Nullable(t.String({ minLength: 1 }))),
+    outputLocale: t.Optional(t.Nullable(outputLocale)),
   }, { additionalProperties: false }),
 
   cancelAgentFixBody: t.Object({}, { additionalProperties: false }),
@@ -390,6 +397,7 @@ export const DiffReviewModel = {
     runtimeKind: t.Optional(guideRuntimeKind),
     modelId: t.Optional(t.Nullable(t.String({ minLength: 1 }))),
     force: t.Optional(t.Boolean()),
+    outputLocale: t.Optional(t.Nullable(outputLocale)),
   }, { additionalProperties: false }),
 
   revision,

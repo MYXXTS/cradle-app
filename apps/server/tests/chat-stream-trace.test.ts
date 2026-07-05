@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { workspaceFixture } from './helpers/workspace-fixture'
 import {
   readChatRunTrace,
   recordChatStreamTrace,
@@ -211,9 +212,11 @@ describe('chat stream trace', () => {
     const now = 1700000000
 
     db().insert(workspaces).values({
-      id: 'workspace-trace-route',
-      name: 'Trace Route Workspace',
-      path: dataDir,
+      ...workspaceFixture({
+        id: 'workspace-trace-route',
+        name: 'Trace Route Workspace',
+        path: dataDir,
+      }),
     }).run()
     db().insert(providerTargets).values({
       id: 'provider-target-trace-route',

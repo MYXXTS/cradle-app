@@ -31,6 +31,12 @@ class FakeEventSource implements SessionEventSource {
       listener(new MessageEvent('session', { data: JSON.stringify(data) }))
     }
   }
+
+  emitError(): void {
+    for (const listener of this.listeners.get('error') ?? []) {
+      listener(new Event('error'))
+    }
+  }
 }
 
 function createCallbacks() {
@@ -193,6 +199,27 @@ describe('sessionSyncEngine', () => {
 
     engine.stop()
     expect(source.closed).toBe(true)
+  })
+
+  it('requests catch-up when the event tail reports an error', () => {
+    const source = new FakeEventSource()
+    const callbacks = createCallbacks()
+    const engine = new SessionSyncEngine({
+      sessionId: 'session-1',
+      serverBaseUrl: 'http://127.0.0.1:21423',
+      eventSourceFactory: () => source,
+      callbacks,
+    })
+
+    engine.start()
+    source.emitError()
+
+    expect(callbacks.onError).toHaveBeenCalledTimes(1)
+    expect(callbacks.onMessagesChanged).toHaveBeenCalledTimes(1)
+    expect(callbacks.onRuntimeStatusChanged).toHaveBeenCalledTimes(1)
+    expect(callbacks.onRuntimeUiSlotStatesChanged).toHaveBeenCalledTimes(1)
+    expect(callbacks.onQueueChanged).toHaveBeenCalledTimes(1)
+    expect(callbacks.onSessionSummaryChanged).toHaveBeenCalledTimes(1)
   })
 
   it('starts, replaces, and stops passive chunk streams from runtime state inputs', () => {

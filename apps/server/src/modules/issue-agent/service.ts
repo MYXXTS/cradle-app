@@ -1,4 +1,4 @@
-import type { Agent, AgentActivity, AgentSession } from '@cradle/db'
+import type { Agent, AgentActivity, AgentSession, BackendRun } from '@cradle/db'
 import { agents, providerTargets } from '@cradle/db'
 import { eq } from 'drizzle-orm'
 
@@ -16,7 +16,7 @@ import * as WorkflowRules from '../workflow-rules/service'
 
 interface ActiveAgentRun {
   runId: string
-  chatSessionId: string
+  chatSessionId: string | null
   aborted: boolean
 }
 
@@ -37,6 +37,7 @@ interface IssueAgentDelegationState {
 
 const activeRuns = new Map<string, ActiveAgentRun>()
 const continuationWatchers = new Map<string, Promise<void>>()
+const PENDING_RUN_ID = '__pending__'
 
 // ── require helpers ──
 
@@ -166,49 +167,12 @@ function buildIssuePrompt(
 async function watchRunCompletion(agentSessionId: string, runId: string): Promise<void> {
   try {
     const run = await ChatRuntime.waitForRunCompletion(runId)
-    const tracked = activeRuns.get(agentSessionId)
-    activeRuns.delete(agentSessionId)
-
-    if (run.status === 'complete') {
-      if (tracked?.chatSessionId && hasQueuedContinuationWork(tracked.chatSessionId)) {
-        startContinuationWatcher({
-          agentSessionId,
-          chatSessionId: tracked.chatSessionId,
-          since: currentUnixSeconds()
-        })
-        return
-      }
-      AgentInteraction.updateSessionStatus(agentSessionId, 'completed')
-      AgentInteraction.createActivity({
-        agentSessionId,
-        type: 'response',
-        body: 'Completed work on issue',
-        signal: 'run.completed'
-      })
-      return
-    }
-
-    if (run.status === 'failed') {
-      AgentInteraction.updateSessionStatus(agentSessionId, 'failed')
-      AgentInteraction.createActivity({
-        agentSessionId,
-        type: 'error',
-        body: run.errorText ?? 'Issue agent run failed',
-        signal: 'run.failed'
-      })
-      return
-    }
-
-    AgentInteraction.updateSessionStatus(agentSessionId, 'stopped')
-    if (!tracked?.aborted) {
-      AgentInteraction.createActivity({
-        agentSessionId,
-        type: 'response',
-        body: 'Stopped by user',
-        signal: 'run.aborted'
-      })
-    }
+    settleTrackedRunCompletion(agentSessionId, runId, run)
   } catch (error) {
+    const tracked = activeRuns.get(agentSessionId)
+    if (tracked?.runId !== runId) {
+      return
+    }
     activeRuns.delete(agentSessionId)
     AgentInteraction.updateSessionStatus(agentSessionId, 'failed')
     AgentInteraction.createActivity({
@@ -219,6 +183,59 @@ async function watchRunCompletion(agentSessionId: string, runId: string): Promis
       signal: 'run.failed'
     })
   }
+}
+
+function settleTrackedRunCompletion(
+  agentSessionId: string,
+  runId: string,
+  run: Pick<BackendRun, 'status' | 'errorText'>,
+): boolean {
+  const tracked = activeRuns.get(agentSessionId)
+  if (tracked?.runId !== runId) {
+    return false
+  }
+  activeRuns.delete(agentSessionId)
+
+  if (run.status === 'complete') {
+    if (tracked.chatSessionId && hasQueuedContinuationWork(tracked.chatSessionId)) {
+      startContinuationWatcher({
+        agentSessionId,
+        chatSessionId: tracked.chatSessionId,
+        since: currentUnixSeconds()
+      })
+      return true
+    }
+    AgentInteraction.updateSessionStatus(agentSessionId, 'completed')
+    AgentInteraction.createActivity({
+      agentSessionId,
+      type: 'response',
+      body: 'Completed work on issue',
+      signal: 'run.completed'
+    })
+    return true
+  }
+
+  if (run.status === 'failed') {
+    AgentInteraction.updateSessionStatus(agentSessionId, 'failed')
+    AgentInteraction.createActivity({
+      agentSessionId,
+      type: 'error',
+      body: run.errorText ?? 'Issue agent run failed',
+      signal: 'run.failed'
+    })
+    return true
+  }
+
+  AgentInteraction.updateSessionStatus(agentSessionId, 'stopped')
+  if (!tracked.aborted) {
+    AgentInteraction.createActivity({
+      agentSessionId,
+      type: 'response',
+      body: 'Stopped by user',
+      signal: 'run.aborted'
+    })
+  }
+  return true
 }
 
 function hasQueuedContinuationWork(chatSessionId: string): boolean {
@@ -297,6 +314,11 @@ async function watchContinuationWork(input: {
       signalMetadata: { chatSessionId: input.chatSessionId }
     })
   } catch (error) {
+    const session = AgentInteraction.getSession(input.agentSessionId)
+    if (!session || session.status === 'stopped') {
+      return
+    }
+
     AgentInteraction.updateSessionStatus(input.agentSessionId, 'failed')
     AgentInteraction.createActivity({
       agentSessionId: input.agentSessionId,
@@ -333,7 +355,22 @@ async function runSession(
   agentSessionId: string,
   options: { runInIsolation?: boolean } = {},
 ): Promise<void> {
+  let trackedRunId = PENDING_RUN_ID
   try {
+    if (activeRuns.has(agentSessionId)) {
+      throw new AppError({
+        code: 'issue_agent_session_in_progress',
+        status: 409,
+        message: 'Issue agent session already has an active run',
+        details: { agentSessionId }
+      })
+    }
+    activeRuns.set(agentSessionId, {
+      runId: PENDING_RUN_ID,
+      chatSessionId: null,
+      aborted: false
+    })
+
     const session = requireAgentSession(agentSessionId)
     if (!session.agentId) {
       throw new AppError({
@@ -347,6 +384,10 @@ async function runSession(
     const issue = requireIssue(session.issueId)
     const agent = requireDelegationAgent(session.agentId)
     const workflowRules = await WorkflowRules.get(issue.workspaceId, session.agentId)
+    if (consumePendingRunAbort(agentSessionId)) {
+      return
+    }
+
     const chatSession = Session.create({
       workspaceId: issue.workspaceId,
       title: `Issue: ${issue.title}`,
@@ -360,12 +401,16 @@ async function runSession(
     })
 
     AgentInteraction.attachChatSession({ agentSessionId, chatSessionId: chatSession.id })
+    updateActiveRunChatSession(agentSessionId, chatSession.id)
 
     if (options.runInIsolation) {
       await Worktree.startSessionIsolation({
         sessionId: chatSession.id,
         slug: issue.title,
       })
+      if (consumePendingRunAbort(agentSessionId)) {
+        return
+      }
     }
 
     AgentInteraction.updateSessionStatus(agentSessionId, 'active')
@@ -380,6 +425,17 @@ async function runSession(
       sessionId: chatSession.id,
       text: buildIssuePrompt(issue, workflowRules)
     })
+    trackedRunId = run.runId
+
+    const tracked = activeRuns.get(agentSessionId)
+    if (tracked?.runId !== PENDING_RUN_ID) {
+      return
+    }
+    if (tracked.aborted) {
+      activeRuns.delete(agentSessionId)
+      await ChatRuntime.abortRun(run.runId)
+      return
+    }
 
     activeRuns.set(agentSessionId, {
       runId: run.runId,
@@ -389,6 +445,10 @@ async function runSession(
 
     void watchRunCompletion(agentSessionId, run.runId)
   } catch (error) {
+    const tracked = activeRuns.get(agentSessionId)
+    if (tracked?.runId === trackedRunId) {
+      activeRuns.delete(agentSessionId)
+    }
     AgentInteraction.updateSessionStatus(agentSessionId, 'failed')
     AgentInteraction.createActivity({
       agentSessionId,
@@ -397,6 +457,26 @@ async function runSession(
       signal: 'run.failed'
     })
   }
+}
+
+function updateActiveRunChatSession(agentSessionId: string, chatSessionId: string): void {
+  const tracked = activeRuns.get(agentSessionId)
+  if (!tracked || tracked.runId !== PENDING_RUN_ID) {
+    return
+  }
+  activeRuns.set(agentSessionId, {
+    ...tracked,
+    chatSessionId
+  })
+}
+
+function consumePendingRunAbort(agentSessionId: string): boolean {
+  const tracked = activeRuns.get(agentSessionId)
+  if (!tracked?.aborted || tracked.runId !== PENDING_RUN_ID) {
+    return false
+  }
+  activeRuns.delete(agentSessionId)
+  return true
 }
 
 // ── public API ──
@@ -598,30 +678,47 @@ export async function delegateIssue(input: {
     })
   }
 
-  Issue.updateIssueDelegation(input.issueId, {
-    agentId: agent.id,
-    providerTargetId: agent.providerTargetId
-  })
+  const currentDelegation = getDelegation(input.issueId)
+  if (currentDelegation.agentSessionId && activeRuns.has(currentDelegation.agentSessionId)) {
+    throw new AppError({
+      code: 'issue_agent_delegation_in_progress',
+      status: 409,
+      message: 'Issue already has an active delegated run',
+      details: {
+        issueId: input.issueId,
+        agentSessionId: currentDelegation.agentSessionId
+      }
+    })
+  }
 
-  // Add system comment to activity timeline
-  Issue.addComment({
-    issueId: input.issueId,
-    content: `Delegated to ${agent.name}`,
-    authorKind: 'system.delegated'
-  })
+  const session = db().transaction(() => {
+    Issue.updateIssueDelegation(input.issueId, {
+      agentId: agent.id,
+      providerTargetId: agent.providerTargetId
+    })
 
-  const session = AgentInteraction.createSession({
-    issueId: input.issueId,
-    providerTargetId: agent.providerTargetId,
-    agentId: agent.id
-  })
+    // Add system comment to activity timeline
+    Issue.addComment({
+      issueId: input.issueId,
+      content: `Delegated to ${agent.name}`,
+      authorKind: 'system.delegated'
+    })
 
-  AgentInteraction.createActivity({
-    agentSessionId: session.id,
-    type: 'response',
-    body: `Delegated to ${agent.name}`,
-    signal: 'delegation.created',
-    signalMetadata: { providerTargetId: agent.providerTargetId, agentId: agent.id }
+    const createdSession = AgentInteraction.createSession({
+      issueId: input.issueId,
+      providerTargetId: agent.providerTargetId,
+      agentId: agent.id
+    })
+
+    AgentInteraction.createActivity({
+      agentSessionId: createdSession.id,
+      type: 'response',
+      body: `Delegated to ${agent.name}`,
+      signal: 'delegation.created',
+      signalMetadata: { providerTargetId: agent.providerTargetId, agentId: agent.id }
+    })
+
+    return createdSession
   })
 
   void runSession(session.id, { runInIsolation: input.runInIsolation })
@@ -659,7 +756,9 @@ export async function undelegateIssue(issueId: string): Promise<void> {
   const run = activeRuns.get(state.agentSessionId)
   if (run) {
     run.aborted = true
-    await cancelChatSessionContinuationWork(run.chatSessionId)
+    if (run.chatSessionId) {
+      await cancelChatSessionContinuationWork(run.chatSessionId)
+    }
     AgentInteraction.updateSessionStatus(state.agentSessionId, 'stopped')
   } else if (state.chatSessionId) {
     await cancelChatSessionContinuationWork(state.chatSessionId)
@@ -684,7 +783,9 @@ export async function stopSession(agentSessionId: string): Promise<void> {
   const run = activeRuns.get(agentSessionId)
   if (run) {
     run.aborted = true
-    await cancelChatSessionContinuationWork(run.chatSessionId)
+    if (run.chatSessionId) {
+      await cancelChatSessionContinuationWork(run.chatSessionId)
+    }
   } else if (session.chatSessionId) {
     await cancelChatSessionContinuationWork(session.chatSessionId)
   }
@@ -695,4 +796,23 @@ export async function stopSession(agentSessionId: string): Promise<void> {
     body: 'Session stopped by user',
     signal: 'run.aborted'
   })
+}
+
+export const issueAgentRunTrackingTestHooks = {
+  setActiveRun(agentSessionId: string, run: ActiveAgentRun): void {
+    activeRuns.set(agentSessionId, run)
+  },
+  getActiveRun(agentSessionId: string): ActiveAgentRun | undefined {
+    return activeRuns.get(agentSessionId)
+  },
+  clearActiveRuns(): void {
+    activeRuns.clear()
+  },
+  settleRunCompletion(
+    agentSessionId: string,
+    runId: string,
+    run: Pick<BackendRun, 'status' | 'errorText'>,
+  ): boolean {
+    return settleTrackedRunCompletion(agentSessionId, runId, run)
+  },
 }

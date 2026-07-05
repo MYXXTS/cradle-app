@@ -88,14 +88,14 @@ export async function acquireCodexAppServerHostLease(
     return lease
   }
   catch (error) {
-    invalidateProviderProcessHostResource(lease.hostId)
+    await invalidateProviderProcessHostResource(lease.hostId)
     lease.release()
     throw error
   }
 }
 
-export function invalidateCodexAppServerHost(hostId: string): void {
-  invalidateProviderProcessHostResource(hostId)
+export function invalidateCodexAppServerHost(hostId: string): Promise<void> {
+  return invalidateProviderProcessHostResource(hostId)
 }
 
 function configureCodexAppServerClientOptions(

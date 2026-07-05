@@ -31,7 +31,7 @@ import {
   readRenderableToolPart,
 } from './chat-render-plan'
 import type { RenderableToolPart } from './tool-ui-classifier'
-import { describeToolCall } from './tool-ui-classifier'
+import { describeToolCallCached } from './tool-ui-classifier'
 
 const CODEX_GOAL_COMMAND_PREFIX = '/goal '
 const ACTIVE_TOOL_STATES = new Set(['input-streaming', 'input-available', 'approval-requested'])
@@ -215,7 +215,7 @@ export function readRenderSegmentsFromState(
   return groupMessagePartRefs({
     parts: message.parts,
     messageId: message.id,
-    describeToolKind: part => describeToolCall(part).kind,
+    describeToolKind: part => describeToolCallCached(part).kind,
   })
 }
 

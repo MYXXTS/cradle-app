@@ -6,12 +6,12 @@
 
 import type {
   AssistantMessage as OpencodeAssistantMessage,
-  Event as OpencodeEvent,
   Message as OpencodeMessage,
   Part as OpencodePart,
   Session as OpencodeSession,
   ToolPart as OpencodeToolPart,
 } from '@opencode-ai/sdk'
+import type { Event as OpencodeEvent } from '@opencode-ai/sdk/v2'
 import type { UIMessageChunk } from 'ai'
 
 import type { ProviderThread } from '../../chat-runtime/runtime-provider-types'

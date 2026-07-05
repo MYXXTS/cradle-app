@@ -66,6 +66,7 @@ export interface DesktopChatStreamDiagnostics {
   streams: Array<{
     sessionId: string
     mode: DesktopChatStreamMode
+    upstreamRequestId: string
     runId: string | null
     assistantMessageId?: string
     userMessageId?: string
@@ -85,6 +86,7 @@ type ChatStreamFetch = typeof fetch
 interface ChatStreamBrokerOptions {
   serverUrl: string
   fetchFn?: ChatStreamFetch
+  upstreamOpenTimeoutMs?: number
 }
 
 interface UpstreamHandle {
@@ -134,6 +136,7 @@ interface WebContentsCleanupRegistration {
 interface UpstreamEntry {
   sessionId: string
   mode: DesktopChatStreamMode
+  upstreamRequestId: string
   controller: AbortController
   subscribers: Map<string, StreamSubscriber>
   replayBuffer: ReplayBuffer
@@ -144,6 +147,7 @@ interface UpstreamEntry {
   keepAliveWithoutSubscribers: boolean
   startedAtMs: number
   closed: boolean
+  openTimedOut: boolean
 }
 
 interface UpstreamRequest {
@@ -157,17 +161,23 @@ interface UpstreamRequest {
 const HEADER_RUN_ID = 'x-cradle-run-id'
 const HEADER_ASSISTANT_MESSAGE_ID = 'x-cradle-assistant-message-id'
 const HEADER_USER_MESSAGE_ID = 'x-cradle-user-message-id'
+const HEADER_DESKTOP_UPSTREAM_REQUEST_ID = 'x-cradle-desktop-chat-upstream-id'
+const HEADER_DESKTOP_UPSTREAM_MODE = 'x-cradle-desktop-chat-upstream-mode'
+const DEFAULT_UPSTREAM_OPEN_TIMEOUT_MS = 30_000
 
 export class ChatStreamBroker {
   private readonly serverUrl: string
   private readonly fetchFn: ChatStreamFetch
+  private readonly upstreamOpenTimeoutMs: number
   private readonly entriesBySessionId = new Map<string, UpstreamEntry>()
   private readonly cleanupByWebContents = new WeakMap<WebContents, WebContentsCleanupRegistration>()
   private nextStreamIndex = 0
+  private nextUpstreamRequestIndex = 0
 
   constructor(options: ChatStreamBrokerOptions) {
     this.serverUrl = options.serverUrl
     this.fetchFn = options.fetchFn ?? fetch
+    this.upstreamOpenTimeoutMs = options.upstreamOpenTimeoutMs ?? DEFAULT_UPSTREAM_OPEN_TIMEOUT_MS
   }
 
   async startResponse(
@@ -231,6 +241,7 @@ export class ChatStreamBroker {
       streams: Array.from(this.entriesBySessionId.values(), entry => ({
         sessionId: entry.sessionId,
         mode: entry.mode,
+        upstreamRequestId: entry.upstreamRequestId,
         runId: entry.runId,
         assistantMessageId: entry.assistantMessageId,
         userMessageId: entry.userMessageId,
@@ -271,6 +282,7 @@ export class ChatStreamBroker {
     const entry: UpstreamEntry = {
       sessionId: request.sessionId,
       mode: request.mode,
+      upstreamRequestId: this.createUpstreamRequestId(request.sessionId),
       controller,
       subscribers: new Map(),
       replayBuffer: createReplayBuffer(),
@@ -279,6 +291,7 @@ export class ChatStreamBroker {
       keepAliveWithoutSubscribers: request.keepAliveWithoutSubscribers,
       startedAtMs: Date.now(),
       closed: false,
+      openTimedOut: false,
     }
     entry.handlePromise = this.openUpstream(entry, request)
     this.entriesBySessionId.set(request.sessionId, entry)
@@ -360,11 +373,25 @@ export class ChatStreamBroker {
   }
 
   private async openUpstream(entry: UpstreamEntry, request: UpstreamRequest): Promise<UpstreamHandle> {
+    const openTimeout = setTimeout(() => {
+      if (entry.closed || entry.runId !== null) {
+        return
+      }
+      entry.openTimedOut = true
+      entry.controller.abort()
+    }, this.upstreamOpenTimeoutMs)
+    openTimeout.unref?.()
+
     try {
+      const headers = new Headers(request.request.headers)
+      headers.set(HEADER_DESKTOP_UPSTREAM_REQUEST_ID, entry.upstreamRequestId)
+      headers.set(HEADER_DESKTOP_UPSTREAM_MODE, request.mode)
       const response = await this.fetchFn(new URL(request.path, this.serverUrl), {
         ...request.request,
+        headers,
         signal: entry.controller.signal,
       })
+      clearTimeout(openTimeout)
       if (!response.ok) {
         const body = await response.text().catch(() => '')
         throw new Error(`Chat stream upstream failed: ${response.status} ${body}`)
@@ -384,10 +411,13 @@ export class ChatStreamBroker {
       return handle
     }
     catch (error) {
-      const message = readErrorMessage(error)
+      clearTimeout(openTimeout)
+      const message = entry.openTimedOut
+        ? `Chat stream upstream did not return response headers within ${this.upstreamOpenTimeoutMs}ms`
+        : readErrorMessage(error)
       this.errorSubscribers(entry, message)
       this.deleteEntryIfCurrent(entry)
-      throw error
+      throw entry.openTimedOut ? new Error(message) : error
     }
   }
 
@@ -582,6 +612,11 @@ export class ChatStreamBroker {
     return `desktop-chat-${sessionId}-${Date.now()}-${this.nextStreamIndex}`
   }
 
+  private createUpstreamRequestId(sessionId: string): string {
+    this.nextUpstreamRequestIndex += 1
+    return `desktop-chat-upstream-${sessionId}-${Date.now()}-${this.nextUpstreamRequestIndex}`
+  }
+
   private deleteEntryIfCurrent(entry: UpstreamEntry): void {
     if (this.entriesBySessionId.get(entry.sessionId) === entry) {
       this.entriesBySessionId.delete(entry.sessionId)
@@ -593,7 +628,7 @@ function canReuseEntry(existing: UpstreamEntry, request: UpstreamRequest): boole
   if (request.mode === 'session') {
     return true
   }
-  return existing.mode === 'response'
+  return existing.mode === 'response' && existing.runId !== null
 }
 
 function createDetachedChatStreamSink(): ChatStreamSink {

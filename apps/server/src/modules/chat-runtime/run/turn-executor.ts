@@ -124,31 +124,46 @@ export async function executeRun(
 ): Promise<void> {
   const diagnostics = createTurnOutputDiagnostics()
   const profile = startChatRuntimeProfile()
+  let released = false
 
-  const { finalChunk, failurePayload } = await pumpRuntimeStream(
-    activeRun,
-    input,
-    diagnostics,
-    profile,
-    deps
-  )
-  const { actualModelId, shouldFinalizeDiagnostics } = await persistRunTerminalAndUsage(
-    activeRun,
-    finalChunk,
-    failurePayload,
-    diagnostics,
-    profile,
-    deps
-  )
-  completeRun(
-    activeRun,
-    finalChunk,
-    diagnostics,
-    profile,
-    actualModelId,
-    shouldFinalizeDiagnostics,
-    deps
-  )
+  const releaseAndDrain = (): void => {
+    if (released) {
+      return
+    }
+    released = true
+    deps.releaseActiveRun(activeRun)
+    deps.scheduleQueueDrain(activeRun.sessionId)
+  }
+
+  try {
+    const { finalChunk, failurePayload } = await pumpRuntimeStream(
+      activeRun,
+      input,
+      diagnostics,
+      profile,
+      deps
+    )
+    const { actualModelId, shouldFinalizeDiagnostics } = await persistRunTerminalAndUsage(
+      activeRun,
+      finalChunk,
+      failurePayload,
+      diagnostics,
+      profile,
+      deps
+    )
+    completeRun(
+      activeRun,
+      finalChunk,
+      diagnostics,
+      profile,
+      actualModelId,
+      shouldFinalizeDiagnostics,
+      deps
+    )
+  }
+  finally {
+    releaseAndDrain()
+  }
 }
 
 async function pumpRuntimeStream(
@@ -460,8 +475,6 @@ function completeRun(
     diagnostics,
     profile
   })
-  deps.releaseActiveRun(activeRun)
-  deps.scheduleQueueDrain(activeRun.sessionId)
   if (shouldContinueRuntimeGoal) {
     if (!activeRun.providerTargetId) {
       return

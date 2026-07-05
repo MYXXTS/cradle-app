@@ -235,6 +235,7 @@ export class SessionSyncEngine {
 
   private readonly handleError = (event: Event): void => {
     this.callbacks.onError?.(event)
+    this.requestSnapshotCatchup()
   }
 
   private startPassiveStream(sessionId: string, messageId: string): void {
@@ -272,11 +273,7 @@ export class SessionSyncEngine {
   private applyEvent(event: ChatSessionTailEvent): void {
     if (event.type === 'SnapshotRequired') {
       this.callbacks.onSnapshotRequired?.()
-      this.callbacks.onMessagesChanged()
-      this.callbacks.onRuntimeStatusChanged()
-      this.callbacks.onRuntimeUiSlotStatesChanged()
-      this.callbacks.onQueueChanged()
-      this.callbacks.onSessionSummaryChanged()
+      this.requestSnapshotCatchup()
       return
     }
     if (MESSAGE_EVENT_TYPES.has(event.type)) {
@@ -298,6 +295,14 @@ export class SessionSyncEngine {
     if (event.type === 'TitleChanged' || event.type === 'RunCompleted' || event.type === 'RunFailed' || event.type === 'RunAborted') {
       this.callbacks.onSessionSummaryChanged()
     }
+  }
+
+  private requestSnapshotCatchup(): void {
+    this.callbacks.onMessagesChanged()
+    this.callbacks.onRuntimeStatusChanged()
+    this.callbacks.onRuntimeUiSlotStatesChanged()
+    this.callbacks.onQueueChanged()
+    this.callbacks.onSessionSummaryChanged()
   }
 }
 

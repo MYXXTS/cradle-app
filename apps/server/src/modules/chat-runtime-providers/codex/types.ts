@@ -40,7 +40,7 @@ export interface CodexAppServerClientLike {
   initialize: () => Promise<void>
   request: (method: string, params?: unknown) => Promise<unknown>
   nextNotification: (signal?: AbortSignal) => Promise<CodexAppServerMessage | null>
-  close: () => void
+  close: () => void | Promise<void>
 }
 
 export interface CodexAppServerResourceRequestHandler {

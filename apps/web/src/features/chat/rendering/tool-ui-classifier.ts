@@ -52,6 +52,11 @@ export interface ToolUiDescriptor {
   summary: string | null
 }
 
+interface ToolUiDescriptorCacheEntry {
+  signature: string
+  descriptor: ToolUiDescriptor
+}
+
 const FUNCTIONS_PREFIX_PATTERN = /^functions\./
 const TOOL_NAME_SEPARATOR_PATTERN = /[-\s]/g
 const MCP_PREFIX_PATTERN = /^mcp__/
@@ -62,6 +67,9 @@ const WHITESPACE_PATTERN = /\s+/
 const JSON_WHITESPACE_PATTERN = /\s/
 const JSON_PRIMITIVE_PATTERN = /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i
 const LINE_BREAK_PATTERN = /\r?\n/
+const toolUiDescriptorCache = new WeakMap<RenderableToolPart, ToolUiDescriptorCacheEntry>()
+const objectIdentityTokens = new WeakMap<object, number>()
+let nextObjectIdentityToken = 1
 
 interface ToolContentBlock {
   text: string | null
@@ -925,6 +933,49 @@ export function describeToolCall(part: RenderableToolPart): ToolUiDescriptor {
     target,
     summary: readToolSummary(kind, input, output),
   }
+}
+
+export function describeToolCallCached(part: RenderableToolPart): ToolUiDescriptor {
+  const signature = buildToolDescriptorCacheSignature(part)
+  const cached = toolUiDescriptorCache.get(part)
+  if (cached?.signature === signature) {
+    return cached.descriptor
+  }
+
+  const descriptor = describeToolCall(part)
+  toolUiDescriptorCache.set(part, { signature, descriptor })
+  return descriptor
+}
+
+function buildToolDescriptorCacheSignature(part: RenderableToolPart): string {
+  return [
+    part.type,
+    part.toolCallId,
+    part.state,
+    part.toolName ?? '',
+    part.argumentsText ?? '',
+    part.errorText ?? '',
+    readCacheValueToken(part.input),
+    readCacheValueToken(part.output),
+  ].join('\u0000')
+}
+
+function readCacheValueToken(value: unknown): string {
+  if (value === null) {
+    return 'null'
+  }
+  const valueType = typeof value
+  if (valueType !== 'object' && valueType !== 'function') {
+    return `${valueType}:${String(value)}`
+  }
+
+  const objectValue = value as object
+  let token = objectIdentityTokens.get(objectValue)
+  if (token === undefined) {
+    token = nextObjectIdentityToken++
+    objectIdentityTokens.set(objectValue, token)
+  }
+  return `${valueType}:${token}`
 }
 
 function parsePartialJsonObject(text: string): Record<string, unknown> {
