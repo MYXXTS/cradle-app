@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cradle/relayd/internal/token"
 )
 
 var (
@@ -37,36 +35,33 @@ type Store struct {
 }
 
 type StartInput struct {
-	Claims    token.Claims
-	RoomID    string
-	HostToken string
+	RoomID     string
+	HostPubkey string
 }
 
 type ClaimInput struct {
-	Code            string
-	Claims          token.Claims
-	ControllerToken string
+	Code             string
+	RoomID           string
+	ControllerPubkey string
 }
 
 type Record struct {
-	RoomID          string
-	PairingCode     string
-	HostToken       string
-	ControllerToken string
-	Subject         string
-	ExpiresAt       time.Time
-	ClaimedAt       time.Time
+	RoomID           string
+	PairingCode      string
+	HostPubkey       string
+	ControllerPubkey string
+	ExpiresAt        time.Time
+	ClaimedAt        time.Time
 }
 
 type record struct {
-	roomID          string
-	codeHash        [32]byte
-	codeSalt        []byte
-	hostToken       string
-	controllerToken string
-	subject         string
-	expiresAt       time.Time
-	claimedAt       time.Time
+	roomID           string
+	codeHash         [32]byte
+	codeSalt         []byte
+	hostPubkey       string
+	controllerPubkey string
+	expiresAt        time.Time
+	claimedAt        time.Time
 }
 
 func NewStore(cfg StoreConfig) *Store {
@@ -94,10 +89,11 @@ func NewStore(cfg StoreConfig) *Store {
 func (s *Store) Start(_ context.Context, input StartInput) (Record, error) {
 	roomID := strings.TrimSpace(input.RoomID)
 	if roomID == "" {
-		roomID = strings.TrimSpace(input.Claims.RoomID)
-	}
-	if roomID == "" {
 		return Record{}, ErrRoomRequired
+	}
+	hostPubkey := strings.TrimSpace(input.HostPubkey)
+	if hostPubkey == "" {
+		return Record{}, errors.New("pairing: host pubkey is required")
 	}
 	code, err := generateCode()
 	if err != nil {
@@ -108,12 +104,11 @@ func (s *Store) Start(_ context.Context, input StartInput) (Record, error) {
 		return Record{}, fmt.Errorf("generating pairing salt: %w", err)
 	}
 	rec := &record{
-		roomID:    roomID,
-		codeHash:  s.hashCode(salt, code),
-		codeSalt:  salt,
-		hostToken: input.HostToken,
-		subject:   input.Claims.Subject,
-		expiresAt: s.now().Add(s.codeTTL),
+		roomID:     roomID,
+		codeHash:   s.hashCode(salt, code),
+		codeSalt:   salt,
+		hostPubkey: hostPubkey,
+		expiresAt:  s.now().Add(s.codeTTL),
 	}
 
 	s.mu.Lock()
@@ -144,6 +139,14 @@ func (s *Store) FindPending(_ context.Context, code string) (Record, error) {
 
 func (s *Store) Claim(_ context.Context, input ClaimInput) (Record, error) {
 	normalized := normalizeCode(input.Code)
+	roomID := strings.TrimSpace(input.RoomID)
+	controllerPubkey := strings.TrimSpace(input.ControllerPubkey)
+	if roomID == "" {
+		return Record{}, ErrRoomRequired
+	}
+	if controllerPubkey == "" {
+		return Record{}, errors.New("pairing: controller pubkey is required")
+	}
 	now := s.now()
 
 	s.mu.Lock()
@@ -153,6 +156,9 @@ func (s *Store) Claim(_ context.Context, input ClaimInput) (Record, error) {
 		if !s.matches(rec, normalized) {
 			continue
 		}
+		if rec.roomID != roomID {
+			return Record{}, ErrNotFound
+		}
 		if !now.Before(rec.expiresAt) {
 			return Record{}, ErrExpired
 		}
@@ -160,7 +166,7 @@ func (s *Store) Claim(_ context.Context, input ClaimInput) (Record, error) {
 			return Record{}, ErrAlreadyClaimed
 		}
 		rec.claimedAt = now
-		rec.controllerToken = input.ControllerToken
+		rec.controllerPubkey = controllerPubkey
 		return rec.toRecord(""), nil
 	}
 	return Record{}, ErrNotFound
@@ -190,13 +196,12 @@ func (s *Store) matches(rec *record, normalizedCode string) bool {
 
 func (r *record) toRecord(code string) Record {
 	return Record{
-		RoomID:          r.roomID,
-		PairingCode:     code,
-		HostToken:       r.hostToken,
-		ControllerToken: r.controllerToken,
-		Subject:         r.subject,
-		ExpiresAt:       r.expiresAt,
-		ClaimedAt:       r.claimedAt,
+		RoomID:           r.roomID,
+		PairingCode:      code,
+		HostPubkey:       r.hostPubkey,
+		ControllerPubkey: r.controllerPubkey,
+		ExpiresAt:        r.expiresAt,
+		ClaimedAt:        r.claimedAt,
 	}
 }
 

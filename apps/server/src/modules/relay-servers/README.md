@@ -6,14 +6,12 @@ Relay server rows are Cradle application data stored in `relay_servers`. A row n
 whether it is enabled, and whether it is the default relay used by remote host pairing when
 the request does not specify a relay server id.
 
-Only this module writes the relay server registry and owns relay token signing secret resolution.
-Other modules may read it to resolve relay URLs or mint relay tokens, but they should not duplicate
-default-selection, lifecycle, or HMAC secret semantics.
+Only this module writes the relay server registry. Other modules may read it to resolve relay URLs,
+but they should not duplicate default-selection or managed relayd lifecycle semantics.
 
-The `relay-transport` module is the main consumer: host enrollment and
-controller claim flows ask this module to mint `pairing_start`, `pairing_claim`,
-`room_start`, and WebSocket tokens. The token HMAC secret must match the relayd
-process that both Cradle Servers use.
+relayd admission does not use a shared secret. Hosts and controllers present Ed25519-signed
+relay assertions to relayd; relayd verifies the signature, assertion freshness, and nonce replay,
+then authorizes the request against in-memory room public-key state.
 
 ## Built-in Local Relayd
 
@@ -39,19 +37,14 @@ override this for development/deployment:
 - `CRADLE_RELAYD_LISTEN` sets the child relayd listen address directly.
 - `CRADLE_RELAYD_PUBLIC_URL` sets the relay URL advertised into the `system:local-relayd` row.
 
-The supervisor injects Cradle Server's resolved relay HMAC secret into the relayd child process via
-`CRADLE_RELAYD_DEV_HMAC_SECRET`, so the managed relay always validates the tokens minted by the same
-server process.
+The supervisor does not inject credentials into the child process. A self-hosted relayd also does
+not require a configured shared secret; optional relayd configuration is limited to listener,
+timeouts, queue limits, metrics, and pairing rate limits.
 
-The built-in HMAC secret fallback is non-production only. Production deployments must set
-`CRADLE_RELAY_HMAC_SECRET` on Cradle Server and `CRADLE_RELAYD_DEV_HMAC_SECRET` (or
-`CRADLE_RELAY_HMAC_SECRET`) for relayd.
-
-relayd supports `POST /rooms/host-session` so a host connector can
-idempotently recreate or renew its room after relayd restarts or an idle room
-expires. Active rooms are renewed while peers remain connected, so a long-lived
-relay transport tunnel is not disconnected just because the original room TTL
-passes.
+relayd supports `POST /rooms/host-session` so a host connector can idempotently recreate or renew
+its room after relayd restarts or an idle room expires. The host signs that request with its
+persisted Ed25519 signing key and includes the controller signing public key learned during pairing,
+allowing relayd to restore controller WebSocket authorization without persistent relayd storage.
 
 ## Routes
 

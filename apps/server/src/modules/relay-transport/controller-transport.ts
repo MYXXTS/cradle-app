@@ -5,6 +5,7 @@ import WebSocket from 'ws'
 import { AppError } from '../../errors/app-error'
 import { allocateLocalPort } from '../remote-hosts/cradle-server-tunnel'
 import type { RemoteCradleServerTunnelHandle } from '../remote-hosts/cradle-server-tunnel'
+import { relayAssertionHeaders, type SignedRelayAssertion } from '../relay-servers/relay-signature-service'
 import { generateRelayKeyPair, publicKeyFromPrivate } from './crypto'
 import { relayEnvelopeSchema, type RelayEnvelope } from './protocol'
 import { RelaySession } from './session'
@@ -28,8 +29,8 @@ export interface RelayControllerTransportOptions {
   hostId: string
   relayUrl: string
   roomId: string
-  /** Bearer token for relayd /ws/controller (minted via mintRelayToken). */
-  wsToken: string
+  /** Signed assertion for relayd /ws/controller. */
+  wsAssertion: SignedRelayAssertion
   /** Controller private key (base64). If omitted, a fresh keypair is generated. */
   controllerPrivateKeyBase64?: string
   controllerPublicKeyBase64?: string
@@ -145,7 +146,7 @@ class ControllerTransport {
 
       let ws: WebSocket
       try {
-        ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${this.options.wsToken}` } })
+        ws = new WebSocket(wsUrl, { headers: relayAssertionHeaders(this.options.wsAssertion) })
       }
       catch (error) {
         finish(error instanceof Error ? error : new Error(String(error)))
@@ -162,6 +163,7 @@ class ControllerTransport {
           ...(this.options.pairingCode ? { pairingCode: this.options.pairingCode } : {}),
           ...(this.options.pinnedHostPubkey ? { pinnedPeerPubkey: this.options.pinnedHostPubkey } : {}),
           ...(this.options.controllerName ? { ourName: this.options.controllerName } : {}),
+          ourSigningPubkey: this.options.wsAssertion.assertion.pubkey,
         },
         {
           send: (data) => {

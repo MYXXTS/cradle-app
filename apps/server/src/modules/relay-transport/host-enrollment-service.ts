@@ -6,7 +6,12 @@ import { asc, eq } from 'drizzle-orm'
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
 import { upsertSecret } from '../secrets/service'
-import { createRelayRoomId, mintRelayToken } from '../relay-servers/relay-token-service'
+import {
+  createRelayRoomId,
+  generateRelaySigningKeyPair,
+  signRelayAssertion,
+  type SignedRelayAssertion,
+} from '../relay-servers/relay-signature-service'
 import { generateRelayKeyPair, relayPublicKeyFingerprint } from './crypto'
 import { getHostConnectorService, type HostEnrollmentLiveState } from './host-connector'
 
@@ -17,8 +22,8 @@ import { getHostConnectorService, type HostEnrollmentLiveState } from './host-co
  * a pairing code + room via `POST /pairing/start`, persisting the enrollment
  * (with the private key in the secrets store), and starting the always-on
  * host-connector for it. The returned pairing string
- * `<pairingCode>#<hostKeyFingerprint>` is shown to the user and typed into a
- * controller to claim.
+ * `<pairingCode>:<roomId>#<hostKeyFingerprint>` is shown to the user and typed
+ * into a controller to claim.
  */
 
 export interface CreateHostEnrollmentInput {
@@ -45,12 +50,13 @@ export interface HostEnrollmentView {
 }
 
 export interface CreatedHostEnrollment extends HostEnrollmentView {
-  /** `<pairingCode>#<hostKeyFingerprint>` — show to the user, input on a controller. */
+  /** `<pairingCode>:<roomId>#<hostKeyFingerprint>` — show to the user, input on a controller. */
   pairingString: string
   pairingCodeExpiresAt: string | null
 }
 
 const RELAY_HOST_KEY_SECRET_KIND = 'system-relay-host-key'
+const RELAY_HOST_SIGNING_KEY_SECRET_KIND = 'system-relay-host-signing-key'
 
 export function listHostEnrollments(): HostEnrollmentView[] {
   return db()
@@ -82,39 +88,34 @@ export async function createHostEnrollment(input: CreateHostEnrollmentInput): Pr
 
   const id = input.id ?? randomUUID()
   const keypair = generateRelayKeyPair()
+  const signingKeypair = generateRelaySigningKeyPair()
   const roomId = createRelayRoomId()
   const fingerprint = relayPublicKeyFingerprint(keypair.publicKeyBase64)
 
-  // Mint the tokens the host needs: a pairing_start token (to call
-  // POST /pairing/start) and a host ws token (validated by relayd during
-  // pairing start, then reused for the actual /ws/host connection).
-  const pairingStart = mintRelayToken({
-    subject: `host:${id}`,
-    purpose: 'pairing_start',
-    roomId,
-    ttlMs: 5 * 60 * 1000,
-  })
-  const hostWs = mintRelayToken({
-    subject: `host:${id}`,
+  const pairingStart = signRelayAssertion(signingKeypair.privateKeyBase64, {
     role: 'host',
-    purpose: 'ws',
+    purpose: 'create_room',
     roomId,
-    ttlMs: 5 * 60 * 1000,
   })
 
   const startResponse = await callPairingStart(relayUrl, {
-    pairingStartToken: pairingStart.token,
-    hostToken: hostWs.token,
-    roomId,
+    assertion: pairingStart,
   })
 
   // Persist the private key as a managed secret.
   const secretId = `relay-host-key:${id}`
+  const signingSecretId = `relay-host-sign-key:${id}`
   upsertSecret({
     id: secretId,
     kind: RELAY_HOST_KEY_SECRET_KIND,
     label: `Relay host key (${input.displayName.trim()})`,
     secret: keypair.privateKeyBase64,
+  })
+  upsertSecret({
+    id: signingSecretId,
+    kind: RELAY_HOST_SIGNING_KEY_SECRET_KIND,
+    label: `Relay host signing key (${input.displayName.trim()})`,
+    secret: signingKeypair.privateKeyBase64,
   })
 
   const now = Math.floor(Date.now() / 1000)
@@ -142,7 +143,7 @@ export async function createHostEnrollment(input: CreateHostEnrollmentInput): Pr
   const view = readHostEnrollment(id)
   return {
     ...view,
-    pairingString: `${startResponse.pairingCode}#${fingerprint}`,
+    pairingString: `${startResponse.pairingCode}:${roomId}#${fingerprint}`,
     pairingCodeExpiresAt: startResponse.expiresAt,
   }
 }
@@ -174,7 +175,7 @@ export function readHostEnrollmentPairingString(id: string): { pairingString: st
   }
   const fingerprint = relayPublicKeyFingerprint(row.hostPubkey)
   return {
-    pairingString: `${row.pairingCode}#${fingerprint}`,
+    pairingString: `${row.pairingCode}:${row.roomId}#${fingerprint}`,
     pairingCode: row.pairingCode,
     hostKeyFingerprint: fingerprint,
   }
@@ -183,21 +184,19 @@ export function readHostEnrollmentPairingString(id: string): { pairingString: st
 interface PairingStartResponse {
   roomId: string
   pairingCode: string
-  hostToken?: string
   expiresAt: string
 }
 
-async function callPairingStart(relayUrl: string, body: { pairingStartToken: string, hostToken: string, roomId: string }): Promise<PairingStartResponse> {
+async function callPairingStart(relayUrl: string, body: { assertion: SignedRelayAssertion }): Promise<PairingStartResponse> {
   const url = new URL('/pairing/start', `${relayUrl.replace(/\/+$/, '')}/`)
   let response: Response
   try {
     response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${body.pairingStartToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ hostToken: body.hostToken, roomId: body.roomId }),
+      body: JSON.stringify({ assertion: body.assertion }),
       signal: AbortSignal.timeout(10_000),
     })
   }

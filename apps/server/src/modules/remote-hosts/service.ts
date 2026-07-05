@@ -9,7 +9,11 @@ import { z } from 'zod'
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
 import { upsertSecret, readSecret } from '../secrets/service'
-import { mintRelayToken } from '../relay-servers/relay-token-service'
+import {
+  generateRelaySigningKeyPair,
+  signRelayAssertion,
+  type SignedRelayAssertion,
+} from '../relay-servers/relay-signature-service'
 import { resolveRelayUrl as resolveRelayServerUrl } from '../relay-servers/service'
 import { generateRelayKeyPair, publicKeyFromPrivate, relayPublicKeyFingerprint } from '../relay-transport/crypto'
 import {
@@ -530,6 +534,7 @@ async function startSshCradleTunnel(
 // ── Relay transport ──
 
 const RELAY_CONTROLLER_KEY_SECRET_KIND = 'system-relay-controller-key'
+const RELAY_CONTROLLER_SIGNING_KEY_SECRET_KIND = 'system-relay-controller-signing-key'
 
 /**
  * Claim a relay pairing: input the pairing string shown by the host, perform
@@ -553,22 +558,9 @@ export async function claimRemoteHostRelay(
     })
   }
   const relayUrl = resolveRelayUrl(connectionConfig.relay)
-  const { pairingCode, hostKeyFingerprint } = parsePairingString(pairingString)
+  const { pairingCode, roomId, hostKeyFingerprint } = parsePairingString(pairingString)
 
-  // Step 1: look up the roomId for this pairing code (no controller token yet).
-  const claimToken = mintRelayToken({
-    subject: `controller:${hostId}`,
-    purpose: 'pairing_claim',
-    ttlMs: 5 * 60 * 1000,
-  })
-  const lookup = await callPairingClaim(relayUrl, {
-    pairingClaimToken: claimToken.token,
-    pairingCode,
-    controllerToken: '',
-  })
-  const roomId = lookup.roomId
-
-  // Controller keypair: reuse if we already have one, else generate + persist.
+  // Controller encryption keypair: reuse if we already have one, else generate + persist.
   const existingKeyRef = connectionConfig.relay.controllerKeyRef
   let controllerPrivateKeyBase64: string
   let controllerPublicKeyBase64: string
@@ -591,26 +583,31 @@ export async function claimRemoteHostRelay(
     controllerPublicKeyBase64 = keypair.publicKeyBase64
   }
 
-  // Step 2: mint a controller ws token (now we know the roomId) and claim.
-  const controllerWs = mintRelayToken({
-    subject: `controller:${hostId}`,
+  const controllerSigningPrivateKey = readOrCreateControllerSigningPrivateKey(hostId, host.displayName)
+
+  // Step 1: claim the pairing code with the controller signing identity.
+  const claimAssertion = signRelayAssertion(controllerSigningPrivateKey, {
+    role: 'controller',
+    purpose: 'claim',
+    roomId,
+    pairingCode,
+  })
+  await callPairingClaim(relayUrl, {
+    assertion: claimAssertion,
+  })
+
+  const controllerWsAssertion = signRelayAssertion(controllerSigningPrivateKey, {
     role: 'controller',
     purpose: 'ws',
     roomId,
-    ttlMs: 5 * 60 * 1000,
-  })
-  await callPairingClaim(relayUrl, {
-    pairingClaimToken: claimToken.token,
-    pairingCode,
-    controllerToken: controllerWs.token,
   })
 
-  // Step 3: run the first handshake to learn + verify the host pubkey.
+  // Step 2: run the first handshake to learn + verify the host pubkey.
   const handle = await startRelayControllerTransport({
     hostId,
     relayUrl,
     roomId,
-    wsToken: controllerWs.token,
+    wsAssertion: controllerWsAssertion,
     controllerPrivateKeyBase64,
     controllerPublicKeyBase64,
     pairingCode,
@@ -637,7 +634,7 @@ export async function claimRemoteHostRelay(
     })
   }
 
-  // Step 4: pin the host pubkey, roomId, and controller key reference.
+  // Step 3: pin the host pubkey, roomId, and controller key reference.
   const pinnedConfig: RemoteHostRelayConfig = {
     ...connectionConfig.relay,
     relayUrl,
@@ -688,18 +685,17 @@ async function startRelayControllerTunnel(
   }
   const controllerPrivateKey = readSecret(relay.controllerKeyRef)
   const controllerPublicKey = publicKeyFromPrivate(controllerPrivateKey)
-  const wsToken = mintRelayToken({
-    subject: `controller:${host.id}`,
+  const controllerSigningPrivateKey = readControllerSigningPrivateKey(host.id)
+  const wsAssertion = signRelayAssertion(controllerSigningPrivateKey, {
     role: 'controller',
     purpose: 'ws',
     roomId: relay.roomId,
-    ttlMs: 60 * 1000,
   })
   return await startRelayControllerTransport({
     hostId: host.id,
     relayUrl,
     roomId: relay.roomId,
-    wsToken: wsToken.token,
+    wsAssertion,
     controllerPrivateKeyBase64: controllerPrivateKey,
     controllerPublicKeyBase64: controllerPublicKey,
     pinnedHostPubkey: relay.pinnedHostPubkey,
@@ -722,31 +718,78 @@ function resolveRelayUrl(relay: RemoteHostRelayConfig): string {
   })
 }
 
-function parsePairingString(pairingString: string): { pairingCode: string, hostKeyFingerprint: string } {
+function parsePairingString(pairingString: string): { pairingCode: string, roomId: string, hostKeyFingerprint: string } {
   const trimmed = pairingString.trim()
   const hashIndex = trimmed.lastIndexOf('#')
   if (hashIndex <= 0 || hashIndex >= trimmed.length - 1) {
     throw new AppError({
       code: 'relay_pairing_string_invalid',
       status: 400,
-      message: 'Pairing string must be `<pairingCode>#<hostKeyFingerprint>`.',
+      message: 'Pairing string must be `<pairingCode>:<roomId>#<hostKeyFingerprint>`.',
+    })
+  }
+  const prefix = trimmed.slice(0, hashIndex)
+  const separatorIndex = prefix.lastIndexOf(':')
+  if (separatorIndex <= 0 || separatorIndex >= prefix.length - 1) {
+    throw new AppError({
+      code: 'relay_pairing_string_invalid',
+      status: 400,
+      message: 'Pairing string must be `<pairingCode>:<roomId>#<hostKeyFingerprint>`.',
     })
   }
   return {
-    pairingCode: trimmed.slice(0, hashIndex),
+    pairingCode: prefix.slice(0, separatorIndex),
+    roomId: prefix.slice(separatorIndex + 1),
     hostKeyFingerprint: trimmed.slice(hashIndex + 1),
   }
 }
 
+function readOrCreateControllerSigningPrivateKey(hostId: string, displayName: string): string {
+  const secretId = controllerSigningSecretId(hostId)
+  try {
+    return readSecret(secretId)
+  }
+  catch (error) {
+    if (!(error instanceof AppError) || error.code !== 'secret_not_found') {
+      throw error
+    }
+  }
+  const keypair = generateRelaySigningKeyPair()
+  upsertSecret({
+    id: secretId,
+    kind: RELAY_CONTROLLER_SIGNING_KEY_SECRET_KIND,
+    label: `Relay controller signing key (${displayName})`,
+    secret: keypair.privateKeyBase64,
+  })
+  return keypair.privateKeyBase64
+}
+
+function readControllerSigningPrivateKey(hostId: string): string {
+  try {
+    return readSecret(controllerSigningSecretId(hostId))
+  }
+  catch (error) {
+    throw new AppError({
+      code: 'remote_cradle_server_relay_signing_key_missing',
+      status: 409,
+      message: 'Relay controller is missing its signing key. Re-create the pairing.',
+      details: { hostId, cause: error instanceof Error ? error.message : String(error) },
+    })
+  }
+}
+
+function controllerSigningSecretId(hostId: string): string {
+  return `relay-controller-sign-key:${hostId}`
+}
+
 interface PairingClaimResponse {
   roomId: string
-  controllerToken?: string
   expiresAt: string
 }
 
 async function callPairingClaim(
   relayUrl: string,
-  body: { pairingClaimToken: string, pairingCode: string, controllerToken: string },
+  body: { assertion: SignedRelayAssertion },
 ): Promise<PairingClaimResponse> {
   const url = new URL('/pairing/claim', `${relayUrl.replace(/\/+$/, '')}/`)
   let response: Response
@@ -754,10 +797,9 @@ async function callPairingClaim(
     response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${body.pairingClaimToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ pairingCode: body.pairingCode, controllerToken: body.controllerToken }),
+      body: JSON.stringify({ assertion: body.assertion }),
       signal: AbortSignal.timeout(10_000),
     })
   }

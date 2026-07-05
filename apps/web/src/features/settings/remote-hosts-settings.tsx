@@ -15,7 +15,7 @@ import {
   ServerLine as ServerIcon,
 } from '@mingcute/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -410,7 +410,6 @@ function SetupGuide({ onAdd }: { onAdd?: () => void }) {
           <p className="text-[12px] leading-relaxed text-muted-foreground/80">
             {t('remoteHosts.guide.step1.detail')}
           </p>
-          <CopyCodeButton command="cradle server --host 127.0.0.1 --port 21423" />
         </GuideStep>
         <GuideStep index={2} title={t('remoteHosts.guide.step2.title')}>
           <p className="text-[12px] leading-relaxed text-muted-foreground/80">
@@ -426,6 +425,9 @@ function SetupGuide({ onAdd }: { onAdd?: () => void }) {
         <GuideStep index={3} isLast title={t('remoteHosts.guide.step3.title')}>
           <p className="text-[12px] leading-relaxed text-muted-foreground/80">
             {t('remoteHosts.guide.step3.detail')}
+          </p>
+          <p className="text-[11.5px] leading-relaxed text-muted-foreground/70">
+            {t('remoteHosts.guide.relayNote')}
           </p>
         </GuideStep>
       </ol>
@@ -451,6 +453,10 @@ function RemoteHostsEmptyState({ onAdd }: { onAdd: () => void }) {
       <div className="w-full max-w-md text-left">
         <SetupGuide onAdd={onAdd} />
       </div>
+      <Button size="sm" onClick={onAdd}>
+        <PlusIcon className="size-3.5" aria-hidden="true" />
+        {t('remoteHosts.action.addHost')}
+      </Button>
     </div>
   )
 }
@@ -1183,16 +1189,440 @@ function HostFormDialog({ open, onOpenChange, host }: { open: boolean, onOpenCha
   )
 }
 
-function RelayClaimDialog({ host, open, onOpenChange }: { host: Host, open: boolean, onOpenChange: (open: boolean) => void }) {
+function PairComputerWizard({ open, onOpenChange, onReveal }: { open: boolean, onOpenChange: (open: boolean) => void, onReveal?: (hostId: string) => void }) {
+  const { t } = useTranslation('settings')
+  const queryClient = useQueryClient()
+  const [values, setValues] = useState<HostFormValues>(() => ({ ...initialHostFormValues(), transport: 'relay' }))
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [pairingString, setPairingString] = useState('')
+  const [step, setStep] = useState<'config' | 'success'>('config')
+  const [connectState, setConnectState] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle')
+  const [createdHostId, setCreatedHostId] = useState<string | null>(null)
+  const [createdName, setCreatedName] = useState('')
+  const { data: relayServers = [] } = useQuery(getRelayServersOptions())
+  const managedLocalRelayName = t('remoteHosts.relayServers.managedLocalName')
+  const enabledRelayServers: RelayServer[] = relayServers.filter(server => server.enabled)
+  const defaultRelayServer = enabledRelayServers.find(server => server.isDefault) ?? enabledRelayServers[0]
+
+  useEffect(() => {
+    if (open) {
+      setValues({ ...initialHostFormValues(), transport: 'relay' })
+      setAdvancedOpen(false)
+      setPairingString('')
+      setStep('config')
+      setConnectState('idle')
+      setCreatedHostId(null)
+      setCreatedName('')
+    }
+  }, [open])
+
+  const set = (patch: Partial<HostFormValues>) => setValues(prev => ({ ...prev, ...patch }))
+
+  // Default relay transport to the built-in / default relay server.
+  useEffect(() => {
+    if (values.transport === 'relay' && !values.relayServerId && !values.relayUrl.trim() && defaultRelayServer) {
+      set({ relayServerId: defaultRelayServer.id })
+    }
+  }, [values.transport, values.relayServerId, values.relayUrl, defaultRelayServer])
+
+  const relayUrl = values.relayServerId
+    ? enabledRelayServers.find(server => server.id === values.relayServerId)?.relayUrl ?? ''
+    : values.relayUrl.trim()
+  const enrollmentCommand = values.transport === 'relay' && relayUrl
+    ? `cradle relay-transport host-enrollment create --displayName "${values.displayName || 'Cradle host'}" --relayUrl "${relayUrl}"`
+    : null
+
+  const valid = values.displayName.trim().length > 0
+    && (values.transport === 'direct-url'
+      ? values.baseUrl.trim().length > 0
+      : values.transport === 'relay'
+        ? (values.relayServerId.trim().length > 0 || values.relayUrl.trim().length > 0) && pairingString.trim().length > 0
+        : values.sshHostName.trim().length > 0
+          && values.remoteServerHost.trim().length > 0
+          && values.remoteServerPort.trim().length > 0
+          && (values.auth === 'default' || values.identityFilePath.trim().length > 0))
+
+  const connect = useMutation({
+    mutationFn: async (hostId: string) => {
+      const { error } = await postRemoteHostsByHostIdCradleServerConnect({ path: { hostId } })
+      if (error) {
+        throw error
+      }
+    },
+    onSuccess: () => {
+      setConnectState('connected')
+      void queryClient.invalidateQueries({ queryKey: getRemoteHostsQueryKey() })
+    },
+    onError: () => setConnectState('failed'),
+  })
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const body = buildHostSaveBody(values)
+      const { data, error } = await postRemoteHosts({ body })
+      if (error) {
+        throw error
+      }
+      if (!data) {
+        throw new Error('No host returned')
+      }
+      const host = data
+      if (values.transport === 'relay') {
+        const { error: claimError } = await postRemoteHostsByHostIdRelayClaim({
+          path: { hostId: host.id },
+          body: { pairingString: pairingString.trim() },
+        })
+        if (claimError) {
+          throw claimError
+        }
+        return { host, isRelay: true }
+      }
+      return { host, isRelay: false }
+    },
+    onSuccess: ({ host, isRelay }) => {
+      if (isRelay) {
+        setCreatedHostId(host.id)
+        setCreatedName(host.displayName)
+        setStep('success')
+        setConnectState('connecting')
+        void queryClient.invalidateQueries({ queryKey: getRemoteHostsQueryKey() })
+        connect.mutate(host.id)
+        return
+      }
+      toastManager.add({ type: 'success', title: t('remoteHosts.toast.created') })
+      void queryClient.invalidateQueries({ queryKey: getRemoteHostsQueryKey() })
+      onOpenChange(false)
+    },
+    onError: error => toastManager.add({
+      type: 'error',
+      title: t('remoteHosts.toast.saveFailed'),
+      description: describeError(error),
+    }),
+  })
+
+  const submitLabel = values.transport === 'relay'
+    ? t('remoteHosts.action.completePairing')
+    : t('remoteHosts.action.add')
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        {step === 'success'
+          ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{t('remoteHosts.wizard.success.title')}</DialogTitle>
+                  <DialogDescription>
+                    {t('remoteHosts.wizard.success.body', { name: createdName })}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+                  {connectState === 'connecting' && <Spinner className="size-3.5" />}
+                  {connectState === 'connecting' && t('remoteHosts.wizard.success.connecting')}
+                  {connectState === 'connected' && (
+                    <span className="text-emerald-600 dark:text-emerald-400">{t('remoteHosts.wizard.success.connected')}</span>
+                  )}
+                  {connectState === 'failed' && (
+                    <span className="text-destructive">{t('remoteHosts.wizard.success.connectFailed')}</span>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="h-7 text-xs">
+                    {t('remoteHosts.action.done')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={connectState !== 'connected' || !createdHostId}
+                    onClick={() => {
+                      if (createdHostId) {
+                        onReveal?.(createdHostId)
+                      }
+                      onOpenChange(false)
+                    }}
+                    className="h-7 text-xs"
+                  >
+                    {t('remoteHosts.action.openWorkspaces')}
+                  </Button>
+                </DialogFooter>
+              </>
+            )
+          : (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{t('remoteHosts.wizard.title')}</DialogTitle>
+                  <DialogDescription>{t('remoteHosts.wizard.description')}</DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 py-1">
+                  <div className="space-y-2">
+                    <Label className="text-xs">{t('remoteHosts.form.transport')}</Label>
+                    <ToggleGroup
+                      type="single"
+                      value={values.transport}
+                      onValueChange={(next) => {
+                        if (next) {
+                          set({ transport: next as HostTransport })
+                        }
+                      }}
+                      className="w-full"
+                    >
+                      <ToggleGroupItem value="relay" size="sm" className="flex-1 text-xs">
+                        {t('remoteHosts.wizard.pathRelay')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="direct-url" size="sm" className="flex-1 text-xs">
+                        {t('remoteHosts.wizard.pathDirectUrl')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="ssh" size="sm" className="flex-1 text-xs">
+                        {t('remoteHosts.wizard.pathSsh')}
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                    <p className="text-[11px] text-muted-foreground">
+                      {values.transport === 'relay'
+                        ? t('remoteHosts.wizard.pathRelayHint')
+                        : values.transport === 'direct-url'
+                          ? t('remoteHosts.wizard.pathDirectUrlHint')
+                          : t('remoteHosts.wizard.pathSshHint')}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="rh-wizard-name" className="text-xs">{t('remoteHosts.wizard.computerName')}</Label>
+                    <Input
+                      id="rh-wizard-name"
+                      value={values.displayName}
+                      onChange={e => set({ displayName: e.target.value })}
+                      placeholder={t('remoteHosts.wizard.computerNamePlaceholder')}
+                      className="h-8 text-xs"
+                      autoFocus
+                    />
+                  </div>
+
+                  {values.transport === 'direct-url'
+                    ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="rh-base-url" className="text-xs">{t('remoteHosts.form.baseUrl')}</Label>
+                          <Input
+                            id="rh-base-url"
+                            value={values.baseUrl}
+                            onChange={e => set({ baseUrl: e.target.value })}
+                            placeholder={t('remoteHosts.form.baseUrlPlaceholder')}
+                            className="h-8 font-mono text-xs"
+                          />
+                          <p className="text-[11px] text-muted-foreground">{t('remoteHosts.form.baseUrlHint')}</p>
+                        </div>
+                      )
+                    : values.transport === 'relay'
+                      ? (
+                          <div className="space-y-3">
+                            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+                              <CollapsibleTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                                >
+                                  <ChevronIcon className={cn('size-3.5 transition-transform', advancedOpen ? 'rotate-0' : '-rotate-90')} aria-hidden="true" />
+                                  {t('remoteHosts.form.advanced')}
+                                </button>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="space-y-2 pt-3">
+                                <Label className="text-xs">{t('remoteHosts.relay.dialog.relayServer')}</Label>
+                                <Select
+                                  value={values.relayServerId || CUSTOM_RELAY_SERVER_VALUE}
+                                  onValueChange={(next) => {
+                                    if (next === CUSTOM_RELAY_SERVER_VALUE) {
+                                      set({ relayServerId: '' })
+                                      return
+                                    }
+                                    set({ relayServerId: next, relayUrl: '' })
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 w-full text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {enabledRelayServers.map(server => (
+                                      <SelectItem key={server.id} value={server.id}>
+                                        {relayServerDisplayName(server, managedLocalRelayName)}
+                                        {server.isDefault ? ` · ${t('remoteHosts.relayServers.badge.default')}` : ''}
+                                      </SelectItem>
+                                    ))}
+                                    <SelectItem value={CUSTOM_RELAY_SERVER_VALUE}>{t('remoteHosts.relay.dialog.relayUrl')}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {!values.relayServerId && (
+                                  <Input
+                                    value={values.relayUrl}
+                                    onChange={e => set({ relayUrl: e.target.value })}
+                                    placeholder={t('remoteHosts.relay.dialog.relayUrlPlaceholder')}
+                                    className="h-8 font-mono text-xs"
+                                  />
+                                )}
+                              </CollapsibleContent>
+                            </Collapsible>
+
+                            {enrollmentCommand
+                              ? (
+                                  <ol className="space-y-0">
+                                    <GuideStep index={1} title={t('remoteHosts.wizard.enrollmentCommandTitle')}>
+                                      <p className="text-[12px] leading-relaxed text-muted-foreground/80">
+                                        {t('remoteHosts.wizard.enrollmentCommandHint')}
+                                      </p>
+                                      <CopyCodeButton command={enrollmentCommand} />
+                                    </GuideStep>
+                                    <GuideStep index={2} isLast title={t('remoteHosts.relay.dialog.pairingStepTitle')}>
+                                      <p className="text-[12px] leading-relaxed text-muted-foreground/80">
+                                        {t('remoteHosts.relay.dialog.pairingCodeHint')}
+                                      </p>
+                                      <Input
+                                        value={pairingString}
+                                        onChange={event => setPairingString(event.target.value)}
+                                        placeholder={t('remoteHosts.relay.dialog.pairingCodePlaceholder')}
+                                        className="h-8 font-mono text-xs"
+                                      />
+                                    </GuideStep>
+                                  </ol>
+                                )
+                              : (
+                                  <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+                                    {t('remoteHosts.relay.dialog.noRelayUrl')}
+                                  </p>
+                                )}
+                          </div>
+                        )
+                      : (
+                          <>
+                            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
+                              <div className="space-y-2">
+                                <Label htmlFor="rh-ssh-host" className="text-xs">{t('remoteHosts.form.remoteAddress')}</Label>
+                                <Input
+                                  id="rh-ssh-host"
+                                  value={values.sshHostName}
+                                  onChange={e => set({ sshHostName: e.target.value })}
+                                  placeholder={t('remoteHosts.form.remoteAddressPlaceholder')}
+                                  className="h-8 font-mono text-xs"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="rh-ssh-port" className="text-xs">{t('remoteHosts.form.sshPort')}</Label>
+                                <Input
+                                  id="rh-ssh-port"
+                                  value={values.sshPort}
+                                  onChange={e => set({ sshPort: e.target.value })}
+                                  placeholder="22"
+                                  className="h-8 font-mono text-xs"
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="rh-username" className="text-xs">{t('remoteHosts.form.username')}</Label>
+                              <Input
+                                id="rh-username"
+                                value={values.sshUser}
+                                onChange={e => set({ sshUser: e.target.value })}
+                                placeholder={t('remoteHosts.form.usernamePlaceholder')}
+                                className="h-8 font-mono text-xs"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs">{t('remoteHosts.form.auth')}</Label>
+                              <Select value={values.auth} onValueChange={next => set({ auth: next as HostFormValues['auth'] })}>
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="default">{t('remoteHosts.form.authDefault')}</SelectItem>
+                                  <SelectItem value="identityFile">{t('remoteHosts.form.authIdentityFile')}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {values.auth === 'identityFile' && (
+                              <div className="space-y-2">
+                                <Label htmlFor="rh-identity-file" className="text-xs">{t('remoteHosts.form.identityFile')}</Label>
+                                <Input
+                                  id="rh-identity-file"
+                                  value={values.identityFilePath}
+                                  onChange={e => set({ identityFilePath: e.target.value })}
+                                  placeholder={t('remoteHosts.form.identityFilePlaceholder')}
+                                  className="h-8 font-mono text-xs"
+                                />
+                              </div>
+                            )}
+                            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem]">
+                              <div className="space-y-2">
+                                <Label htmlFor="rh-cradle-host" className="text-xs">{t('remoteHosts.form.remoteServerHost')}</Label>
+                                <Input
+                                  id="rh-cradle-host"
+                                  value={values.remoteServerHost}
+                                  onChange={e => set({ remoteServerHost: e.target.value })}
+                                  placeholder={DEFAULT_REMOTE_CRADLE_HOST}
+                                  className="h-8 font-mono text-xs"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="rh-cradle-port" className="text-xs">{t('remoteHosts.form.remoteServerPort')}</Label>
+                                <Input
+                                  id="rh-cradle-port"
+                                  value={values.remoteServerPort}
+                                  onChange={e => set({ remoteServerPort: e.target.value })}
+                                  placeholder={DEFAULT_REMOTE_CRADLE_PORT}
+                                  className="h-8 font-mono text-xs"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                </div>
+
+                <DialogFooter>
+                  <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="h-7 text-xs">
+                    {t('remoteHosts.action.cancel')}
+                  </Button>
+                  <Button size="sm" disabled={!valid || submit.isPending} onClick={() => submit.mutate()} className="h-7 text-xs">
+                    {submit.isPending && <Spinner className="size-3.5" />}
+                    {submitLabel}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RelayClaimDialog({ host, open, onOpenChange, onOpenWorkspaces }: { host: Host, open: boolean, onOpenChange: (open: boolean) => void, onOpenWorkspaces?: () => void }) {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const [pairingString, setPairingString] = useState('')
+  const [step, setStep] = useState<'pair' | 'success'>('pair')
+  const [connectState, setConnectState] = useState<'idle' | 'connecting' | 'connected' | 'failed'>('idle')
   const { data: relayServers = [] } = useQuery(getRelayServersOptions())
 
   const relayUrl = resolveHostRelayUrl(host, relayServers)
   const enrollmentCommand = relayUrl
     ? `cradle relay-transport host-enrollment create --displayName "${host.displayName}" --relayUrl "${relayUrl}"`
     : null
+
+  useEffect(() => {
+    if (open) {
+      setPairingString('')
+      setStep('pair')
+      setConnectState('idle')
+    }
+  }, [open])
+
+  const connect = useMutation({
+    mutationFn: async () => {
+      const { error } = await postRemoteHostsByHostIdCradleServerConnect({ path: { hostId: host.id } })
+      if (error) {
+        throw error
+      }
+    },
+    onSuccess: () => {
+      setConnectState('connected')
+      void queryClient.invalidateQueries({ queryKey: getRemoteHostsQueryKey() })
+    },
+    onError: () => setConnectState('failed'),
+  })
 
   const claim = useMutation({
     mutationFn: async () => {
@@ -1207,7 +1637,9 @@ function RelayClaimDialog({ host, open, onOpenChange }: { host: Host, open: bool
     onSuccess: () => {
       toastManager.add({ type: 'success', title: t('remoteHosts.relay.toast.pairingComplete') })
       void queryClient.invalidateQueries({ queryKey: getRemoteHostsQueryKey() })
-      onOpenChange(false)
+      setStep('success')
+      setConnectState('connecting')
+      connect.mutate()
     },
     onError: error => toastManager.add({
       type: 'error',
@@ -1219,68 +1651,124 @@ function RelayClaimDialog({ host, open, onOpenChange }: { host: Host, open: bool
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('remoteHosts.relay.dialog.title')}</DialogTitle>
-          <DialogDescription>{t('remoteHosts.relay.dialog.description')}</DialogDescription>
-        </DialogHeader>
+        {step === 'success'
+          ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{t('remoteHosts.wizard.success.title')}</DialogTitle>
+                  <DialogDescription>
+                    {t('remoteHosts.wizard.success.body', { name: host.displayName })}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex items-center gap-2 py-1 text-[12px] text-muted-foreground">
+                  {connectState === 'connecting' && <Spinner className="size-3.5" />}
+                  {connectState === 'connecting' && t('remoteHosts.wizard.success.connecting')}
+                  {connectState === 'connected' && (
+                    <span className="text-emerald-600 dark:text-emerald-400">{t('remoteHosts.wizard.success.connected')}</span>
+                  )}
+                  {connectState === 'failed' && (
+                    <span className="text-destructive">{t('remoteHosts.wizard.success.connectFailed')}</span>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onOpenChange(false)}
+                    className="h-7 text-xs"
+                  >
+                    {t('remoteHosts.action.done')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={connectState !== 'connected'}
+                    onClick={() => {
+                      onOpenWorkspaces?.()
+                      onOpenChange(false)
+                    }}
+                    className="h-7 text-xs"
+                  >
+                    {t('remoteHosts.action.openWorkspaces')}
+                  </Button>
+                </DialogFooter>
+              </>
+            )
+          : (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{t('remoteHosts.relay.dialog.title')}</DialogTitle>
+                  <DialogDescription>{t('remoteHosts.relay.dialog.description')}</DialogDescription>
+                </DialogHeader>
 
-        <div className="space-y-4 py-1">
-          {enrollmentCommand
-            ? (
-                <ol className="space-y-0">
-                  <GuideStep index={1} title={t('remoteHosts.relay.dialog.commandTitle')}>
-                    <p className="text-[12px] leading-relaxed text-muted-foreground/80">
-                      {t('remoteHosts.relay.dialog.commandHint')}
-                    </p>
-                    <CopyCodeButton command={enrollmentCommand} />
-                  </GuideStep>
-                  <GuideStep index={2} isLast title={t('remoteHosts.relay.dialog.pairingStepTitle')}>
-                    <p className="text-[12px] leading-relaxed text-muted-foreground/80">
-                      {t('remoteHosts.relay.dialog.pairingCodeHint')}
-                    </p>
-                    <Input
-                      id="rh-relay-pairing-string"
-                      value={pairingString}
-                      onChange={event => setPairingString(event.target.value)}
-                      placeholder={t('remoteHosts.relay.dialog.pairingCodePlaceholder')}
-                      className="h-8 font-mono text-xs"
-                    />
-                  </GuideStep>
-                </ol>
-              )
-            : (
-                <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
-                  {t('remoteHosts.relay.dialog.noRelayUrl')}
-                </p>
-              )}
-        </div>
+                <div className="space-y-4 py-1">
+                  {enrollmentCommand
+                    ? (
+                        <ol className="space-y-0">
+                          <GuideStep index={1} title={t('remoteHosts.relay.dialog.commandTitle')}>
+                            <p className="text-[12px] leading-relaxed text-muted-foreground/80">
+                              {t('remoteHosts.relay.dialog.commandHint')}
+                            </p>
+                            <CopyCodeButton command={enrollmentCommand} />
+                          </GuideStep>
+                          <GuideStep index={2} isLast title={t('remoteHosts.relay.dialog.pairingStepTitle')}>
+                            <p className="text-[12px] leading-relaxed text-muted-foreground/80">
+                              {t('remoteHosts.relay.dialog.pairingCodeHint')}
+                            </p>
+                            <Input
+                              id="rh-relay-pairing-string"
+                              value={pairingString}
+                              onChange={event => setPairingString(event.target.value)}
+                              placeholder={t('remoteHosts.relay.dialog.pairingCodePlaceholder')}
+                              className="h-8 font-mono text-xs"
+                            />
+                          </GuideStep>
+                        </ol>
+                      )
+                    : (
+                        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+                          {t('remoteHosts.relay.dialog.noRelayUrl')}
+                        </p>
+                      )}
+                </div>
 
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="h-7 text-xs">
-            {t('remoteHosts.action.cancel')}
-          </Button>
-          <Button
-            size="sm"
-            disabled={pairingString.trim().length === 0 || claim.isPending || !enrollmentCommand}
-            onClick={() => claim.mutate()}
-            className="h-7 text-xs"
-          >
-            {claim.isPending && <Spinner className="size-3.5" />}
-            {t(claim.isPending ? 'remoteHosts.relay.dialog.claiming' : 'remoteHosts.relay.dialog.claim')}
-          </Button>
-        </DialogFooter>
+                <DialogFooter>
+                  <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="h-7 text-xs">
+                    {t('remoteHosts.action.cancel')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={pairingString.trim().length === 0 || claim.isPending || !enrollmentCommand}
+                    onClick={() => claim.mutate()}
+                    className="h-7 text-xs"
+                  >
+                    {claim.isPending && <Spinner className="size-3.5" />}
+                    {t(claim.isPending ? 'remoteHosts.relay.dialog.claiming' : 'remoteHosts.relay.dialog.claim')}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
       </DialogContent>
     </Dialog>
   )
 }
 
-function HostRow({ host }: { host: Host }) {
+function HostRow({ host, reveal }: { host: Host, reveal?: boolean }) {
   const { t } = useTranslation('settings')
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState(false)
   const [editing, setEditing] = useState(false)
   const [claimingRelay, setClaimingRelay] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  // When the page asks to reveal this host (e.g. after a wizard pairing),
+  // expand the row and scroll it into view.
+  useEffect(() => {
+    if (reveal) {
+      setExpanded(true)
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [reveal])
 
   const invalidateHosts = () => {
     void queryClient.invalidateQueries({ queryKey: getRemoteHostsQueryKey() })
@@ -1366,7 +1854,7 @@ function HostRow({ host }: { host: Host }) {
   const tunnelActionDisabled = busy || !host.enabled || !relayPaired
 
   return (
-    <div data-testid={`remote-host-row-${host.id}`}>
+    <div data-testid={`remote-host-row-${host.id}`} ref={rowRef}>
       <div className="group flex items-center gap-3 px-3.5 py-3">
         <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
           <ServerIcon className="size-3.5" aria-hidden="true" />
@@ -1413,18 +1901,30 @@ function HostRow({ host }: { host: Host }) {
                   {t('remoteHosts.action.disconnect')}
                 </Button>
               )
-            : (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  className="h-7 px-2.5 text-[11px]"
-                  disabled={tunnelActionDisabled}
-                  onClick={() => connect.mutate()}
-                >
-                  {connect.isPending ? <Spinner className="size-3" /> : null}
-                  {t('remoteHosts.action.connect')}
-                </Button>
-              )}
+            : isRelay && !relayPaired
+              ? (
+                  <Button
+                    size="xs"
+                    className="h-7 px-2.5 text-[11px]"
+                    disabled={busy}
+                    onClick={() => setClaimingRelay(true)}
+                  >
+                    <LinkIcon className="size-3" aria-hidden="true" />
+                    {t('remoteHosts.action.completePairing')}
+                  </Button>
+                )
+              : (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    className="h-7 px-2.5 text-[11px]"
+                    disabled={tunnelActionDisabled}
+                    onClick={() => connect.mutate()}
+                  >
+                    {connect.isPending ? <Spinner className="size-3" /> : null}
+                    {t('remoteHosts.action.connect')}
+                  </Button>
+                )}
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1441,7 +1941,7 @@ function HostRow({ host }: { host: Host }) {
             <TooltipContent side="top">{t('remoteHosts.action.testCradleServer')}</TooltipContent>
           </Tooltip>
 
-          {isRelay && (
+          {isRelay && relayPaired && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1500,7 +2000,14 @@ function HostRow({ host }: { host: Host }) {
       )}
 
       {editing && <HostFormDialog open onOpenChange={open => !open && setEditing(false)} host={host} />}
-      {claimingRelay && <RelayClaimDialog host={host} open onOpenChange={open => !open && setClaimingRelay(false)} />}
+      {claimingRelay && (
+        <RelayClaimDialog
+          host={host}
+          open
+          onOpenChange={open => !open && setClaimingRelay(false)}
+          onOpenWorkspaces={() => setExpanded(true)}
+        />
+      )}
 
       <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
         <AlertDialogContent>
@@ -1526,6 +2033,7 @@ export function RemoteHostsSettings() {
   const { t } = useTranslation('settings')
   const [addOpen, setAddOpen] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
+  const [revealHostId, setRevealHostId] = useState<string | null>(null)
   const { data: hosts = [], isLoading } = useQuery(getRemoteHostsOptions())
 
   return (
@@ -1540,7 +2048,7 @@ export function RemoteHostsSettings() {
       )}
       data-testid="remote-hosts-settings"
     >
-      <RelayServersSection />
+      <HostEnrollmentsSection />
 
       {isLoading
         ? (
@@ -1565,20 +2073,27 @@ export function RemoteHostsSettings() {
                   </CollapsibleTrigger>
                   <CollapsibleContent className="pt-4">
                     <div className="rounded-xl border border-border bg-card p-5">
-                      <SetupGuide />
+                      <SetupGuide onAdd={() => setAddOpen(true)} />
                     </div>
                   </CollapsibleContent>
                 </Collapsible>
 
-                <SettingsGroup bare className="[&>*+*]:border-t [&>*+*]:border-border/60">
-                  {hosts.map(host => <HostRow key={host.id} host={host} />)}
+                <SettingsGroup
+                  label={t('remoteHosts.group.otherComputers')}
+                  description={t('remoteHosts.group.otherComputers.description')}
+                  bare
+                  className="[&>*+*]:border-t [&>*+*]:border-border/60"
+                >
+                  {hosts.map(host => (
+                    <HostRow key={host.id} host={host} reveal={revealHostId === host.id} />
+                  ))}
                 </SettingsGroup>
               </>
             )}
 
-      <HostEnrollmentsSection />
+      <RelayServersSection />
 
-      <HostFormDialog open={addOpen} onOpenChange={setAddOpen} />
+      <PairComputerWizard open={addOpen} onOpenChange={setAddOpen} onReveal={setRevealHostId} />
     </SettingsPage>
   )
 }

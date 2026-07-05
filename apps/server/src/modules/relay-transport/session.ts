@@ -55,6 +55,8 @@ export interface RelaySessionOptions {
   initiateHello?: boolean
   /** Optional human-readable label sent in our `hello` so the peer can show who we are. */
   ourName?: string
+  /** Optional Ed25519 relay assertion public key sent in our `hello`. */
+  ourSigningPubkey?: string
 }
 
 export interface RelaySessionCallbacks {
@@ -63,7 +65,7 @@ export interface RelaySessionCallbacks {
   onReady?: () => void
   onPeerPubkey?: (peerPubkey: string, fingerprint: string) => void
   /** Fires with the peer's reported label (from its `hello.name`) once known. */
-  onPeerInfo?: (info: { name?: string }) => void
+  onPeerInfo?: (info: { name?: string, signingPubkey?: string }) => void
   onStreamOpen?: (streamId: string) => void
   onStreamData?: (streamId: string, data: Uint8Array) => void
   onStreamAck?: (streamId: string, ackedBytes: number) => void
@@ -104,6 +106,7 @@ export class RelaySession {
   private readonly cb: RelaySessionCallbacks
   private readonly initiateHello: boolean
   private readonly ourName: string | undefined
+  private readonly ourSigningPubkey: string | undefined
 
   private state: SessionState = 'idle'
   private peerPubkey: string | null = null
@@ -140,6 +143,7 @@ export class RelaySession {
     // (TryAgainLater) because no controller peer is connected yet.
     this.initiateHello = options.initiateHello ?? (role === 'controller')
     this.ourName = options.ourName
+    this.ourSigningPubkey = options.ourSigningPubkey
   }
 
   get isReady(): boolean {
@@ -201,6 +205,7 @@ export class RelaySession {
       pubkey: this.ourPublicKeyBase64,
       ...(this.pinnedPeerPubkey ? { pinnedPubkey: this.pinnedPeerPubkey } : {}),
       ...(this.ourName ? { name: this.ourName } : {}),
+      ...(this.ourSigningPubkey ? { signingPubkey: this.ourSigningPubkey } : {}),
     }
     helloFrameSchema.parse(frame)
     // Set helloSent BEFORE sendPlainEnvelope: sendPlainEnvelope is delivered
@@ -256,7 +261,7 @@ export class RelaySession {
     }
   }
 
-  private handleHello(frame: { kind: 'hello', version: number, pubkey: string, pinnedPubkey?: string, name?: string }): void {
+  private handleHello(frame: { kind: 'hello', version: number, pubkey: string, pinnedPubkey?: string, name?: string, signingPubkey?: string }): void {
     if (this.peerPubkey !== null) {
       this.fail(new AppError({ code: 'relay_handshake_duplicate_hello', status: 400, message: 'Received duplicate hello frame.' }))
       return
@@ -284,8 +289,8 @@ export class RelaySession {
 
     this.peerPubkey = frame.pubkey
     this.cb.onPeerPubkey?.(frame.pubkey, peerFingerprint(frame.pubkey))
-    if (frame.name) {
-      this.cb.onPeerInfo?.({ name: frame.name })
+    if (frame.name || frame.signingPubkey) {
+      this.cb.onPeerInfo?.({ ...(frame.name ? { name: frame.name } : {}), ...(frame.signingPubkey ? { signingPubkey: frame.signingPubkey } : {}) })
     }
     this.deriveKeys()
 
@@ -372,7 +377,7 @@ export class RelaySession {
       this.fail(new AppError({
         code: 'relay_handshake_confirm_mismatch',
         status: 400,
-        message: 'Pairing confirmation failed. Check the pairing code and relay HMAC secret.',
+        message: 'Pairing confirmation failed. Check the pairing code.',
       }))
       return
     }

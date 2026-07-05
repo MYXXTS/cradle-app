@@ -8,8 +8,8 @@ import { relayHostEnrollments } from '@cradle/db'
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
 import { createChildLogger } from '../../logging/logger'
-import { readSecret } from '../secrets/service'
-import { mintRelayToken } from '../relay-servers/relay-token-service'
+import { readSecret, upsertSecret } from '../secrets/service'
+import { relayAssertionHeaders, signRelayAssertion } from '../relay-servers/relay-signature-service'
 import { loadPrivateKeyBytes, publicKeyFromPrivate } from './crypto'
 import { relayEnvelopeSchema, type RelayEnvelope } from './protocol'
 import { RelaySession } from './session'
@@ -71,7 +71,7 @@ class HostConnection {
     private readonly enrollmentId: string,
     private readonly config: HostConnectorConfig,
     private readonly reloadEnrollment: () => Promise<HostEnrollmentRecord>,
-    private readonly onPaired: (controllerPubkey: string) => void,
+    private readonly onPaired: (controllerPubkey: string, controllerSigningPubkey: string) => void,
     private readonly onStatus: (status: 'pending' | 'paired' | 'offline', lastError?: string) => void,
   ) {}
 
@@ -129,27 +129,22 @@ class HostConnection {
   private async ensureRoom(enrollment: HostEnrollmentRecord): Promise<void> {
     // Re-create/renew the room idempotently so a reconnect after a relayd
     // restart (or after RoomTTL with no peers) succeeds.
-    const roomStart = mintRelayToken({
-      subject: `host:${enrollment.id}`,
-      purpose: 'room_start',
-      roomId: enrollment.roomId,
-      ttlMs: 2 * 60 * 1000,
-    })
-    const hostWs = mintRelayToken({
-      subject: `host:${enrollment.id}`,
+    const controllerSigningPubkey = enrollment.pinnedControllerPubkey
+      ? readHostControllerSigningPubkey(enrollment.id)
+      : null
+    const assertion = signRelayAssertion(enrollment.hostSigningPrivateKey, {
       role: 'host',
-      purpose: 'ws',
+      purpose: 'reconnect',
       roomId: enrollment.roomId,
-      ttlMs: 60 * 1000,
+      ...(controllerSigningPubkey ? { controllerPubkey: controllerSigningPubkey } : {}),
     })
     const url = new URL('/rooms/host-session', `${enrollment.relayUrl.replace(/\/+$/, '')}/`)
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${roomStart.token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ hostToken: hostWs.token }),
+      body: JSON.stringify({ assertion }),
       signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) {
@@ -174,17 +169,15 @@ class HostConnection {
         reject(error)
       }
 
-      const hostWs = mintRelayToken({
-        subject: `host:${enrollment.id}`,
+      const hostWsAssertion = signRelayAssertion(enrollment.hostSigningPrivateKey, {
         role: 'host',
         purpose: 'ws',
         roomId: enrollment.roomId,
-        ttlMs: 60 * 1000,
       })
 
       let ws: WebSocket
       try {
-        ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${hostWs.token}` } })
+        ws = new WebSocket(wsUrl, { headers: relayAssertionHeaders(hostWsAssertion) })
       }
       catch (error) {
         drop(error instanceof Error ? error : new Error(String(error)))
@@ -194,6 +187,7 @@ class HostConnection {
 
       const isReconnect = Boolean(enrollment.pinnedControllerPubkey)
       let learnedControllerPubkey: string | null = null
+      let learnedControllerSigningPubkey: string | null = null
       const session = new RelaySession(
         'host',
         enrollment.hostPrivateKey,
@@ -215,8 +209,8 @@ class HostConnection {
             ws.on('error', () => drop(new Error('relayd host websocket error')))
             this.backoffMs = 1_000 // reset backoff after a clean ready
             this.lastReadyAt = Date.now()
-            if (!enrollment.pinnedControllerPubkey && learnedControllerPubkey) {
-              this.onPaired(learnedControllerPubkey)
+            if (!enrollment.pinnedControllerPubkey && learnedControllerPubkey && learnedControllerSigningPubkey) {
+              this.onPaired(learnedControllerPubkey, learnedControllerSigningPubkey)
             }
             this.onStatus('paired')
           },
@@ -228,6 +222,9 @@ class HostConnection {
           onPeerInfo: (info) => {
             if (info.name) {
               this.controllerName = info.name
+            }
+            if (info.signingPubkey) {
+              learnedControllerSigningPubkey = info.signingPubkey
             }
           },
           onStreamOpen: (streamId) => this.openLocalStream(streamId),
@@ -321,6 +318,7 @@ interface HostEnrollmentRecord {
   roomId: string
   hostPubkey: string
   hostPrivateKey: string
+  hostSigningPrivateKey: string
   pinnedControllerPubkey: string | null
   pairingCode: string | null
 }
@@ -364,12 +362,19 @@ export class HostConnectorService {
         roomId: row.roomId,
         hostPubkey: row.hostPubkey,
         hostPrivateKey: readHostPrivateKey(row.hostPrivateKeySecretId, row.hostPubkey),
+        hostSigningPrivateKey: readHostSigningPrivateKey(row.id),
         pinnedControllerPubkey: row.pinnedControllerPubkey,
         pairingCode: row.pairingCode,
       }
     }
-    const onPaired = (controllerPubkey: string) => {
+    const onPaired = (controllerPubkey: string, controllerSigningPubkey: string) => {
       const now = Math.floor(Date.now() / 1000)
+      upsertSecret({
+        id: hostControllerSigningPubkeySecretId(enrollmentId),
+        kind: 'system-relay-host-controller-signing-pubkey',
+        label: `Relay controller signing public key (${enrollmentId})`,
+        secret: controllerSigningPubkey,
+      })
       db()
         .update(relayHostEnrollments)
         .set({ pinnedControllerPubkey: controllerPubkey, status: 'paired', pairingCode: null, lastError: null, updatedAt: now })
@@ -421,6 +426,38 @@ function readHostPrivateKey(secretId: string, expectedPublicKey: string): string
     })
   }
   return privateKey
+}
+
+function readHostSigningPrivateKey(enrollmentId: string): string {
+  try {
+    return readSecret(`relay-host-sign-key:${enrollmentId}`)
+  }
+  catch (error) {
+    throw new AppError({
+      code: 'relay_host_enrollment_signing_key_missing',
+      status: 409,
+      message: 'Relay host enrollment is missing its signing key. Re-create the pairing.',
+      details: { enrollmentId, cause: error instanceof Error ? error.message : String(error) },
+    })
+  }
+}
+
+function readHostControllerSigningPubkey(enrollmentId: string): string {
+  try {
+    return readSecret(hostControllerSigningPubkeySecretId(enrollmentId))
+  }
+  catch (error) {
+    throw new AppError({
+      code: 'relay_host_enrollment_controller_signing_key_missing',
+      status: 409,
+      message: 'Relay host enrollment is missing the controller signing public key. Re-create the pairing.',
+      details: { enrollmentId, cause: error instanceof Error ? error.message : String(error) },
+    })
+  }
+}
+
+function hostControllerSigningPubkeySecretId(enrollmentId: string): string {
+  return `relay-host-controller-sign-pubkey:${enrollmentId}`
 }
 
 // Re-export for callers (e.g. enrollment service) that need to load the key.

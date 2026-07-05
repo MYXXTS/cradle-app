@@ -1,4 +1,5 @@
 import {
+  ArrowDownLine as ChevronIcon,
   CheckLine as CheckIcon,
   CopyLine as CopyIcon,
   DeleteLine as TrashIcon,
@@ -36,6 +37,11 @@ import {
 } from '~/components/ui/alert-dialog'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '~/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -275,23 +281,22 @@ function HostEnrollmentFormDialog({
   const [displayName, setDisplayName] = useState('')
   const [relayServerId, setRelayServerId] = useState('')
   const [relayUrl, setRelayUrl] = useState('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const { data: relayServers = [] } = useQuery(getRelayServersOptions())
   const managedLocalRelayName = t('remoteHosts.relayServers.managedLocalName')
   const enabledRelayServers: RelayServer[] = relayServers.filter(server => server.enabled)
+  const defaultRelayServer = enabledRelayServers.find(server => server.isDefault) ?? enabledRelayServers[0]
 
   useEffect(() => {
     if (open) {
       setDisplayName('')
       setRelayUrl('')
-      setRelayServerId('')
+      // Default to the built-in / default relay so the simple form just works.
+      // When no default is available, open Advanced so the user can supply a URL.
+      setRelayServerId(defaultRelayServer?.id ?? '')
+      setAdvancedOpen(!defaultRelayServer)
     }
-  }, [open])
-
-  useEffect(() => {
-    if (!relayServerId && enabledRelayServers.length > 0) {
-      setRelayServerId(enabledRelayServers[0].id)
-    }
-  }, [relayServerId, enabledRelayServers])
+  }, [open, defaultRelayServer])
 
   const resolvedRelayUrl = relayServerId
     ? enabledRelayServers.find(server => server.id === relayServerId)?.relayUrl ?? ''
@@ -342,48 +347,67 @@ function HostEnrollmentFormDialog({
               onChange={e => setDisplayName(e.target.value)}
               placeholder={t('hostEnrollments.form.displayNamePlaceholder' as SettingsKey)}
               className="h-8 text-xs"
+              autoFocus
             />
+            {defaultRelayServer && (
+              <p className="text-[11px] text-muted-foreground">
+                {t('hostEnrollments.form.relayHint' as SettingsKey)}
+              </p>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs">{t('hostEnrollments.form.relayServer' as SettingsKey)}</Label>
-            <Select
-              value={relayServerId || CUSTOM_RELAY_SERVER_VALUE}
-              onValueChange={(next) => {
-                if (next === CUSTOM_RELAY_SERVER_VALUE) {
-                  setRelayServerId('')
-                  return
-                }
-                setRelayServerId(next)
-              }}
-            >
-              <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {enabledRelayServers.map(server => (
-                  <SelectItem key={server.id} value={server.id}>
-                    {relayServerDisplayName(server, managedLocalRelayName)}
-                    {server.isDefault ? ` · ${t('remoteHosts.relayServers.badge.default')}` : ''}
-                  </SelectItem>
-                ))}
-                <SelectItem value={CUSTOM_RELAY_SERVER_VALUE}>{t('hostEnrollments.form.relayUrl' as SettingsKey)}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <ChevronIcon className={cn('size-3.5 transition-transform', advancedOpen ? 'rotate-0' : '-rotate-90')} aria-hidden="true" />
+                {t('hostEnrollments.form.advanced' as SettingsKey)}
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 pt-3">
+              <div className="space-y-2">
+                <Label className="text-xs">{t('hostEnrollments.form.relayServer' as SettingsKey)}</Label>
+                <Select
+                  value={relayServerId || CUSTOM_RELAY_SERVER_VALUE}
+                  onValueChange={(next) => {
+                    if (next === CUSTOM_RELAY_SERVER_VALUE) {
+                      setRelayServerId('')
+                      return
+                    }
+                    setRelayServerId(next)
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {enabledRelayServers.map(server => (
+                      <SelectItem key={server.id} value={server.id}>
+                        {relayServerDisplayName(server, managedLocalRelayName)}
+                        {server.isDefault ? ` · ${t('remoteHosts.relayServers.badge.default')}` : ''}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_RELAY_SERVER_VALUE}>{t('hostEnrollments.form.relayUrl' as SettingsKey)}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          {!relayServerId && (
-            <div className="space-y-2">
-              <Label htmlFor="he-relay-url" className="text-xs">{t('hostEnrollments.form.relayUrl' as SettingsKey)}</Label>
-              <Input
-                id="he-relay-url"
-                value={relayUrl}
-                onChange={e => setRelayUrl(e.target.value)}
-                placeholder="https://relay.example.com"
-                className="h-8 font-mono text-xs"
-              />
-            </div>
-          )}
+              {!relayServerId && (
+                <div className="space-y-2">
+                  <Label htmlFor="he-relay-url" className="text-xs">{t('hostEnrollments.form.relayUrl' as SettingsKey)}</Label>
+                  <Input
+                    id="he-relay-url"
+                    value={relayUrl}
+                    onChange={e => setRelayUrl(e.target.value)}
+                    placeholder="https://relay.example.com"
+                    className="h-8 font-mono text-xs"
+                  />
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
         </div>
 
         <DialogFooter>

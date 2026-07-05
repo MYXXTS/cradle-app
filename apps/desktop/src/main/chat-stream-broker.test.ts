@@ -529,6 +529,62 @@ describe('chat stream broker', () => {
     })
   })
 
+  it('settles an in-flight passive subscription when a response replaces it before headers arrive', async () => {
+    const responseStream = createControlledSseResponse({ 'x-cradle-run-id': 'run-response' })
+    const fetchFn = vi
+      .fn()
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason ?? new DOMException('This operation was aborted', 'AbortError'))
+          }, { once: true })
+        })
+      })
+      .mockResolvedValueOnce(responseStream.response)
+    const broker = new ChatStreamBroker({
+      serverUrl: 'http://127.0.0.1:21423',
+      fetchFn: fetchFn as typeof fetch,
+    })
+    const passiveWindow = new FakeWebContents()
+    const senderWindow = new FakeWebContents()
+
+    const passiveHandlePromise = broker.subscribeSession(passiveWindow as never, {
+      sessionId: 'session-pending-passive',
+    })
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    const responseHandle = await broker.startResponse(senderWindow as never, {
+      sessionId: 'session-pending-passive',
+      body: { text: 'new turn' },
+    })
+    const passiveHandle = await passiveHandlePromise
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(passiveHandle).toMatchObject({
+      sessionId: 'session-pending-passive',
+      runId: null,
+    })
+    expect(responseHandle.runId).toBe('run-response')
+    expect(readChannelPayloads(passiveWindow, DESKTOP_CHAT_STREAM_CLOSED_CHANNEL)).toMatchObject([
+      { streamId: passiveHandle.streamId, reason: 'aborted' },
+    ])
+    expect(broker.diagnostics().streams).toMatchObject([
+      {
+        sessionId: 'session-pending-passive',
+        mode: 'response',
+        runId: 'run-response',
+        subscriberCount: 1,
+      },
+    ])
+
+    responseStream.controller.enqueue(encodeSse('[DONE]'))
+
+    await vi.waitFor(() => {
+      expect(broker.diagnostics().streams).toHaveLength(0)
+    })
+  })
+
   it('starts and drains a detached response stream without a renderer subscriber', async () => {
     const controlled = createControlledSseResponse({ 'x-cradle-run-id': 'run-detached' })
     const fetchFn = vi.fn(async () => controlled.response)

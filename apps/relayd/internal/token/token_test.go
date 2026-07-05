@@ -1,41 +1,33 @@
 package token
 
 import (
-	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestHMACValidator(t *testing.T) {
+func TestAssertionValidator(t *testing.T) {
 	now := time.Unix(1780000000, 0)
-	validator, err := NewHMACValidator(HMACValidatorConfig{
-		Secret:   []byte("secret"),
-		Issuer:   "cradle-server",
-		Audience: "cradle-relay",
-		Now:      func() time.Time { return now },
-	})
+	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		t.Fatalf("NewHMACValidator() error = %v", err)
+		t.Fatalf("GenerateKey() error = %v", err)
 	}
-
-	raw, err := validator.Sign(Claims{
-		Subject:  "host_1",
+	validator := NewAssertionValidator(AssertionValidatorConfig{
+		Now:     func() time.Time { return now },
+		MaxSkew: time.Minute,
+	})
+	signed := signTestAssertion(t, privateKey, Assertion{
+		Pubkey:   base64.StdEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)),
 		Role:     RoleHost,
 		RoomID:   "room_1",
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "tok_1",
-		Nonce:    "nonce_1",
 		Purpose:  PurposeWebSocket,
+		IssuedAt: now.Unix(),
+		Nonce:    "nonce_1",
 	})
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
 
-	claims, err := validator.Validate(t.Context(), raw, ExpectedClaims{
+	assertion, err := validator.Validate(t.Context(), signed, ExpectedAssertion{
 		Role:    RoleHost,
 		RoomID:  "room_1",
 		Purpose: PurposeWebSocket,
@@ -43,84 +35,102 @@ func TestHMACValidator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if claims.Subject != "host_1" {
-		t.Fatalf("claims.Subject = %q, expected host_1", claims.Subject)
+	if assertion.RoomID != "room_1" {
+		t.Fatalf("assertion.RoomID = %q, expected room_1", assertion.RoomID)
 	}
 }
 
-func TestHMACValidatorRejectsExpiredToken(t *testing.T) {
+func TestAssertionValidatorRejectsStaleAssertion(t *testing.T) {
 	now := time.Unix(1780000000, 0)
-	validator, err := NewHMACValidator(HMACValidatorConfig{
-		Secret:   []byte("secret"),
-		Issuer:   "cradle-server",
-		Audience: "cradle-relay",
-		Now:      func() time.Time { return now },
-	})
+	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		t.Fatalf("NewHMACValidator() error = %v", err)
+		t.Fatalf("GenerateKey() error = %v", err)
 	}
-
-	raw, err := validator.Sign(Claims{
-		Subject:  "host_1",
+	validator := NewAssertionValidator(AssertionValidatorConfig{
+		Now:     func() time.Time { return now },
+		MaxSkew: time.Minute,
+	})
+	signed := signTestAssertion(t, privateKey, Assertion{
+		Pubkey:   base64.StdEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)),
 		Role:     RoleHost,
 		RoomID:   "room_1",
-		Expiry:   now.Add(-time.Minute).Unix(),
+		Purpose:  PurposeWebSocket,
 		IssuedAt: now.Add(-2 * time.Minute).Unix(),
-		TokenID:  "tok_1",
 		Nonce:    "nonce_1",
-		Purpose:  PurposeWebSocket,
 	})
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
 
-	_, err = validator.Validate(context.Background(), raw, ExpectedClaims{
+	_, err = validator.Validate(t.Context(), signed, ExpectedAssertion{
 		Role:    RoleHost,
 		RoomID:  "room_1",
 		Purpose: PurposeWebSocket,
 	})
-	if !errors.Is(err, ErrExpiredToken) {
-		t.Fatalf("Validate() error = %v, expected ErrExpiredToken", err)
+	if !errors.Is(err, ErrStaleAssertion) {
+		t.Fatalf("Validate() error = %v, expected ErrStaleAssertion", err)
 	}
 }
 
-func TestHMACValidatorRejectsUnexpectedHeader(t *testing.T) {
+func TestAssertionValidatorRejectsReplay(t *testing.T) {
 	now := time.Unix(1780000000, 0)
-	validator, err := NewHMACValidator(HMACValidatorConfig{
-		Secret:   []byte("secret"),
-		Issuer:   "cradle-server",
-		Audience: "cradle-relay",
-		Now:      func() time.Time { return now },
-	})
+	_, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		t.Fatalf("NewHMACValidator() error = %v", err)
+		t.Fatalf("GenerateKey() error = %v", err)
 	}
-	raw, err := validator.Sign(Claims{
-		Subject:  "host_1",
+	validator := NewAssertionValidator(AssertionValidatorConfig{
+		Now:     func() time.Time { return now },
+		MaxSkew: time.Minute,
+	})
+	signed := signTestAssertion(t, privateKey, Assertion{
+		Pubkey:   base64.StdEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)),
 		Role:     RoleHost,
 		RoomID:   "room_1",
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "tok_1",
-		Nonce:    "nonce_1",
 		Purpose:  PurposeWebSocket,
+		IssuedAt: now.Unix(),
+		Nonce:    "nonce_1",
 	})
-	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
-	}
 
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		t.Fatalf("token parts = %d, expected 3", len(parts))
+	if _, err := validator.Validate(t.Context(), signed, ExpectedAssertion{}); err != nil {
+		t.Fatalf("first Validate() error = %v", err)
 	}
-	parts[0] = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
-	tampered := strings.Join(parts, ".")
-	_, err = validator.Validate(t.Context(), tampered, ExpectedClaims{
-		Role:    RoleHost,
-		RoomID:  "room_1",
-		Purpose: PurposeWebSocket,
+	_, err = validator.Validate(t.Context(), signed, ExpectedAssertion{})
+	if !errors.Is(err, ErrReplayedNonce) {
+		t.Fatalf("second Validate() error = %v, expected ErrReplayedNonce", err)
+	}
+}
+
+func TestAssertionValidatorRejectsTamperedAssertion(t *testing.T) {
+	now := time.Unix(1780000000, 0)
+	_, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	validator := NewAssertionValidator(AssertionValidatorConfig{
+		Now:     func() time.Time { return now },
+		MaxSkew: time.Minute,
 	})
-	if !errors.Is(err, ErrInvalidToken) {
-		t.Fatalf("Validate() error = %v, expected ErrInvalidToken", err)
+	signed := signTestAssertion(t, privateKey, Assertion{
+		Pubkey:   base64.StdEncoding.EncodeToString(privateKey.Public().(ed25519.PublicKey)),
+		Role:     RoleHost,
+		RoomID:   "room_1",
+		Purpose:  PurposeWebSocket,
+		IssuedAt: now.Unix(),
+		Nonce:    "nonce_1",
+	})
+	signed.Assertion.RoomID = "room_2"
+
+	_, err = validator.Validate(t.Context(), signed, ExpectedAssertion{})
+	if !errors.Is(err, ErrInvalidAssertion) {
+		t.Fatalf("Validate() error = %v, expected ErrInvalidAssertion", err)
+	}
+}
+
+func signTestAssertion(t *testing.T, privateKey ed25519.PrivateKey, assertion Assertion) SignedAssertion {
+	t.Helper()
+	payload, err := CanonicalJSON(assertion)
+	if err != nil {
+		t.Fatalf("CanonicalJSON() error = %v", err)
+	}
+	return SignedAssertion{
+		Assertion: assertion,
+		Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, payload)),
 	}
 }

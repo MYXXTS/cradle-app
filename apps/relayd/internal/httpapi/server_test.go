@@ -3,7 +3,10 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,122 +39,48 @@ func TestHealth(t *testing.T) {
 
 func TestPairingFlow(t *testing.T) {
 	server := newTestServer(t)
-	signer := newTestSigner(t)
-	now := time.Now()
+	hostKey := newAssertionKey(t)
+	controllerKey := newAssertionKey(t)
 	roomID := "room_pairing"
-	startToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "start_1",
-		Nonce:    "nonce_start",
-		Purpose:  token.PurposePairingStart,
-	})
-	hostToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		Role:     token.RoleHost,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "host_1",
-		Nonce:    "nonce_host",
-		Purpose:  token.PurposeWebSocket,
-	})
 
-	startBody, err := json.Marshal(map[string]string{"hostToken": hostToken})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/pairing/start", bytes.NewReader(startBody))
-	req.Header.Set("Authorization", "Bearer "+startToken)
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("start status = %d body = %s", rec.Code, rec.Body.String())
-	}
-	var start startResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &start); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	start := postJSON[startResponse](t, server, "/pairing/start", startRequest{
+		Assertion: hostKey.sign(t, token.Assertion{
+			Role:    token.RoleHost,
+			RoomID:  roomID,
+			Purpose: token.PurposeCreateRoom,
+		}),
+	})
 	if start.RoomID != roomID {
 		t.Fatalf("start.RoomID = %q, expected %q", start.RoomID, roomID)
 	}
+	if start.PairingCode == "" {
+		t.Fatal("start.PairingCode is empty")
+	}
 
-	claimToken := signTestToken(t, signer, token.Claims{
-		Subject:  "server_1",
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "claim_1",
-		Nonce:    "nonce_claim",
-		Purpose:  token.PurposePairingClaim,
+	postJSON[claimResponse](t, server, "/pairing/claim", claimRequest{
+		Assertion: controllerKey.sign(t, token.Assertion{
+			Role:        token.RoleController,
+			RoomID:      roomID,
+			Purpose:     token.PurposeClaim,
+			PairingCode: start.PairingCode,
+		}),
 	})
-	controllerToken := signTestToken(t, signer, token.Claims{
-		Subject:  "controller_1",
-		Role:     token.RoleController,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "controller_1",
-		Nonce:    "nonce_controller",
-		Purpose:  token.PurposeWebSocket,
-	})
-	claimBody, err := json.Marshal(map[string]string{
-		"pairingCode":     start.PairingCode,
-		"controllerToken": controllerToken,
-	})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-	req = httptest.NewRequest(http.MethodPost, "/pairing/claim", bytes.NewReader(claimBody))
-	req.Header.Set("Authorization", "Bearer "+claimToken)
-	rec = httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("claim status = %d body = %s", rec.Code, rec.Body.String())
-	}
 }
 
 func TestHostSessionFlow(t *testing.T) {
 	server := newTestServer(t)
-	signer := newTestSigner(t)
-	now := time.Now()
+	hostKey := newAssertionKey(t)
+	controllerKey := newAssertionKey(t)
 	roomID := "room_host_session"
-	roomStartToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1_room_start",
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "room_start_1",
-		Nonce:    "nonce_room_start",
-		Purpose:  token.PurposeRoomStart,
-	})
-	hostToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		Role:     token.RoleHost,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "host_1",
-		Nonce:    "nonce_host",
-		Purpose:  token.PurposeWebSocket,
-	})
 
-	body, err := json.Marshal(map[string]string{"hostToken": hostToken})
-	if err != nil {
-		t.Fatalf("Marshal() error = %v", err)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/rooms/host-session", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+roomStartToken)
-	rec := httptest.NewRecorder()
-	server.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("host session status = %d body = %s", rec.Code, rec.Body.String())
-	}
-	var started hostSessionResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	started := postJSON[hostSessionResponse](t, server, "/rooms/host-session", hostSessionRequest{
+		Assertion: hostKey.sign(t, token.Assertion{
+			Role:             token.RoleHost,
+			RoomID:           roomID,
+			Purpose:          token.PurposeReconnect,
+			ControllerPubkey: controllerKey.pubkey,
+		}),
+	})
 	if started.RoomID != roomID {
 		t.Fatalf("started.RoomID = %q, expected %q", started.RoomID, roomID)
 	}
@@ -160,7 +89,11 @@ func TestHostSessionFlow(t *testing.T) {
 	defer httpServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
 	host, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + hostToken}},
+		HTTPHeader: assertionHeaders(t, hostKey.sign(t, token.Assertion{
+			Role:    token.RoleHost,
+			RoomID:  roomID,
+			Purpose: token.PurposeWebSocket,
+		})),
 	})
 	if err != nil {
 		t.Fatalf("host Dial() error = %v", err)
@@ -170,50 +103,15 @@ func TestHostSessionFlow(t *testing.T) {
 
 func TestWebSocketRoutesEnvelopeBetweenHostAndController(t *testing.T) {
 	server := newTestServer(t)
-	signer := newTestSigner(t)
-	now := time.Now()
+	hostKey := newAssertionKey(t)
+	controllerKey := newAssertionKey(t)
 	roomID := "room_ws"
-	if err := server.hub.CreateRoom(t.Context(), roomID, now.Add(time.Minute)); err != nil {
+	if err := server.hub.CreateRoom(t.Context(), roomID, time.Now().Add(time.Minute), hostKey.pubkey, controllerKey.pubkey); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
-	hostToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		Role:     token.RoleHost,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "host_1",
-		Nonce:    "nonce_host",
-		Purpose:  token.PurposeWebSocket,
-	})
-	controllerToken := signTestToken(t, signer, token.Claims{
-		Subject:  "controller_1",
-		Role:     token.RoleController,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "controller_1",
-		Nonce:    "nonce_controller",
-		Purpose:  token.PurposeWebSocket,
-	})
 
-	httpServer := httptest.NewServer(server.Handler())
-	defer httpServer.Close()
-	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
-
-	host, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + hostToken}},
-	})
-	if err != nil {
-		t.Fatalf("host Dial() error = %v", err)
-	}
+	host, controller := dialHostController(t, server, roomID, hostKey, controllerKey)
 	defer host.Close(websocket.StatusNormalClosure, "test done")
-	controller, _, err := websocket.Dial(t.Context(), wsURL+"/ws/controller", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + controllerToken}},
-	})
-	if err != nil {
-		t.Fatalf("controller Dial() error = %v", err)
-	}
 	defer controller.Close(websocket.StatusNormalClosure, "test done")
 
 	payload := relay.EncodePayload(map[string]string{"method": "host/hello"})
@@ -248,50 +146,14 @@ func TestWebSocketRoutesEnvelopeBetweenHostAndController(t *testing.T) {
 
 func TestWebSocketHeartbeatKeepsIdleConnectionOpen(t *testing.T) {
 	server := newTestServerWithTiming(t, 100*time.Millisecond, 300*time.Millisecond)
-	signer := newTestSigner(t)
-	now := time.Now()
+	hostKey := newAssertionKey(t)
+	controllerKey := newAssertionKey(t)
 	roomID := "room_heartbeat"
-	if err := server.hub.CreateRoom(t.Context(), roomID, now.Add(time.Minute)); err != nil {
+	if err := server.hub.CreateRoom(t.Context(), roomID, time.Now().Add(time.Minute), hostKey.pubkey, controllerKey.pubkey); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
-	hostToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		Role:     token.RoleHost,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "host_1",
-		Nonce:    "nonce_host",
-		Purpose:  token.PurposeWebSocket,
-	})
-	controllerToken := signTestToken(t, signer, token.Claims{
-		Subject:  "controller_1",
-		Role:     token.RoleController,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "controller_1",
-		Nonce:    "nonce_controller",
-		Purpose:  token.PurposeWebSocket,
-	})
-
-	httpServer := httptest.NewServer(server.Handler())
-	defer httpServer.Close()
-	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
-
-	host, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + hostToken}},
-	})
-	if err != nil {
-		t.Fatalf("host Dial() error = %v", err)
-	}
+	host, controller := dialHostController(t, server, roomID, hostKey, controllerKey)
 	defer host.Close(websocket.StatusNormalClosure, "test done")
-	controller, _, err := websocket.Dial(t.Context(), wsURL+"/ws/controller", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + controllerToken}},
-	})
-	if err != nil {
-		t.Fatalf("controller Dial() error = %v", err)
-	}
 	defer controller.Close(websocket.StatusNormalClosure, "test done")
 
 	readerCtx, stopReaders := context.WithCancel(t.Context())
@@ -345,29 +207,21 @@ func TestWebSocketHeartbeatKeepsIdleConnectionOpen(t *testing.T) {
 
 func TestWebSocketRejectsRoomMismatch(t *testing.T) {
 	server := newTestServer(t)
-	signer := newTestSigner(t)
-	now := time.Now()
+	hostKey := newAssertionKey(t)
 	roomID := "room_ws"
-	if err := server.hub.CreateRoom(t.Context(), roomID, now.Add(time.Minute)); err != nil {
+	if err := server.hub.CreateRoom(t.Context(), roomID, time.Now().Add(time.Minute), hostKey.pubkey, ""); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
-	hostToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		Role:     token.RoleHost,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "host_1",
-		Nonce:    "nonce_host",
-		Purpose:  token.PurposeWebSocket,
-	})
 
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
-
 	host, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + hostToken}},
+		HTTPHeader: assertionHeaders(t, hostKey.sign(t, token.Assertion{
+			Role:    token.RoleHost,
+			RoomID:  roomID,
+			Purpose: token.PurposeWebSocket,
+		})),
 	})
 	if err != nil {
 		t.Fatalf("host Dial() error = %v", err)
@@ -398,28 +252,21 @@ func TestWebSocketRejectsRoomMismatch(t *testing.T) {
 
 func TestWebSocketRejectsDuplicateRole(t *testing.T) {
 	server := newTestServer(t)
-	signer := newTestSigner(t)
-	now := time.Now()
+	hostKey := newAssertionKey(t)
 	roomID := "room_duplicate"
-	if err := server.hub.CreateRoom(t.Context(), roomID, now.Add(time.Minute)); err != nil {
+	if err := server.hub.CreateRoom(t.Context(), roomID, time.Now().Add(time.Minute), hostKey.pubkey, ""); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
-	hostToken := signTestToken(t, signer, token.Claims{
-		Subject:  "host_1",
-		Role:     token.RoleHost,
-		RoomID:   roomID,
-		Expiry:   now.Add(time.Minute).Unix(),
-		IssuedAt: now.Unix(),
-		TokenID:  "host_1",
-		Nonce:    "nonce_host",
-		Purpose:  token.PurposeWebSocket,
-	})
 
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
 	firstHost, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + hostToken}},
+		HTTPHeader: assertionHeaders(t, hostKey.sign(t, token.Assertion{
+			Role:    token.RoleHost,
+			RoomID:  roomID,
+			Purpose: token.PurposeWebSocket,
+		})),
 	})
 	if err != nil {
 		t.Fatalf("first host Dial() error = %v", err)
@@ -427,7 +274,11 @@ func TestWebSocketRejectsDuplicateRole(t *testing.T) {
 	defer firstHost.Close(websocket.StatusNormalClosure, "test done")
 
 	secondHost, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + hostToken}},
+		HTTPHeader: assertionHeaders(t, hostKey.sign(t, token.Assertion{
+			Role:    token.RoleHost,
+			RoomID:  roomID,
+			Purpose: token.PurposeWebSocket,
+		})),
 	})
 	if err != nil {
 		t.Fatalf("second host Dial() error = %v", err)
@@ -450,32 +301,31 @@ func newTestServer(t *testing.T) *Server {
 func newTestServerWithTiming(t *testing.T, heartbeatInterval time.Duration, idleTimeout time.Duration) *Server {
 	t.Helper()
 	cfg := config.Config{
-		ListenAddr:         "127.0.0.1:0",
-		PublicURL:          "http://127.0.0.1:0",
-		TokenIssuer:        "cradle-server",
-		TokenAudience:      "cradle-relay",
-		HMACSecret:         "secret",
-		PairingTTL:         time.Minute,
-		RoomTTL:            time.Minute,
-		HeartbeatInterval:  heartbeatInterval,
-		IdleTimeout:        idleTimeout,
-		ReadTimeout:        time.Second,
-		WriteTimeout:       time.Second,
-		MaxFrameBytes:      1024,
-		MaxQueuedEnvelopes: 4,
-		MaxQueuedBytes:     4096,
-		MaxRooms:           16,
-		MetricsEnabled:     true,
-		PprofEnabled:       false,
+		ListenAddr:            "127.0.0.1:0",
+		PublicURL:             "http://127.0.0.1:0",
+		PairingTTL:            time.Minute,
+		RoomTTL:               time.Minute,
+		HeartbeatInterval:     heartbeatInterval,
+		IdleTimeout:           idleTimeout,
+		ReadTimeout:           time.Second,
+		WriteTimeout:          time.Second,
+		AssertionMaxSkew:      time.Minute,
+		PairingStartRateLimit: 30,
+		PairingClaimRateLimit: 120,
+		MaxFrameBytes:         1024,
+		MaxQueuedEnvelopes:    4,
+		MaxQueuedBytes:        4096,
+		MaxRooms:              16,
+		MetricsEnabled:        true,
+		PprofEnabled:          false,
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	validator := newTestSigner(t)
 	counterSet := metrics.New()
 	server, err := NewServer(ServerConfig{
 		Config:    cfg,
-		Validator: validator,
+		Validator: token.NewAssertionValidator(token.AssertionValidatorConfig{Now: time.Now}),
 		Pairings:  pairing.NewStore(pairing.StoreConfig{CodeTTL: time.Minute}),
 		Hub: relay.NewHub(relay.HubConfig{
 			RoomTTL:            cfg.RoomTTL,
@@ -495,25 +345,97 @@ func newTestServerWithTiming(t *testing.T, heartbeatInterval time.Duration, idle
 	return server
 }
 
-func newTestSigner(t *testing.T) *token.HMACValidator {
+func postJSON[T any](t *testing.T, server *Server, path string, body any) T {
 	t.Helper()
-	validator, err := token.NewHMACValidator(token.HMACValidatorConfig{
-		Secret:   []byte("secret"),
-		Issuer:   "cradle-server",
-		Audience: "cradle-relay",
-		Now:      time.Now,
-	})
+	encoded, err := json.Marshal(body)
 	if err != nil {
-		t.Fatalf("NewHMACValidator() error = %v", err)
+		t.Fatalf("Marshal() error = %v", err)
 	}
-	return validator
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(encoded))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s status = %d body = %s", path, rec.Code, rec.Body.String())
+	}
+	var out T
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	return out
 }
 
-func signTestToken(t *testing.T, signer *token.HMACValidator, claims token.Claims) string {
+func dialHostController(t *testing.T, server *Server, roomID string, hostKey assertionKey, controllerKey assertionKey) (*websocket.Conn, *websocket.Conn) {
 	t.Helper()
-	raw, err := signer.Sign(claims)
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
+	host, _, err := websocket.Dial(t.Context(), wsURL+"/ws/host", &websocket.DialOptions{
+		HTTPHeader: assertionHeaders(t, hostKey.sign(t, token.Assertion{
+			Role:    token.RoleHost,
+			RoomID:  roomID,
+			Purpose: token.PurposeWebSocket,
+		})),
+	})
 	if err != nil {
-		t.Fatalf("Sign() error = %v", err)
+		t.Fatalf("host Dial() error = %v", err)
 	}
-	return raw
+	controller, _, err := websocket.Dial(t.Context(), wsURL+"/ws/controller", &websocket.DialOptions{
+		HTTPHeader: assertionHeaders(t, controllerKey.sign(t, token.Assertion{
+			Role:    token.RoleController,
+			RoomID:  roomID,
+			Purpose: token.PurposeWebSocket,
+		})),
+	})
+	if err != nil {
+		host.Close(websocket.StatusNormalClosure, "test done")
+		t.Fatalf("controller Dial() error = %v", err)
+	}
+	return host, controller
+}
+
+type assertionKey struct {
+	private ed25519.PrivateKey
+	pubkey  string
+	counter int
+}
+
+func newAssertionKey(t *testing.T) assertionKey {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	return assertionKey{
+		private: privateKey,
+		pubkey:  base64.StdEncoding.EncodeToString(publicKey),
+	}
+}
+
+func (k *assertionKey) sign(t *testing.T, assertion token.Assertion) token.SignedAssertion {
+	t.Helper()
+	k.counter++
+	assertion.Pubkey = k.pubkey
+	assertion.IssuedAt = time.Now().Unix()
+	assertion.Nonce = fmt.Sprintf("nonce_%d", k.counter)
+	payload, err := token.CanonicalJSON(assertion)
+	if err != nil {
+		t.Fatalf("CanonicalJSON() error = %v", err)
+	}
+	return token.SignedAssertion{
+		Assertion: assertion,
+		Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(k.private, payload)),
+	}
+}
+
+func assertionHeaders(t *testing.T, signed token.SignedAssertion) http.Header {
+	t.Helper()
+	raw, err := json.Marshal(signed.Assertion)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	return http.Header{
+		assertionHeader: []string{base64.StdEncoding.EncodeToString(raw)},
+		signatureHeader: []string{signed.Signature},
+	}
 }

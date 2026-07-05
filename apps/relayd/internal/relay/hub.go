@@ -28,6 +28,7 @@ var (
 	ErrPeerNotConnected = errors.New("relay: peer not connected")
 	ErrSlowConsumer     = errors.New("relay: slow consumer")
 	ErrRoomLimitReached = errors.New("relay: room limit reached")
+	ErrPubkeyMismatch   = errors.New("relay: pubkey mismatch")
 )
 
 type HubConfig struct {
@@ -52,12 +53,14 @@ type Hub struct {
 }
 
 type room struct {
-	id         string
-	expiresAt  time.Time
-	host       *connState
-	controller *connState
-	createdAt  time.Time
-	closedAt   time.Time
+	id               string
+	expiresAt        time.Time
+	host             *connState
+	controller       *connState
+	hostPubkey       string
+	controllerPubkey string
+	createdAt        time.Time
+	closedAt         time.Time
 }
 
 type connState struct {
@@ -96,24 +99,36 @@ func NewHub(cfg HubConfig) *Hub {
 	}
 }
 
-func (h *Hub) CreateRoom(_ context.Context, roomID string, expiresAt time.Time) error {
+func (h *Hub) CreateRoom(_ context.Context, roomID string, expiresAt time.Time, hostPubkey string, controllerPubkey string) error {
 	if roomID == "" {
 		return errors.New("relay: room id is required")
+	}
+	if hostPubkey == "" {
+		return errors.New("relay: host pubkey is required")
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.expireLocked(h.now())
-	if _, ok := h.rooms[roomID]; ok {
-		h.rooms[roomID].expiresAt = expiresAt
+	if existing, ok := h.rooms[roomID]; ok {
+		if existing.hostPubkey != "" && existing.hostPubkey != hostPubkey {
+			return ErrPubkeyMismatch
+		}
+		existing.expiresAt = expiresAt
+		existing.hostPubkey = hostPubkey
+		if controllerPubkey != "" {
+			existing.controllerPubkey = controllerPubkey
+		}
 		return nil
 	}
 	if len(h.rooms) >= h.cfg.MaxRooms {
 		return ErrRoomLimitReached
 	}
 	h.rooms[roomID] = &room{
-		id:        roomID,
-		expiresAt: expiresAt,
-		createdAt: h.now(),
+		id:               roomID,
+		expiresAt:        expiresAt,
+		hostPubkey:       hostPubkey,
+		controllerPubkey: controllerPubkey,
+		createdAt:        h.now(),
 	}
 	if h.cfg.Metrics != nil {
 		h.cfg.Metrics.ActiveRooms.Add(1)
@@ -121,8 +136,8 @@ func (h *Hub) CreateRoom(_ context.Context, roomID string, expiresAt time.Time) 
 	return nil
 }
 
-func (h *Hub) HandleConnection(ctx context.Context, role token.Role, claims token.Claims, ws *websocket.Conn) error {
-	state, err := h.register(role, claims, ws)
+func (h *Hub) HandleConnection(ctx context.Context, role token.Role, assertion token.Assertion, ws *websocket.Conn) error {
+	state, err := h.register(role, assertion, ws)
 	if err != nil {
 		ws.Close(websocket.StatusPolicyViolation, err.Error())
 		return err
@@ -166,19 +181,19 @@ func (h *Hub) CloseRoom(_ context.Context, roomID string, reason string) error {
 	return nil
 }
 
-func (h *Hub) register(role token.Role, claims token.Claims, ws *websocket.Conn) (*connState, error) {
-	if claims.RoomID == "" {
-		return nil, errors.New("relay: token room id is required")
+func (h *Hub) register(role token.Role, assertion token.Assertion, ws *websocket.Conn) (*connState, error) {
+	if assertion.RoomID == "" {
+		return nil, errors.New("relay: assertion room id is required")
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.expireLocked(h.now())
-	room, ok := h.rooms[claims.RoomID]
+	room, ok := h.rooms[assertion.RoomID]
 	if !ok {
 		return nil, ErrRoomNotFound
 	}
 	if !h.now().Before(room.expiresAt) {
-		delete(h.rooms, claims.RoomID)
+		delete(h.rooms, assertion.RoomID)
 		if h.cfg.Metrics != nil {
 			h.cfg.Metrics.ActiveRooms.Add(-1)
 			h.cfg.Metrics.RoomExpirations.Add(1)
@@ -191,10 +206,18 @@ func (h *Hub) register(role token.Role, claims token.Claims, ws *websocket.Conn)
 	if role == RoleController && room.controller != nil {
 		return nil, ErrRoomFull
 	}
+	if role == RoleHost && assertion.Pubkey != room.hostPubkey {
+		return nil, ErrPubkeyMismatch
+	}
+	if role == RoleController {
+		if room.controllerPubkey == "" || assertion.Pubkey != room.controllerPubkey {
+			return nil, ErrPubkeyMismatch
+		}
+	}
 
 	state := &connState{
 		role:     role,
-		roomID:   claims.RoomID,
+		roomID:   assertion.RoomID,
 		conn:     ws,
 		outbound: make(chan queuedEnvelope, h.cfg.MaxQueuedEnvelopes),
 		done:     make(chan struct{}),
@@ -218,6 +241,27 @@ func (h *Hub) register(role token.Role, claims token.Claims, ws *websocket.Conn)
 		h.cfg.Metrics.ActiveControllerSockets.Add(1)
 	}
 	return state, nil
+}
+
+func (h *Hub) SetControllerPubkey(_ context.Context, roomID string, controllerPubkey string) error {
+	if roomID == "" {
+		return errors.New("relay: room id is required")
+	}
+	if controllerPubkey == "" {
+		return errors.New("relay: controller pubkey is required")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.expireLocked(h.now())
+	room, ok := h.rooms[roomID]
+	if !ok {
+		return ErrRoomNotFound
+	}
+	if room.controllerPubkey != "" && room.controllerPubkey != controllerPubkey {
+		return ErrPubkeyMismatch
+	}
+	room.controllerPubkey = controllerPubkey
+	return nil
 }
 
 func (h *Hub) unregister(state *connState) {

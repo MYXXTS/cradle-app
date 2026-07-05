@@ -56,6 +56,10 @@ stable `roomId`, `pinnedHostPubkey`, and `controllerKeyRef` under the same
 `relay` object. Future `POST /remote-hosts/:hostId/cradle-server/connect` calls
 use those pinned values and do not require the pairing string again.
 
+`controllerKeyRef` is the controller X25519 encryption key. The controller
+Ed25519 relay assertion signing key is stored separately as the sibling secret
+`relay-controller-sign-key:{hostId}` and is derived from no shared relayd secret.
+
 The Cradle Server capability controls where the SSH tunnel connects after reaching the target machine:
 
     {

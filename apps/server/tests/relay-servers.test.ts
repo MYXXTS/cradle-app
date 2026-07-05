@@ -38,11 +38,6 @@ const server = http.createServer((req, res) => {
     res.end('ok')
     return
   }
-  if (req.url === '/secret') {
-    res.writeHead(200, { 'content-type': 'text/plain' })
-    res.end(process.env.CRADLE_RELAYD_HMAC_SECRET || '')
-    return
-  }
   res.writeHead(404, { 'content-type': 'text/plain' })
   res.end('not found')
 })
@@ -282,44 +277,6 @@ describe('relay servers', () => {
     }
   })
 
-  it('injects the server relay HMAC secret into managed local relayd', async () => {
-    const dataDir = makeTempDir('cradle-managed-local-relayd-secret-')
-    const binDir = makeTempDir('cradle-managed-local-relayd-secret-bin-')
-    const previousDataDir = process.env.CRADLE_DATA_DIR
-    const previousAutostart = process.env.CRADLE_RELAYD_AUTOSTART
-    const previousRelaydPath = process.env.CRADLE_RELAYD_PATH
-    const previousRelaySecret = process.env.CRADLE_RELAY_HMAC_SECRET
-    const previousRelayDevSecret = process.env.CRADLE_RELAYD_HMAC_SECRET
-    let app: ElysiaApp | undefined
-
-    try {
-      process.env.CRADLE_RELAYD_AUTOSTART = '1'
-      process.env.CRADLE_RELAYD_PATH = writeFakeRelaydExecutable(binDir)
-      process.env.CRADLE_RELAY_HMAC_SECRET = 'server-managed-local-relayd-secret'
-      delete process.env.CRADLE_RELAYD_HMAC_SECRET
-      app = await createAppWithDataDir(dataDir)
-
-      await startManagedLocalRelayd()
-      const list = await (await app.handle(new Request('http://localhost/relay-servers'))).json() as RelayServerView[]
-      const localRelay = list.find(server => server.id === 'system:local-relayd')
-      expect(localRelay?.relayUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-
-      const secretRes = await fetch(`${localRelay?.relayUrl}/secret`)
-      expect(secretRes.status).toBe(200)
-      expect(await secretRes.text()).toBe('server-managed-local-relayd-secret')
-    }
-    finally {
-      await stopManagedLocalRelayd()
-      rmSync(dataDir, { recursive: true, force: true })
-      rmSync(binDir, { recursive: true, force: true })
-      restoreEnv('CRADLE_DATA_DIR', previousDataDir)
-      restoreEnv('CRADLE_RELAYD_AUTOSTART', previousAutostart)
-      restoreEnv('CRADLE_RELAYD_PATH', previousRelaydPath)
-      restoreEnv('CRADLE_RELAY_HMAC_SECRET', previousRelaySecret)
-      restoreEnv('CRADLE_RELAYD_HMAC_SECRET', previousRelayDevSecret)
-    }
-  })
-
   it('uses Network inbound preferences for the managed local relay URL and listener', async () => {
     const dataDir = makeTempDir('cradle-managed-local-relayd-network-')
     const binDir = makeTempDir('cradle-managed-local-relayd-network-bin-')
@@ -359,8 +316,8 @@ describe('relay servers', () => {
       const list = await (await app.handle(new Request('http://localhost/relay-servers'))).json() as RelayServerView[]
       expect(list.find(server => server.id === 'system:local-relayd')?.relayUrl).toBe(relayUrl)
 
-      const secretRes = await fetch(`${relayUrl}/secret`)
-      expect(secretRes.status).toBe(200)
+      const readyRes = await fetch(`${relayUrl}/readyz`)
+      expect(readyRes.status).toBe(200)
     }
     finally {
       await stopManagedLocalRelayd()

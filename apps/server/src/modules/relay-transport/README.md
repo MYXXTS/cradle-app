@@ -2,8 +2,8 @@
 
 This module owns Cradle Server to Cradle Server tunnels that pass through relayd.
 It is used when the host machine cannot accept inbound connections. relayd only
-authenticates peers and forwards envelopes; the Cradle servers encrypt the inner
-stream end to end.
+verifies signed admission assertions and forwards envelopes; the Cradle servers
+encrypt the inner stream end to end.
 
 ## Ownership
 
@@ -11,13 +11,14 @@ stream end to end.
 
 - host-side enrollments in `relay_host_enrollments`.
 - host-side X25519 key generation and private-key secret references.
+- host-side Ed25519 relay assertion signing keys stored as sibling secrets.
 - the always-on host connector that maintains `/ws/host` connections to relayd.
 - the controller-side local TCP listener used by `remote-hosts`.
 - the encrypted inner protocol, stream multiplexing, and flow control.
 
-The module reads relay server URLs and mints relay tokens through
-`relay-servers`, but it does not write relay server registry rows. The
-controller-side remote host row remains owned by `remote-hosts`.
+The module reads relay server URLs through `relay-servers`, but it does not write
+relay server registry rows. The controller-side remote host row remains owned by
+`remote-hosts`.
 
 ## Files
 
@@ -43,23 +44,33 @@ On the host Cradle Server, call:
     POST /relay-transport/host-enrollments
 
 with a relay URL. The host generates an X25519 keypair, stores the private key
-as a managed secret, asks relayd `POST /pairing/start` for a pairing code, and
-stores an enrollment row. The response includes a pairing string:
+as a managed secret, generates a separate Ed25519 signing key sibling secret,
+asks relayd `POST /pairing/start` for a pairing code with a signed
+`create_room` assertion, and stores an enrollment row. The response includes a
+pairing string:
 
-    <pairingCode>#<hostKeyFingerprint>
+    <pairingCode>:<roomId>#<hostKeyFingerprint>
 
 On the controller Cradle Server, create or update a remote host with
 `transport: "relay"` and a relay URL or relay server id, then call:
 
     POST /remote-hosts/:hostId/relay/claim
 
-with the pairing string. The controller mints its WebSocket token, performs the
-first encrypted handshake, verifies that the learned host public key matches the
-fingerprint in the pairing string, and stores the pinned host key plus its own
-controller key reference in the remote host connection config.
+with the pairing string. The controller generates or reuses its X25519
+encryption key and Ed25519 signing key, claims the room with a signed `claim`
+assertion, performs the first encrypted handshake, verifies that the learned
+host public key matches the fingerprint in the pairing string, and stores the
+pinned host key plus its own controller encryption key reference in the remote
+host connection config.
 
 After this, normal remote-host connect calls use pinned public keys and do not
 need the pairing code again.
+
+The first handshake also carries the controller Ed25519 signing public key in
+the controller `hello` metadata. The host stores it as a sibling secret so
+`POST /rooms/host-session` can restore relayd's in-memory controller
+authorization after relayd restarts. This keeps existing X25519 pinning fields
+unchanged and avoids a database migration.
 
 ## Runtime Tunnel
 

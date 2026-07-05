@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	testHostPubkey       = "host_pubkey"
+	testControllerPubkey = "controller_pubkey"
+)
+
 func newTestHub(now func() time.Time) *Hub {
 	return NewHub(HubConfig{
 		RoomTTL:            time.Minute,
@@ -24,7 +29,7 @@ func TestHubIdleRoomExpiresPastTTL(t *testing.T) {
 	hub := newTestHub(func() time.Time { return now })
 
 	roomID := "room_idle"
-	if err := hub.CreateRoom(context.Background(), roomID, now.Add(time.Minute)); err != nil {
+	if err := hub.CreateRoom(context.Background(), roomID, now.Add(time.Minute), testHostPubkey, ""); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 
@@ -46,7 +51,7 @@ func TestHubActiveRoomIsRenewedPastTTL(t *testing.T) {
 	hub := newTestHub(func() time.Time { return now })
 
 	roomID := "room_active"
-	if err := hub.CreateRoom(context.Background(), roomID, now.Add(time.Minute)); err != nil {
+	if err := hub.CreateRoom(context.Background(), roomID, now.Add(time.Minute), testHostPubkey, ""); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 	// Attach an active host peer so the room is considered in use.
@@ -78,7 +83,7 @@ func TestHubRenewRoomExtendsExpiry(t *testing.T) {
 	hub := newTestHub(func() time.Time { return now })
 
 	roomID := "room_renew"
-	if err := hub.CreateRoom(context.Background(), roomID, now.Add(time.Minute)); err != nil {
+	if err := hub.CreateRoom(context.Background(), roomID, now.Add(time.Minute), testHostPubkey, ""); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 
@@ -99,13 +104,13 @@ func TestHubCreateRoomIdempotentRenews(t *testing.T) {
 
 	roomID := "room_idempotent"
 	firstExpiry := now.Add(time.Minute)
-	if err := hub.CreateRoom(context.Background(), roomID, firstExpiry); err != nil {
+	if err := hub.CreateRoom(context.Background(), roomID, firstExpiry, testHostPubkey, ""); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
 	// Re-creating the same room with a later expiry updates it in place — this
 	// is the path POST /rooms/host-session uses for reconnect.
 	laterExpiry := now.Add(time.Hour)
-	if err := hub.CreateRoom(context.Background(), roomID, laterExpiry); err != nil {
+	if err := hub.CreateRoom(context.Background(), roomID, laterExpiry, testHostPubkey, testControllerPubkey); err != nil {
 		t.Fatalf("CreateRoom() second call error = %v", err)
 	}
 	hub.mu.Lock()

@@ -313,6 +313,15 @@ export class ChatStreamBroker {
     }
     catch (error) {
       this.removeSubscriber(entry, streamId)
+      if (isExpectedEntryAbort(entry)) {
+        return {
+          streamId,
+          sessionId: entry.sessionId,
+          runId: entry.runId,
+          assistantMessageId: entry.assistantMessageId,
+          userMessageId: entry.userMessageId,
+        }
+      }
       throw error
     }
   }
@@ -377,7 +386,7 @@ export class ChatStreamBroker {
     catch (error) {
       const message = readErrorMessage(error)
       this.errorSubscribers(entry, message)
-      this.entriesBySessionId.delete(entry.sessionId)
+      this.deleteEntryIfCurrent(entry)
       throw error
     }
   }
@@ -385,7 +394,7 @@ export class ChatStreamBroker {
   private async pumpResponse(entry: UpstreamEntry, response: Response): Promise<void> {
     if (!response.body) {
       this.errorSubscribers(entry, 'Chat stream upstream response had no body')
-      this.entriesBySessionId.delete(entry.sessionId)
+      this.deleteEntryIfCurrent(entry)
       return
     }
 
@@ -438,7 +447,7 @@ export class ChatStreamBroker {
         return
       }
       this.errorSubscribers(entry, readErrorMessage(error))
-      this.entriesBySessionId.delete(entry.sessionId)
+      this.deleteEntryIfCurrent(entry)
     }
   }
 
@@ -487,7 +496,7 @@ export class ChatStreamBroker {
       this.closeSubscriber(entry, subscriber, reason)
       this.removeSubscriber(entry, subscriber.streamId)
     }
-    this.entriesBySessionId.delete(entry.sessionId)
+    this.deleteEntryIfCurrent(entry)
   }
 
   private closeSubscriber(
@@ -555,7 +564,7 @@ export class ChatStreamBroker {
     }
     entry.closed = true
     entry.controller.abort()
-    this.entriesBySessionId.delete(entry.sessionId)
+    this.deleteEntryIfCurrent(entry)
   }
 
   private findSubscriber(streamId: string): { entry: UpstreamEntry, subscriber: StreamSubscriber } | null {
@@ -571,6 +580,12 @@ export class ChatStreamBroker {
   private createStreamId(sessionId: string): string {
     this.nextStreamIndex += 1
     return `desktop-chat-${sessionId}-${Date.now()}-${this.nextStreamIndex}`
+  }
+
+  private deleteEntryIfCurrent(entry: UpstreamEntry): void {
+    if (this.entriesBySessionId.get(entry.sessionId) === entry) {
+      this.entriesBySessionId.delete(entry.sessionId)
+    }
   }
 }
 
@@ -588,6 +603,10 @@ function createDetachedChatStreamSink(): ChatStreamSink {
       // Detached notification replies only need the broker to drain the server stream.
     },
   }
+}
+
+function isExpectedEntryAbort(entry: UpstreamEntry): boolean {
+  return entry.closed && entry.controller.signal.aborted
 }
 
 function createReplayBuffer(): ReplayBuffer {

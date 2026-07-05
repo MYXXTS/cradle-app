@@ -91,6 +91,9 @@ export type InnerFrameKind =
  * - `name`: optional human-readable label for this peer (e.g. the controller's
  *   machine name), so the other side can show "paired with X" instead of just a
  *   fingerprint. Sent in plaintext alongside the pubkey — keep it non-sensitive.
+ * - `signingPubkey`: optional Ed25519 relay assertion public key. The host
+ *   persists the controller value after first pairing so it can restore relayd
+ *   room controller authorization after relayd restarts.
  *   Unknown keys are stripped by Zod, so old peers ignore it (backward compatible).
  *
  * Note: the pairing `confirm` cannot ride in this frame — it is an HMAC over a
@@ -105,6 +108,7 @@ export const helloFrameSchema = z.object({
   pubkey: z.string().min(1),
   pinnedPubkey: z.string().optional(),
   name: z.string().max(128).optional(),
+  signingPubkey: z.string().min(1).optional(),
 })
 
 /**

@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/pprof"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -20,6 +23,8 @@ import (
 )
 
 const maxJSONBodyBytes = 64 << 10
+const assertionHeader = "X-Cradle-Relay-Assertion"
+const signatureHeader = "X-Cradle-Relay-Signature"
 
 type ServerConfig struct {
 	Config    config.Config
@@ -31,45 +36,42 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	cfg       config.Config
-	validator token.Validator
-	pairings  *pairing.Store
-	hub       *relay.Hub
-	metrics   *metrics.Counters
-	logger    *slog.Logger
-	mux       *http.ServeMux
+	cfg                 config.Config
+	validator           token.Validator
+	pairings            *pairing.Store
+	hub                 *relay.Hub
+	metrics             *metrics.Counters
+	logger              *slog.Logger
+	mux                 *http.ServeMux
+	pairingStartLimiter *rateLimiter
+	pairingClaimLimiter *rateLimiter
 }
 
 type startRequest struct {
-	HostToken string `json:"hostToken,omitempty"`
-	RoomID    string `json:"roomId,omitempty"`
+	Assertion token.SignedAssertion `json:"assertion"`
 }
 
 type startResponse struct {
 	RoomID      string    `json:"roomId"`
 	PairingCode string    `json:"pairingCode"`
-	HostToken   string    `json:"hostToken,omitempty"`
 	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 type claimRequest struct {
-	PairingCode     string `json:"pairingCode"`
-	ControllerToken string `json:"controllerToken,omitempty"`
+	Assertion token.SignedAssertion `json:"assertion"`
 }
 
 type claimResponse struct {
-	RoomID          string    `json:"roomId"`
-	ControllerToken string    `json:"controllerToken,omitempty"`
-	ExpiresAt       time.Time `json:"expiresAt"`
+	RoomID    string    `json:"roomId"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type hostSessionRequest struct {
-	HostToken string `json:"hostToken"`
+	Assertion token.SignedAssertion `json:"assertion"`
 }
 
 type hostSessionResponse struct {
 	RoomID    string    `json:"roomId"`
-	HostToken string    `json:"hostToken"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
@@ -90,13 +92,15 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		cfg.Logger = slog.Default()
 	}
 	s := &Server{
-		cfg:       cfg.Config,
-		validator: cfg.Validator,
-		pairings:  cfg.Pairings,
-		hub:       cfg.Hub,
-		metrics:   cfg.Metrics,
-		logger:    cfg.Logger,
-		mux:       http.NewServeMux(),
+		cfg:                 cfg.Config,
+		validator:           cfg.Validator,
+		pairings:            cfg.Pairings,
+		hub:                 cfg.Hub,
+		metrics:             cfg.Metrics,
+		logger:              cfg.Logger,
+		mux:                 http.NewServeMux(),
+		pairingStartLimiter: newRateLimiter(cfg.Config.PairingStartRateLimit, time.Minute, time.Now),
+		pairingClaimLimiter: newRateLimiter(cfg.Config.PairingClaimRateLimit, time.Minute, time.Now),
 	}
 	s.routes()
 	return s, nil
@@ -141,40 +145,30 @@ func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) startPairing(w http.ResponseWriter, r *http.Request) {
-	claims, ok := s.authenticate(w, r, token.ExpectedClaims{Purpose: token.PurposePairingStart})
-	if !ok {
+	if !s.allowPairingRequest(w, r, s.pairingStartLimiter) {
 		return
 	}
 	var body startRequest
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	roomID := body.RoomID
-	if roomID == "" {
-		roomID = claims.RoomID
-	}
-	if body.HostToken != "" {
-		if _, err := s.validator.Validate(r.Context(), body.HostToken, token.ExpectedClaims{
-			Role:    token.RoleHost,
-			RoomID:  roomID,
-			Purpose: token.PurposeWebSocket,
-		}); err != nil {
-			s.metrics.AuthFailures.Add(1)
-			writeError(w, http.StatusUnauthorized, "invalid host token")
-			return
-		}
+	assertion, ok := s.validateAssertion(w, r, body.Assertion, token.ExpectedAssertion{
+		Role:    token.RoleHost,
+		Purpose: token.PurposeCreateRoom,
+	})
+	if !ok {
+		return
 	}
 
 	started, err := s.pairings.Start(r.Context(), pairing.StartInput{
-		Claims:    claims,
-		RoomID:    roomID,
-		HostToken: body.HostToken,
+		RoomID:     assertion.RoomID,
+		HostPubkey: assertion.Pubkey,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "could not start pairing")
 		return
 	}
-	if err := s.hub.CreateRoom(r.Context(), started.RoomID, started.ExpiresAt.Add(s.cfg.RoomTTL)); err != nil {
+	if err := s.hub.CreateRoom(r.Context(), started.RoomID, started.ExpiresAt.Add(s.cfg.RoomTTL), assertion.Pubkey, ""); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "could not create room")
 		return
 	}
@@ -182,93 +176,68 @@ func (s *Server) startPairing(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, startResponse{
 		RoomID:      started.RoomID,
 		PairingCode: started.PairingCode,
-		HostToken:   started.HostToken,
 		ExpiresAt:   started.ExpiresAt,
 	})
 }
 
 func (s *Server) claimPairing(w http.ResponseWriter, r *http.Request) {
-	_, ok := s.authenticate(w, r, token.ExpectedClaims{Purpose: token.PurposePairingClaim})
-	if !ok {
+	if !s.allowPairingRequest(w, r, s.pairingClaimLimiter) {
 		return
 	}
 	var body claimRequest
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	pending, err := s.pairings.FindPending(r.Context(), body.PairingCode)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "invalid pairing code")
+	assertion, ok := s.validateAssertion(w, r, body.Assertion, token.ExpectedAssertion{
+		Role:    token.RoleController,
+		Purpose: token.PurposeClaim,
+	})
+	if !ok {
 		return
 	}
-	if body.ControllerToken != "" {
-		if _, err := s.validator.Validate(r.Context(), body.ControllerToken, token.ExpectedClaims{
-			Role:    token.RoleController,
-			RoomID:  pending.RoomID,
-			Purpose: token.PurposeWebSocket,
-		}); err != nil {
-			s.metrics.AuthFailures.Add(1)
-			writeError(w, http.StatusUnauthorized, "invalid controller token")
-			return
-		}
-	}
-	if body.ControllerToken == "" {
-		writeJSON(w, http.StatusOK, claimResponse{
-			RoomID:    pending.RoomID,
-			ExpiresAt: pending.ExpiresAt,
-		})
+	if assertion.PairingCode == "" {
+		writeError(w, http.StatusBadRequest, "pairing code is required")
 		return
 	}
 	claimed, err := s.pairings.Claim(r.Context(), pairing.ClaimInput{
-		Code:            body.PairingCode,
-		ControllerToken: body.ControllerToken,
+		Code:             assertion.PairingCode,
+		RoomID:           assertion.RoomID,
+		ControllerPubkey: assertion.Pubkey,
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "invalid pairing code")
+		return
+	}
+	if err := s.hub.SetControllerPubkey(r.Context(), claimed.RoomID, assertion.Pubkey); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "could not claim room")
 		return
 	}
 	s.metrics.PairingClaims.Add(1)
 	writeJSON(w, http.StatusOK, claimResponse{
-		RoomID:          claimed.RoomID,
-		ControllerToken: claimed.ControllerToken,
-		ExpiresAt:       claimed.ExpiresAt,
+		RoomID:    claimed.RoomID,
+		ExpiresAt: claimed.ExpiresAt,
 	})
 }
 
 func (s *Server) startHostSession(w http.ResponseWriter, r *http.Request) {
-	claims, ok := s.authenticate(w, r, token.ExpectedClaims{Purpose: token.PurposeRoomStart})
-	if !ok {
-		return
-	}
-	if claims.RoomID == "" {
-		writeError(w, http.StatusBadRequest, "room id is required")
-		return
-	}
 	var body hostSessionRequest
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if body.HostToken == "" {
-		writeError(w, http.StatusBadRequest, "host token is required")
-		return
-	}
-	if _, err := s.validator.Validate(r.Context(), body.HostToken, token.ExpectedClaims{
+	assertion, ok := s.validateAssertion(w, r, body.Assertion, token.ExpectedAssertion{
 		Role:    token.RoleHost,
-		RoomID:  claims.RoomID,
-		Purpose: token.PurposeWebSocket,
-	}); err != nil {
-		s.metrics.AuthFailures.Add(1)
-		writeError(w, http.StatusUnauthorized, "invalid host token")
+		Purpose: token.PurposeReconnect,
+	})
+	if !ok {
 		return
 	}
-	expiresAt := time.Unix(claims.Expiry, 0)
-	if err := s.hub.CreateRoom(r.Context(), claims.RoomID, expiresAt.Add(s.cfg.RoomTTL)); err != nil {
+	expiresAt := time.Now().Add(s.cfg.AssertionMaxSkew)
+	if err := s.hub.CreateRoom(r.Context(), assertion.RoomID, expiresAt.Add(s.cfg.RoomTTL), assertion.Pubkey, assertion.ControllerPubkey); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "could not create room")
 		return
 	}
 	writeJSON(w, http.StatusOK, hostSessionResponse{
-		RoomID:    claims.RoomID,
-		HostToken: body.HostToken,
+		RoomID:    assertion.RoomID,
 		ExpiresAt: expiresAt,
 	})
 }
@@ -282,7 +251,13 @@ func (s *Server) controllerWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request, role token.Role) {
-	claims, ok := s.authenticate(w, r, token.ExpectedClaims{
+	signed, ok := token.SignedAssertionFromHeaders(r.Header.Get(assertionHeader), r.Header.Get(signatureHeader))
+	if !ok {
+		s.metrics.AuthFailures.Add(1)
+		writeError(w, http.StatusUnauthorized, "missing relay assertion")
+		return
+	}
+	assertion, ok := s.validateAssertion(w, r, signed, token.ExpectedAssertion{
 		Role:    role,
 		Purpose: token.PurposeWebSocket,
 	})
@@ -296,33 +271,35 @@ func (s *Server) acceptWebSocket(w http.ResponseWriter, r *http.Request, role to
 		s.logger.Warn("accepting websocket failed", "error", err)
 		return
 	}
-	if err := s.hub.HandleConnection(r.Context(), role, claims, ws); err != nil {
+	if err := s.hub.HandleConnection(r.Context(), role, assertion, ws); err != nil {
 		s.logger.Info(
 			"relay websocket closed",
 			"role",
 			role,
 			"roomId",
-			claims.RoomID,
+			assertion.RoomID,
 			"error",
 			err,
 		)
 	}
 }
 
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request, expected token.ExpectedClaims) (token.Claims, bool) {
-	raw, ok := token.BearerToken(r.Header.Get("Authorization"))
-	if !ok {
-		s.metrics.AuthFailures.Add(1)
-		writeError(w, http.StatusUnauthorized, "missing bearer token")
-		return token.Claims{}, false
-	}
-	claims, err := s.validator.Validate(r.Context(), raw, expected)
+func (s *Server) validateAssertion(w http.ResponseWriter, r *http.Request, signed token.SignedAssertion, expected token.ExpectedAssertion) (token.Assertion, bool) {
+	assertion, err := s.validator.Validate(r.Context(), signed, expected)
 	if err != nil {
 		s.metrics.AuthFailures.Add(1)
-		writeError(w, http.StatusUnauthorized, "invalid bearer token")
-		return token.Claims{}, false
+		writeError(w, http.StatusUnauthorized, "invalid relay assertion")
+		return token.Assertion{}, false
 	}
-	return claims, true
+	return assertion, true
+}
+
+func (s *Server) allowPairingRequest(w http.ResponseWriter, r *http.Request, limiter *rateLimiter) bool {
+	if limiter.allow(clientIP(r)) {
+		return true
+	}
+	writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+	return false
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, out any) bool {
@@ -363,4 +340,56 @@ func UnexpectedError(message string, err error) error {
 		return errors.New(message)
 	}
 	return fmt.Errorf("%s: %w", message, err)
+}
+
+type rateLimiter struct {
+	mu     sync.Mutex
+	limit  int
+	window time.Duration
+	now    func() time.Time
+	byKey  map[string]rateBucket
+}
+
+type rateBucket struct {
+	windowStart time.Time
+	count       int
+}
+
+func newRateLimiter(limit int, window time.Duration, now func() time.Time) *rateLimiter {
+	return &rateLimiter{
+		limit:  limit,
+		window: window,
+		now:    now,
+		byKey:  map[string]rateBucket{},
+	}
+}
+
+func (l *rateLimiter) allow(key string) bool {
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for existingKey, bucket := range l.byKey {
+		if now.Sub(bucket.windowStart) >= l.window {
+			delete(l.byKey, existingKey)
+		}
+	}
+	bucket := l.byKey[key]
+	if bucket.windowStart.IsZero() || now.Sub(bucket.windowStart) >= l.window {
+		l.byKey[key] = rateBucket{windowStart: now, count: 1}
+		return true
+	}
+	if bucket.count >= l.limit {
+		return false
+	}
+	bucket.count++
+	l.byKey[key] = bucket
+	return true
+}
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }

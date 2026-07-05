@@ -9,7 +9,13 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 
-import { createRelayRoomId, mintRelayToken } from '../../src/modules/relay-servers/relay-token-service'
+import {
+  createRelayRoomId,
+  generateRelaySigningKeyPair,
+  relayAssertionHeaders,
+  signRelayAssertion,
+  type SignedRelayAssertion,
+} from '../../src/modules/relay-servers/relay-signature-service'
 import { generateRelayKeyPair, relayPublicKeyFingerprint } from '../../src/modules/relay-transport/crypto'
 import { startRelayControllerTransport } from '../../src/modules/relay-transport/controller-transport'
 import { relayEnvelopeSchema } from '../../src/modules/relay-transport/protocol'
@@ -23,7 +29,6 @@ import { RelaySession } from '../../src/modules/relay-transport/session'
  * the actual relay.
  */
 
-const TEST_HMAC_SECRET = 'e2e-test-relay-hmac-secret'
 const moduleDir = fileURLToPath(new URL('.', import.meta.url))
 const relaydSourceDir = resolveRelaydSourceDir()
 
@@ -69,7 +74,6 @@ async function spawnRelayd(): Promise<RelaydHandle> {
       ...process.env,
       CRADLE_RELAYD_LISTEN: listenAddr,
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
-      CRADLE_RELAYD_HMAC_SECRET: TEST_HMAC_SECRET,
       CRADLE_RELAYD_ROOM_TTL: '30s',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -139,7 +143,7 @@ interface HostBridge {
 async function startHostBridge(opts: {
   relayUrl: string
   roomId: string
-  hostWsToken: string
+  hostWsAssertion: SignedRelayAssertion
   hostPrivateKey: string
   hostPublicKey: string
   pairingCode: string
@@ -150,7 +154,7 @@ async function startHostBridge(opts: {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const net = require('node:net') as typeof import('node:net')
   const wsUrl = toWsUrl(opts.relayUrl, '/ws/host')
-  const ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${opts.hostWsToken}` } })
+  const ws = new WebSocket(wsUrl, { headers: relayAssertionHeaders(opts.hostWsAssertion) })
 
   const session = new RelaySession(
     'host',
@@ -225,11 +229,11 @@ function toWsUrl(relayUrl: string, path: string): string {
   return url.toString()
 }
 
-async function callPairingStart(relayUrl: string, pairingStartToken: string, hostToken: string, roomId: string): Promise<{ pairingCode: string, roomId: string }> {
+async function callPairingStart(relayUrl: string, assertion: SignedRelayAssertion): Promise<{ pairingCode: string, roomId: string }> {
   const response = await fetch(new URL('/pairing/start', `${relayUrl}/`), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${pairingStartToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hostToken, roomId }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assertion }),
   })
   if (!response.ok) {
     throw new Error(`/pairing/start returned ${response.status}: ${await response.text()}`)
@@ -237,11 +241,11 @@ async function callPairingStart(relayUrl: string, pairingStartToken: string, hos
   return await response.json() as { pairingCode: string, roomId: string }
 }
 
-async function callPairingClaim(relayUrl: string, claimToken: string, pairingCode: string, controllerToken: string): Promise<{ roomId: string }> {
+async function callPairingClaim(relayUrl: string, assertion: SignedRelayAssertion): Promise<{ roomId: string }> {
   const response = await fetch(new URL('/pairing/claim', `${relayUrl}/`), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${claimToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pairingCode, controllerToken }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assertion }),
   })
   if (!response.ok) {
     throw new Error(`/pairing/claim returned ${response.status}: ${await response.text()}`)
@@ -273,10 +277,8 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
   let relayd: RelaydHandle
   let fakeHost: { baseUrl: string, server: Server, requests: string[] }
   let dataDir: string
-  const previousHmac = process.env.CRADLE_RELAY_HMAC_SECRET
 
   beforeAll(async () => {
-    process.env.CRADLE_RELAY_HMAC_SECRET = TEST_HMAC_SECRET
     dataDir = mkdtempSync(join(tmpdir(), 'cradle-relay-e2e-'))
     process.env.CRADLE_DATA_DIR = dataDir
     relayd = await spawnRelayd()
@@ -287,24 +289,20 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
     killRelayd(relayd.child)
     await new Promise<void>((resolve) => fakeHost.server.close(() => resolve()))
     rmSync(dataDir, { recursive: true, force: true })
-    if (previousHmac === undefined) {
-      delete process.env.CRADLE_RELAY_HMAC_SECRET
-    }
-    else {
-      process.env.CRADLE_RELAY_HMAC_SECRET = previousHmac
-    }
   })
 
   it('pairs, tunnels an HTTP request end-to-end, and reconnects with pinned pubkeys', async () => {
     // ── Host: create room + pairing code ──
     const hostKeys = generateRelayKeyPair()
     const controllerKeys = generateRelayKeyPair()
+    const hostSigningKeys = generateRelaySigningKeyPair()
+    const controllerSigningKeys = generateRelaySigningKeyPair()
     const roomId = createRelayRoomId()
     const hostFingerprint = relayPublicKeyFingerprint(hostKeys.publicKeyBase64)
 
-    const pairingStart = mintRelayToken({ subject: 'host:e2e', purpose: 'pairing_start', roomId, ttlMs: 5 * 60 * 1000 })
-    const hostWs = mintRelayToken({ subject: 'host:e2e', role: 'host', purpose: 'ws', roomId, ttlMs: 5 * 60 * 1000 })
-    const { pairingCode } = await callPairingStart(relayd.relayUrl, pairingStart.token, hostWs.token, roomId)
+    const pairingStart = signRelayAssertion(hostSigningKeys.privateKeyBase64, { role: 'host', purpose: 'create_room', roomId })
+    const hostWs = signRelayAssertion(hostSigningKeys.privateKeyBase64, { role: 'host', purpose: 'ws', roomId })
+    const { pairingCode } = await callPairingStart(relayd.relayUrl, pairingStart)
 
     // ── Host: start the bridge (WS + session + TCP target = fake host server).
     //    The host session won't be ready until the controller connects and the
@@ -314,7 +312,7 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
     const hostBridge = await startHostBridge({
       relayUrl: relayd.relayUrl,
       roomId,
-      hostWsToken: hostWs.token,
+      hostWsAssertion: hostWs,
       hostPrivateKey: hostKeys.privateKeyBase64,
       hostPublicKey: hostKeys.publicKeyBase64,
       pairingCode,
@@ -323,18 +321,17 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
     })
 
     // ── Controller: claim the pairing ──
-    const claimToken = mintRelayToken({ subject: 'controller:e2e', purpose: 'pairing_claim', ttlMs: 5 * 60 * 1000 })
-    const lookup = await callPairingClaim(relayd.relayUrl, claimToken.token, pairingCode, '')
+    const claimAssertion = signRelayAssertion(controllerSigningKeys.privateKeyBase64, { role: 'controller', purpose: 'claim', roomId, pairingCode })
+    const lookup = await callPairingClaim(relayd.relayUrl, claimAssertion)
     expect(lookup.roomId).toBe(roomId)
-    const controllerWs = mintRelayToken({ subject: 'controller:e2e', role: 'controller', purpose: 'ws', roomId, ttlMs: 5 * 60 * 1000 })
-    await callPairingClaim(relayd.relayUrl, claimToken.token, pairingCode, controllerWs.token)
+    const controllerWs = signRelayAssertion(controllerSigningKeys.privateKeyBase64, { role: 'controller', purpose: 'ws', roomId })
 
     // ── Controller: start the relay transport (first pairing) ──
     const handle = await startRelayControllerTransport({
       hostId: 'e2e-host',
       relayUrl: relayd.relayUrl,
       roomId,
-      wsToken: controllerWs.token,
+      wsAssertion: controllerWs,
       controllerPrivateKeyBase64: controllerKeys.privateKeyBase64,
       controllerPublicKeyBase64: controllerKeys.publicKeyBase64,
       pairingCode,
@@ -362,19 +359,24 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
 
     // ── Reconnect with pinned pubkeys (no pairing code) ──
     // Re-create the room (host-session) and reconnect both sides.
-    const roomStart = mintRelayToken({ subject: 'host:e2e', purpose: 'room_start', roomId, ttlMs: 5 * 60 * 1000 })
-    const hostWs2 = mintRelayToken({ subject: 'host:e2e', role: 'host', purpose: 'ws', roomId, ttlMs: 5 * 60 * 1000 })
+    const roomStart = signRelayAssertion(hostSigningKeys.privateKeyBase64, {
+      role: 'host',
+      purpose: 'reconnect',
+      roomId,
+      controllerPubkey: controllerSigningKeys.publicKeyBase64,
+    })
+    const hostWs2 = signRelayAssertion(hostSigningKeys.privateKeyBase64, { role: 'host', purpose: 'ws', roomId })
     const renewResponse = await fetch(new URL('/rooms/host-session', `${relayd.relayUrl}/`), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${roomStart.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostToken: hostWs2.token }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assertion: roomStart }),
     })
     expect(renewResponse.ok).toBe(true)
 
     const hostBridgeReconnect = await startHostBridgePinned({
       relayUrl: relayd.relayUrl,
       roomId,
-      hostWsToken: hostWs2.token,
+      hostWsAssertion: hostWs2,
       hostPrivateKey: hostKeys.privateKeyBase64,
       hostPublicKey: hostKeys.publicKeyBase64,
       pinnedControllerPubkey: controllerKeys.publicKeyBase64,
@@ -382,12 +384,12 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
       targetPort: fakeHostPort,
     })
 
-    const controllerWs2 = mintRelayToken({ subject: 'controller:e2e', role: 'controller', purpose: 'ws', roomId, ttlMs: 60 * 1000 })
+    const controllerWs2 = signRelayAssertion(controllerSigningKeys.privateKeyBase64, { role: 'controller', purpose: 'ws', roomId })
     const handle2 = await startRelayControllerTransport({
       hostId: 'e2e-host',
       relayUrl: relayd.relayUrl,
       roomId,
-      wsToken: controllerWs2.token,
+      wsAssertion: controllerWs2,
       controllerPrivateKeyBase64: controllerKeys.privateKeyBase64,
       controllerPublicKeyBase64: controllerKeys.publicKeyBase64,
       pinnedHostPubkey: hostKeys.publicKeyBase64,
@@ -409,7 +411,7 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
 async function startHostBridgePinned(opts: {
   relayUrl: string
   roomId: string
-  hostWsToken: string
+  hostWsAssertion: SignedRelayAssertion
   hostPrivateKey: string
   hostPublicKey: string
   pinnedControllerPubkey: string
@@ -420,7 +422,7 @@ async function startHostBridgePinned(opts: {
   const net = require('node:net') as typeof import('node:net')
   const streams = new Map<string, import('node:net').Socket>()
   const wsUrl = toWsUrl(opts.relayUrl, '/ws/host')
-  const ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${opts.hostWsToken}` } })
+  const ws = new WebSocket(wsUrl, { headers: relayAssertionHeaders(opts.hostWsAssertion) })
 
   const session = new RelaySession(
     'host',

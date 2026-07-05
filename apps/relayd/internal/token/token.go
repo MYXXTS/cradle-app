@@ -1,16 +1,13 @@
 package token
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"crypto/subtle"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,192 +15,183 @@ const (
 	RoleHost       Role = "host"
 	RoleController Role = "controller"
 
-	PurposePairingStart Purpose = "pairing_start"
-	PurposePairingClaim Purpose = "pairing_claim"
-	PurposeRoomStart    Purpose = "room_start"
-	PurposeWebSocket    Purpose = "ws"
+	PurposeCreateRoom Purpose = "create_room"
+	PurposeClaim      Purpose = "claim"
+	PurposeReconnect  Purpose = "reconnect"
+	PurposeWebSocket  Purpose = "ws"
 )
 
 var (
-	ErrInvalidToken = errors.New("token: invalid token")
-	ErrExpiredToken = errors.New("token: expired token")
+	ErrInvalidAssertion = errors.New("token: invalid assertion")
+	ErrStaleAssertion   = errors.New("token: stale assertion")
+	ErrReplayedNonce    = errors.New("token: replayed nonce")
 )
 
 type Role string
 
 type Purpose string
 
-type Claims struct {
-	Issuer   string  `json:"iss"`
-	Audience string  `json:"aud"`
-	Subject  string  `json:"sub"`
-	Role     Role    `json:"role,omitempty"`
-	RoomID   string  `json:"roomId,omitempty"`
-	Expiry   int64   `json:"exp"`
-	IssuedAt int64   `json:"iat"`
-	TokenID  string  `json:"jti"`
-	Nonce    string  `json:"nonce"`
-	Purpose  Purpose `json:"purpose,omitempty"`
+type Assertion struct {
+	Pubkey           string  `json:"pubkey"`
+	Role             Role    `json:"role"`
+	RoomID           string  `json:"roomId"`
+	Purpose          Purpose `json:"purpose"`
+	PairingCode      string  `json:"pairingCode,omitempty"`
+	ControllerPubkey string  `json:"controllerPubkey,omitempty"`
+	IssuedAt         int64   `json:"issuedAt"`
+	Nonce            string  `json:"nonce"`
 }
 
-type tokenHeader struct {
-	Algorithm string `json:"alg"`
-	Type      string `json:"typ"`
+type SignedAssertion struct {
+	Assertion Assertion `json:"assertion"`
+	Signature string    `json:"signature"`
 }
 
-type ExpectedClaims struct {
-	Audience string
-	Role     Role
-	RoomID   string
-	Purpose  Purpose
+type ExpectedAssertion struct {
+	Role    Role
+	RoomID  string
+	Purpose Purpose
 }
 
 type Validator interface {
-	Validate(ctx context.Context, raw string, expected ExpectedClaims) (Claims, error)
+	Validate(ctx context.Context, signed SignedAssertion, expected ExpectedAssertion) (Assertion, error)
 }
 
-type HMACValidatorConfig struct {
-	Secret   []byte
-	Issuer   string
-	Audience string
+type AssertionValidatorConfig struct {
 	Now      func() time.Time
+	MaxSkew  time.Duration
+	NonceTTL time.Duration
 }
 
-type HMACValidator struct {
-	secret   []byte
-	issuer   string
-	audience string
+type AssertionValidator struct {
 	now      func() time.Time
+	maxSkew  time.Duration
+	nonceTTL time.Duration
+
+	mu     sync.Mutex
+	nonces map[string]time.Time
 }
 
-func NewHMACValidator(cfg HMACValidatorConfig) (*HMACValidator, error) {
-	if len(cfg.Secret) == 0 {
-		return nil, errors.New("token: HMAC secret is required")
-	}
-	if cfg.Issuer == "" {
-		return nil, errors.New("token: issuer is required")
-	}
-	if cfg.Audience == "" {
-		return nil, errors.New("token: audience is required")
-	}
+func NewAssertionValidator(cfg AssertionValidatorConfig) *AssertionValidator {
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &HMACValidator{
-		secret:   bytes.Clone(cfg.Secret),
-		issuer:   cfg.Issuer,
-		audience: cfg.Audience,
+	maxSkew := cfg.MaxSkew
+	if maxSkew <= 0 {
+		maxSkew = time.Minute
+	}
+	nonceTTL := cfg.NonceTTL
+	if nonceTTL <= 0 {
+		nonceTTL = 2 * maxSkew
+	}
+	return &AssertionValidator{
 		now:      now,
-	}, nil
+		maxSkew:  maxSkew,
+		nonceTTL: nonceTTL,
+		nonces:   map[string]time.Time{},
+	}
 }
 
-func (v *HMACValidator) Validate(_ context.Context, raw string, expected ExpectedClaims) (Claims, error) {
-	claims, err := v.parse(raw)
+func (v *AssertionValidator) Validate(_ context.Context, signed SignedAssertion, expected ExpectedAssertion) (Assertion, error) {
+	assertion := signed.Assertion
+	if err := validateRequired(assertion); err != nil {
+		return Assertion{}, err
+	}
+	if expected.Role != "" && assertion.Role != expected.Role {
+		return Assertion{}, ErrInvalidAssertion
+	}
+	if expected.RoomID != "" && assertion.RoomID != expected.RoomID {
+		return Assertion{}, ErrInvalidAssertion
+	}
+	if expected.Purpose != "" && assertion.Purpose != expected.Purpose {
+		return Assertion{}, ErrInvalidAssertion
+	}
+	publicKey, err := base64.StdEncoding.DecodeString(assertion.Pubkey)
+	if err != nil || len(publicKey) != ed25519.PublicKeySize {
+		return Assertion{}, ErrInvalidAssertion
+	}
+	signature, err := base64.StdEncoding.DecodeString(strings.TrimSpace(signed.Signature))
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return Assertion{}, ErrInvalidAssertion
+	}
+	payload, err := CanonicalJSON(assertion)
 	if err != nil {
-		return Claims{}, err
+		return Assertion{}, ErrInvalidAssertion
 	}
-	if claims.Issuer != v.issuer {
-		return Claims{}, ErrInvalidToken
+	if !ed25519.Verify(ed25519.PublicKey(publicKey), payload, signature) {
+		return Assertion{}, ErrInvalidAssertion
 	}
-	audience := v.audience
-	if expected.Audience != "" {
-		audience = expected.Audience
+	now := v.now()
+	issuedAt := time.Unix(assertion.IssuedAt, 0)
+	if issuedAt.Before(now.Add(-v.maxSkew)) || issuedAt.After(now.Add(v.maxSkew)) {
+		return Assertion{}, ErrStaleAssertion
 	}
-	if claims.Audience != audience {
-		return Claims{}, ErrInvalidToken
+	if err := v.rememberNonce(assertion, now); err != nil {
+		return Assertion{}, err
 	}
-	if expected.Role != "" && claims.Role != expected.Role {
-		return Claims{}, ErrInvalidToken
-	}
-	if expected.RoomID != "" && claims.RoomID != expected.RoomID {
-		return Claims{}, ErrInvalidToken
-	}
-	if expected.Purpose != "" && claims.Purpose != expected.Purpose {
-		return Claims{}, ErrInvalidToken
-	}
-	if claims.Expiry <= v.now().Unix() {
-		return Claims{}, ErrExpiredToken
-	}
-	return claims, nil
+	return assertion, nil
 }
 
-func (v *HMACValidator) Sign(claims Claims) (string, error) {
-	if claims.Issuer == "" {
-		claims.Issuer = v.issuer
+func validateRequired(assertion Assertion) error {
+	if strings.TrimSpace(assertion.Pubkey) == "" ||
+		strings.TrimSpace(assertion.RoomID) == "" ||
+		strings.TrimSpace(assertion.Nonce) == "" ||
+		assertion.Role == "" ||
+		assertion.Purpose == "" ||
+		assertion.IssuedAt == 0 {
+		return ErrInvalidAssertion
 	}
-	if claims.Audience == "" {
-		claims.Audience = v.audience
-	}
-	payload, err := json.Marshal(claims)
-	if err != nil {
-		return "", fmt.Errorf("marshaling claims: %w", err)
-	}
-	header := []byte(`{"alg":"HS256","typ":"JWT"}`)
-	encodedHeader := base64.RawURLEncoding.EncodeToString(header)
-	encodedPayload := base64.RawURLEncoding.EncodeToString(payload)
-	signingInput := encodedHeader + "." + encodedPayload
-	signature := v.sign(signingInput)
-	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature), nil
+	return nil
 }
 
-func (v *HMACValidator) parse(raw string) (Claims, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return Claims{}, ErrInvalidToken
+func (v *AssertionValidator) rememberNonce(assertion Assertion, now time.Time) error {
+	key := assertion.Pubkey + ":" + assertion.Nonce
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for nonce, expiresAt := range v.nonces {
+		if !now.Before(expiresAt) {
+			delete(v.nonces, nonce)
+		}
 	}
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return Claims{}, ErrInvalidToken
+	if _, ok := v.nonces[key]; ok {
+		return ErrReplayedNonce
 	}
-	signingInput := parts[0] + "." + parts[1]
-	expected := v.sign(signingInput)
-	got, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return Claims{}, ErrInvalidToken
-	}
-	if subtle.ConstantTimeCompare(got, expected) != 1 {
-		return Claims{}, ErrInvalidToken
-	}
-	headerPayload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return Claims{}, ErrInvalidToken
-	}
-	var header tokenHeader
-	if err := json.Unmarshal(headerPayload, &header); err != nil {
-		return Claims{}, ErrInvalidToken
-	}
-	if header.Algorithm != "HS256" || header.Type != "JWT" {
-		return Claims{}, ErrInvalidToken
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return Claims{}, ErrInvalidToken
-	}
-	var claims Claims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return Claims{}, ErrInvalidToken
-	}
-	if claims.Subject == "" || claims.Expiry == 0 || claims.IssuedAt == 0 || claims.TokenID == "" {
-		return Claims{}, ErrInvalidToken
-	}
-	return claims, nil
+	v.nonces[key] = now.Add(v.nonceTTL)
+	return nil
 }
 
-func (v *HMACValidator) sign(input string) []byte {
-	mac := hmac.New(sha256.New, v.secret)
-	mac.Write([]byte(input))
-	return mac.Sum(nil)
+func CanonicalJSON(assertion Assertion) ([]byte, error) {
+	fields := map[string]any{
+		"issuedAt": assertion.IssuedAt,
+		"nonce":    assertion.Nonce,
+		"pubkey":   assertion.Pubkey,
+		"purpose":  assertion.Purpose,
+		"role":     assertion.Role,
+		"roomId":   assertion.RoomID,
+	}
+	if assertion.PairingCode != "" {
+		fields["pairingCode"] = assertion.PairingCode
+	}
+	if assertion.ControllerPubkey != "" {
+		fields["controllerPubkey"] = assertion.ControllerPubkey
+	}
+	return json.Marshal(fields)
 }
 
-func BearerToken(value string) (string, bool) {
-	prefix := "Bearer "
-	if !strings.HasPrefix(value, prefix) {
-		return "", false
+func SignedAssertionFromHeaders(assertionHeader string, signatureHeader string) (SignedAssertion, bool) {
+	assertionHeader = strings.TrimSpace(assertionHeader)
+	signatureHeader = strings.TrimSpace(signatureHeader)
+	if assertionHeader == "" || signatureHeader == "" {
+		return SignedAssertion{}, false
 	}
-	token := strings.TrimSpace(strings.TrimPrefix(value, prefix))
-	if token == "" {
-		return "", false
+	raw, err := base64.StdEncoding.DecodeString(assertionHeader)
+	if err != nil {
+		return SignedAssertion{}, false
 	}
-	return token, true
+	var assertion Assertion
+	if err := json.Unmarshal(raw, &assertion); err != nil {
+		return SignedAssertion{}, false
+	}
+	return SignedAssertion{Assertion: assertion, Signature: signatureHeader}, true
 }

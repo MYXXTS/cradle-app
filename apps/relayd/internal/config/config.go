@@ -6,32 +6,18 @@ import (
 	"time"
 )
 
-// DefaultDevHMACSecret is the built-in HMAC secret used when no
-// CRADLE_RELAYD_HMAC_SECRET / CRADLE_RELAY_HMAC_SECRET is configured.
-//
-// It is a publicly known, dev-only value: it lets `go run ./cmd/relayd` start
-// with zero configuration and lets Cradle Server validate relay tokens out of
-// the box for local development. It MUST NOT be used in production — set the
-// HMAC secret env var on both sides for any non-local deployment. The value is
-// duplicated verbatim in the Cradle Server relay token service so the two
-// services agree on the dev default; keep them in sync.
-const DefaultDevHMACSecret = "cradle-dev-relay-insecure-secret-do-not-use-in-production"
-
 type Config struct {
-	ListenAddr         string
-	PublicURL          string
-	TokenIssuer        string
-	TokenAudience      string
-	HMACSecret      string
-	// HMACSecretResolved is true when HMACSecret came from the built-in
-	// dev default rather than an explicit env/flag. Lets the entrypoint warn.
-	HMACSecretResolved bool
+	ListenAddr            string
+	PublicURL             string
 	PairingTTL            time.Duration
 	RoomTTL               time.Duration
 	HeartbeatInterval     time.Duration
 	IdleTimeout           time.Duration
 	ReadTimeout           time.Duration
 	WriteTimeout          time.Duration
+	AssertionMaxSkew      time.Duration
+	PairingStartRateLimit int
+	PairingClaimRateLimit int
 	MaxFrameBytes         int64
 	MaxQueuedEnvelopes    int
 	MaxQueuedBytes        int64
@@ -46,15 +32,6 @@ func (c Config) Validate() error {
 	}
 	if c.PublicURL == "" {
 		return errors.New("public url is required")
-	}
-	if c.TokenIssuer == "" {
-		return errors.New("token issuer is required")
-	}
-	if c.TokenAudience == "" {
-		return errors.New("token audience is required")
-	}
-	if c.HMACSecret == "" {
-		return errors.New("HMAC secret is required")
 	}
 	if c.PairingTTL <= 0 {
 		return fmt.Errorf("pairing ttl must be positive")
@@ -73,6 +50,15 @@ func (c Config) Validate() error {
 	}
 	if c.WriteTimeout <= 0 {
 		return fmt.Errorf("write timeout must be positive")
+	}
+	if c.AssertionMaxSkew <= 0 {
+		return fmt.Errorf("assertion max skew must be positive")
+	}
+	if c.PairingStartRateLimit <= 0 {
+		return fmt.Errorf("pairing start rate limit must be positive")
+	}
+	if c.PairingClaimRateLimit <= 0 {
+		return fmt.Errorf("pairing claim rate limit must be positive")
 	}
 	if c.MaxFrameBytes <= 0 {
 		return fmt.Errorf("max frame bytes must be positive")

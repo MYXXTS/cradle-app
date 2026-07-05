@@ -10,7 +10,6 @@ import { eq } from 'drizzle-orm'
 import { db } from '../../infra'
 import { createChildLogger } from '../../logging/logger'
 import { getNetworkPreferencesSync } from '../preferences/service'
-import { relayTokenSecret } from './relay-token-service'
 import { readDefaultRelayServer } from './service'
 
 const localRelayServerId = 'system:local-relayd'
@@ -64,21 +63,12 @@ export async function startManagedLocalRelayd(): Promise<void> {
   const relayUrl = process.env.CRADLE_RELAYD_PUBLIC_URL?.trim()
     || networkConfig.publicUrl
     || localReadyUrl
-  let hmacSecret: string
-  try {
-    hmacSecret = relayTokenSecret()
-  }
-  catch (error) {
-    logger.warn('managed local relayd is enabled but no relay HMAC secret is available', { err: error })
-    return
-  }
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     env: {
       ...process.env,
       CRADLE_RELAYD_LISTEN: listenAddr,
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
-      CRADLE_RELAYD_HMAC_SECRET: hmacSecret,
     },
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
