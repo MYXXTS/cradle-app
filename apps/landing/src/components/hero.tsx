@@ -123,7 +123,7 @@ export function Hero() {
             gap: 8,
             padding: '5px 12px',
             border: '1px solid var(--border)',
-            background: 'var(--fill)',
+            background: 'var(--bg)',
             borderRadius: 999,
             marginBottom: 30,
           }}
@@ -222,48 +222,6 @@ export function Hero() {
         >
           macOS 14+ · Apple Silicon & Intel · Free forever
         </span>
-      </motion.div>
-
-      {/* Scroll cue */}
-      <motion.div
-        aria-hidden
-        initial={{ opacity: 0 }}
-        animate={{ opacity: inView ? 1 : 0 }}
-        transition={{ delay: 1, duration: 0.6 }}
-        style={{
-          position: 'absolute',
-          bottom: 28,
-          left: 0,
-          right: 0,
-          margin: '0 auto',
-          width: 'fit-content',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 8,
-          pointerEvents: 'none',
-          zIndex: 1,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 10,
-            color: 'var(--text-muted)',
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-          }}
-        >
-          Scroll
-        </span>
-        <motion.span
-          animate={reduced ? false : { y: [0, 5, 0] }}
-          transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-          style={{
-            width: 1,
-            height: 22,
-            background: 'linear-gradient(to bottom, var(--text-muted), transparent)',
-          }}
-        />
       </motion.div>
     </section>
   )

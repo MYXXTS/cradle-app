@@ -8,6 +8,7 @@ import { Footer } from './components/footer'
 import { Hero } from './components/hero'
 import { HowItWorks } from './components/how-it-works'
 import { Nav } from './components/nav'
+import { ProductPreview } from './components/product-preview'
 import { Principles } from './components/principles'
 import { SupportStrip } from './components/support-strip'
 
@@ -52,9 +53,10 @@ export function App() {
       ) : (
         <main>
           <Hero />
-          <SupportStrip />
+          <ProductPreview />
+          {/* <SupportStrip /> */}
           <FeaturesSection />
-          <Principles />
+          {/* <Principles /> */}
           <HowItWorks />
           <FeatureHighlight
             eyebrow="Session Await"
