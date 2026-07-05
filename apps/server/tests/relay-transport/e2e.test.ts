@@ -75,8 +75,10 @@ async function spawnRelayd(): Promise<RelaydHandle> {
       CRADLE_RELAYD_LISTEN: listenAddr,
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
       CRADLE_RELAYD_ROOM_TTL: '30s',
+      CRADLE_RELAYD_EXIT_ON_STDIN_CLOSE: '1',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
   child.stdout?.on('data', () => {})
   child.stderr?.on('data', () => {})
@@ -123,12 +125,69 @@ async function waitForReady(relayUrl: string): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error('relayd did not become ready')
 }
 
-function killRelayd(child: ChildProcess): void {
+async function stopRelayd(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return
+  }
+  closeRelaydOwnerPipe(child)
+  await new Promise<void>((resolveDone) => {
+    let resolved = false
+    let timeout: ReturnType<typeof setTimeout>
+    const resolveOnce = () => {
+      if (resolved) {
+        return
+      }
+      resolved = true
+      clearTimeout(timeout)
+      child.off('exit', resolveOnce)
+      resolveDone()
+    }
+    timeout = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        const signaled = signalRelayd(child, 'SIGKILL')
+        if (!signaled) {
+          resolveOnce()
+        }
+      }
+    }, 3_000)
+    timeout.unref()
+    child.once('exit', resolveOnce)
+    const signaled = signalRelayd(child, 'SIGTERM')
+    if (!signaled) {
+      resolveOnce()
+    }
+  })
+}
+
+function signalRelayd(child: ChildProcess, signal: NodeJS.Signals): boolean {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal)
+      return true
+    }
+    catch (error) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH') {
+        return false
+      }
+      throw error
+    }
+  }
+  return child.kill(signal)
+}
+
+function closeRelaydOwnerPipe(child: ChildProcess): void {
+  const stdin = child.stdin
+  if (!stdin || stdin.destroyed) {
+    return
+  }
   try {
-    child.kill('SIGTERM')
+    if (stdin.writable && !stdin.writableEnded) {
+      stdin.end()
+    }
+    stdin.destroy()
   }
   catch {
-    // ignore
+    // Best-effort cleanup; process signals still handle termination.
   }
 }
 
@@ -286,7 +345,7 @@ describe.skipIf(!relaydSourceDir)('relay transport e2e (real relayd)', () => {
   }, 60_000)
 
   afterAll(async () => {
-    killRelayd(relayd.child)
+    await stopRelayd(relayd.child)
     await new Promise<void>((resolve) => fakeHost.server.close(() => resolve()))
     rmSync(dataDir, { recursive: true, force: true })
   })

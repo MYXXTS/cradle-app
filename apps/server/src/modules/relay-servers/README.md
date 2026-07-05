@@ -25,6 +25,11 @@ It is a convenience for desktop/dev use:
 - Packaged Desktop resolves `process.resourcesPath/relayd/<platform>-<arch>/relayd`.
 - Dev source trees fall back to `go run ./cmd/relayd` from `apps/relayd`.
 
+The supervisor keeps an owner stdin pipe open and starts relayd with
+`CRADLE_RELAYD_EXIT_ON_STDIN_CLOSE=1`. This lets relayd shut itself down if Cradle
+Server exits unexpectedly, including the `go run` development path where the actual
+relayd listener is a child of the Go wrapper process.
+
 When the managed relayd is ready, the supervisor upserts the system row
 `system:local-relayd` with display name `Built-in local relay`. It becomes default only when no
 explicit default exists, so user-selected public relay servers remain authoritative.

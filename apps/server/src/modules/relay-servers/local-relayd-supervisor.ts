@@ -69,9 +69,10 @@ export async function startManagedLocalRelayd(): Promise<void> {
       ...process.env,
       CRADLE_RELAYD_LISTEN: listenAddr,
       CRADLE_RELAYD_PUBLIC_URL: relayUrl,
+      CRADLE_RELAYD_EXIT_ON_STDIN_CLOSE: '1',
     },
     detached: process.platform !== 'win32',
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
 
   runningLocalRelayd = { child, relayUrl }
@@ -79,12 +80,14 @@ export async function startManagedLocalRelayd(): Promise<void> {
   child.stderr?.on('data', chunk => logger.warn('relayd stderr', { output: chunk.toString('utf8').trimEnd() }))
   child.on('error', (error) => {
     logger.error('managed local relayd failed to spawn', { err: error })
+    closeChildOwnerPipe(child)
     if (runningLocalRelayd?.child === child) {
       runningLocalRelayd = null
     }
   })
   child.on('exit', (code, signal) => {
     logger.info('managed local relayd exited', { code, signal })
+    closeChildOwnerPipe(child)
     if (runningLocalRelayd?.child === child) {
       runningLocalRelayd = null
     }
@@ -285,36 +288,66 @@ async function terminateChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return
   }
+  closeChildOwnerPipe(child)
   await new Promise<void>((resolveDone) => {
-    const timeout = setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) {
-        signalChild(child, 'SIGKILL')
+    let resolved = false
+    let timeout: ReturnType<typeof setTimeout>
+    const resolveOnce = () => {
+      if (resolved) {
+        return
       }
+      resolved = true
+      clearTimeout(timeout)
+      child.off('exit', resolveOnce)
       resolveDone()
+    }
+    timeout = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        const signaled = signalChild(child, 'SIGKILL')
+        if (!signaled) {
+          resolveOnce()
+        }
+      }
     }, 3_000)
     timeout.unref()
-    child.once('exit', () => {
-      clearTimeout(timeout)
-      resolveDone()
-    })
-    signalChild(child, 'SIGTERM')
+    child.once('exit', resolveOnce)
+    const signaled = signalChild(child, 'SIGTERM')
+    if (!signaled) {
+      resolveOnce()
+    }
   })
 }
 
-function signalChild(child: ChildProcess, signal: NodeJS.Signals): void {
+function closeChildOwnerPipe(child: ChildProcess): void {
+  const stdin = child.stdin
+  if (!stdin || stdin.destroyed) {
+    return
+  }
+  try {
+    if (stdin.writable && !stdin.writableEnded) {
+      stdin.end()
+    }
+    stdin.destroy()
+  }
+  catch {
+    // Best-effort cleanup; process signals still handle termination.
+  }
+}
+
+function signalChild(child: ChildProcess, signal: NodeJS.Signals): boolean {
   if (process.platform !== 'win32' && child.pid) {
     try {
       process.kill(-child.pid, signal)
-      return
+      return true
     }
     catch (error) {
       if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ESRCH') {
-        return
+        return false
       }
       throw error
     }
   }
-  child.kill(signal)
+  return child.kill(signal)
 }
 
 function isTestEnvironment(): boolean {

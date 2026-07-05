@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -106,8 +107,21 @@ func run() error {
 		WriteTimeout:      cfg.WriteTimeout,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
+
+	if envBool("CRADLE_RELAYD_EXIT_ON_STDIN_CLOSE", false) {
+		go func() {
+			_, err := io.Copy(io.Discard, os.Stdin)
+			if err != nil {
+				logger.Warn("managed relayd owner stdin read failed", "error", err)
+			}
+			logger.Info("managed relayd owner stdin closed; shutting down")
+			cancel()
+		}()
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
