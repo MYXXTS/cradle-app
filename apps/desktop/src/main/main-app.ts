@@ -162,7 +162,7 @@ async function createMainWindow(serverUrl: string): Promise<BrowserWindow> {
     height: restoredBounds.height,
     minWidth: MAIN_WINDOW_MIN_WIDTH,
     minHeight: MAIN_WINDOW_MIN_HEIGHT,
-    titleBarStyle: isMacOS ? 'hiddenInset' : 'hidden',
+    titleBarStyle: isMacOS ? 'hiddenInset' : 'default',
     titleBarOverlay: isMacOS
       ? true
       : {
