@@ -18,7 +18,7 @@
 > The project is still in the early stages of development. If you have any ideas or suggestions, please feel free to open an issue or open a pull request. Your contributions are welcome! Thank you for your support and interest in this project ❤️.
 
 <p align="center">
-<img src='./.github/readme/Slide 4:3.png' alt='Screenshot' width='800px' />
+<img src='./.github/readme/screenshot.png' alt='Screenshot' width='800px' />
 </p>
 
 
