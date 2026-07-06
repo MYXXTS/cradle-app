@@ -11,7 +11,9 @@
     <img src='https://img.shields.io/github/downloads/wibus-wee/cradle-app/total?style=flat-square'>
     <br />
     <br />
-    <a href="https://github.com/wibus-wee/Cradle-app/releases">Download Latest Release</a>
+    <b>Download for </b>
+		<a href="https://github.com/wibus-wee/Cradle-app/releases">macOS</a> · Windows · Linux · <a href="https://app.cradle.wibus.ren/">Web</a>
+    <br />
   </p>
 </p>
 
