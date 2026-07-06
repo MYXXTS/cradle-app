@@ -116,6 +116,7 @@ export interface DesktopChatStreamChunkEvent {
   sessionId: string
   runId: string | null
   chunk: unknown
+  replay?: boolean
 }
 
 export interface DesktopChatStreamClosedEvent {

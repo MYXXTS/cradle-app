@@ -46,6 +46,10 @@ interface Window {
     desktopAppBadge?: {
       setUnreadCount: (count: number) => Promise<unknown>
     }
+    plugins?: {
+      syncSource: (sourceId: string) => Promise<unknown>
+      unsyncSource: (pluginName: string) => Promise<unknown>
+    }
     browser?: {
       open: (input: {
         threadId: string

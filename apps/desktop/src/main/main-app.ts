@@ -41,6 +41,11 @@ import {
   deactivateDesktopPlugins,
   notifyWebviewCreated,
 } from './plugin-loader'
+import {
+  registerPluginSourceSyncIpcHandlers,
+  setPluginSourceSyncServerUrl,
+  syncAllDesktopLayerSources,
+} from './plugin-source-sync'
 import { resolveDesktopPrimaryPluginsDir } from './plugin-paths'
 import { QuitGuard } from './quit-guard'
 import { startServer, stopServer } from './server-process'
@@ -577,6 +582,7 @@ export async function startDesktopApp(): Promise<void> {
     getChatEventTailBroker: () => chatEventTailBroker,
     getQuitGuard: () => quitGuard,
   })
+  registerPluginSourceSyncIpcHandlers()
   updateManager.on('statusChanged', broadcastUpdateStatus)
 
   app.on('open-url', (event, url) => {
@@ -592,9 +598,13 @@ export async function startDesktopApp(): Promise<void> {
     await activateDesktopPlugins()
 
     const serverUrl = await startServer()
+    setPluginSourceSyncServerUrl(serverUrl)
     bindDesktopObservabilityServerUrl(serverUrl)
     startDesktopResourceReporting()
     await syncDesktopPreferencesFromServer(serverUrl)
+    void syncAllDesktopLayerSources().catch((error) => {
+      console.error('[plugins] desktop source catch-up failed:', error)
+    })
     chatStreamBroker = new ChatStreamBroker({ serverUrl })
     chatEventTailBroker = new ChatEventTailBroker({ serverUrl })
 
