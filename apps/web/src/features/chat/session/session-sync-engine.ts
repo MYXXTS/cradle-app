@@ -80,7 +80,10 @@ export interface SessionSyncEngineOptions {
 
 const MESSAGE_EVENT_TYPES = new Set<ChatSessionTailEventType>([
   'UserMessageAppended',
+  'MessageImported',
+  'AssistantMessageSnapshotted',
   'AssistantMessageCompleted',
+  'PlanImplementationResponded',
   'SteerApplied',
   'LastTurnRolledBack',
 ])
@@ -104,6 +107,7 @@ const QUEUE_EVENT_TYPES = new Set<ChatSessionTailEventType>([
   'QueueItemFailed',
   'QueueItemReordered',
   'QueueItemUpdated',
+  'QueueItemProviderTargetCleared',
   'QueueItemCancelled',
 ])
 

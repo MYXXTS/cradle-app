@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path'
 
-import { app, BrowserWindow, dialog, ipcMain, net, screen } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron'
 import windowStateKeeper from 'electron-window-state'
 
 import {
@@ -58,10 +58,6 @@ let macBridgeManager: MacBridgeManager | null = null
 let chatStreamBroker: ChatStreamBroker | null = null
 let chatEventTailBroker: ChatEventTailBroker | null = null
 
-function fetchWithElectronNet(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const requestInput = input instanceof URL ? input.toString() : input
-  return net.fetch(requestInput, init) as Promise<Response>
-}
 let notificationCenterManager: NotificationCenterManager | null = null
 let isQuitting = false
 let shutdownPromise: Promise<void> | null = null
@@ -599,8 +595,8 @@ export async function startDesktopApp(): Promise<void> {
     bindDesktopObservabilityServerUrl(serverUrl)
     startDesktopResourceReporting()
     await syncDesktopPreferencesFromServer(serverUrl)
-    chatStreamBroker = new ChatStreamBroker({ serverUrl, fetchFn: fetchWithElectronNet })
-    chatEventTailBroker = new ChatEventTailBroker({ serverUrl, fetchFn: fetchWithElectronNet })
+    chatStreamBroker = new ChatStreamBroker({ serverUrl })
+    chatEventTailBroker = new ChatEventTailBroker({ serverUrl })
 
     windowManager = new WindowManager(serverUrl)
     appBadgeManager.initialize()
