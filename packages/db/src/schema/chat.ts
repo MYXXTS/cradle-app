@@ -8,6 +8,25 @@ import { providerTargets } from './provider-target'
 import { createdAt, textPk, timestamps, workspaces } from './shared'
 import { worktrees } from './worktree'
 
+export const sessionGroups = sqliteTable('session_groups', {
+  id: textPk(),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  description: text('description'),
+  linkedIssueId: text('linked_issue_id')
+    .references(() => issues.id, { onDelete: 'set null' }),
+  status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),
+  configJson: text('config_json').notNull().default('{}'),
+  archivedAt: int('archived_at'),
+  ...timestamps(),
+}, table => ({
+  byWorkspace: index('session_groups_workspace_id_idx').on(table.workspaceId),
+  byLinkedIssue: index('session_groups_linked_issue_id_idx').on(table.linkedIssueId),
+  byArchived: index('session_groups_archived_at_idx').on(table.archivedAt),
+}))
+
 export const sessions = sqliteTable('sessions', {
   id: textPk(),
   parentSessionId: text('parent_session_id')
@@ -26,6 +45,8 @@ export const sessions = sqliteTable('sessions', {
   configJson: text('config_json').notNull().default('{}'),
   linkedIssueId: text('linked_issue_id')
     .references(() => issues.id, { onDelete: 'set null' }),
+  sessionGroupId: text('session_group_id')
+    .references(() => sessionGroups.id, { onDelete: 'set null' }),
   worktreeId: text('worktree_id')
     .references(() => worktrees.id, { onDelete: 'set null' }),
   pendingWorktreeId: text('pending_worktree_id')
@@ -41,6 +62,7 @@ export const sessions = sqliteTable('sessions', {
   byOrigin: index('sessions_origin_idx').on(table.origin),
   byProviderTarget: index('sessions_provider_target_id_idx').on(table.providerTargetId),
   byLinkedIssue: index('sessions_linked_issue_id_idx').on(table.linkedIssueId),
+  bySessionGroup: index('sessions_session_group_id_idx').on(table.sessionGroupId),
   byWorktree: index('sessions_worktree_id_idx').on(table.worktreeId),
   byPendingWorktree: index('sessions_pending_worktree_id_idx').on(table.pendingWorktreeId),
   byArchived: index('sessions_archived_at_idx').on(table.archivedAt),
@@ -193,6 +215,8 @@ export const sessionEvents = sqliteTable('session_events', {
     .where(sql`${table.eventType} in ('RunCompleted', 'RunFailed', 'RunAborted') and ${table.subjectRunId} is not null`),
 }))
 
+export type SessionGroup = typeof sessionGroups.$inferSelect
+export type NewSessionGroup = typeof sessionGroups.$inferInsert
 export type Session = typeof sessions.$inferSelect
 export type NewSession = typeof sessions.$inferInsert
 export type Message = typeof messages.$inferSelect
