@@ -35,8 +35,11 @@ const hexRGBA = (h: string): [number, number, number, number] => {
 }
 const hexRGB = (h: string): [number, number, number] =>
   hexRGBA(h).slice(0, 3) as [number, number, number]
+
+const DEFAULT_FOLD_GRADIENT_COLORS = ['#700000', '#008cff', '#75daff', '#ff0026', '#ff3626']
+
 export default function FoldGradient({
-  colors = ['#700000', '#008cff', '#75daff', '#ff0026', '#ff3626'],
+  colors = DEFAULT_FOLD_GRADIENT_COLORS,
   bgColor = '#121212',
   shadowColor = '#0a1c2a',
   softness = 1,
@@ -62,8 +65,7 @@ export default function FoldGradient({
       u_ribbon: ribbon,
       u_ribbonWidth: ribbonWidth,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [colors.join(), bgColor, shadowColor, softness, saturation, rotation, zoom, ribbon, ribbonWidth],
+    [colors, bgColor, shadowColor, softness, saturation, rotation, zoom, ribbon, ribbonWidth],
   )
   return (
     <ShaderMount

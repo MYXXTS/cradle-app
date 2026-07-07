@@ -62,6 +62,22 @@ function parseFrontmatter(content: string): { meta: Record<string, string>, body
   return { meta, body: match[2].trim() }
 }
 
+async function fetchChangelogIndex(): Promise<ChangelogIndexEntry[]> {
+  const indexRes = await fetch('/changelog/index.json')
+  if (!indexRes.ok) {
+    throw new Error('Failed to fetch changelog index')
+  }
+  return await indexRes.json() as ChangelogIndexEntry[]
+}
+
+async function fetchChangelogMarkdown(version: string, lang: string): Promise<string> {
+  const res = await fetch(`/changelog/${version}.${lang}.md`)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch ${version}.${lang}.md`)
+  }
+  return await res.text()
+}
+
 /* ─── Data fetching ───────────────────────────────────────────── */
 
 function useChangelogData() {
@@ -73,9 +89,7 @@ function useChangelogData() {
 
     async function load() {
       try {
-        const indexRes = await fetch('/changelog/index.json')
-        if (!indexRes.ok) { throw new Error('Failed to fetch changelog index') }
-        const index: ChangelogIndexEntry[] = await indexRes.json()
+        const index = await fetchChangelogIndex()
 
         const locale = resolveLocale()
 
@@ -84,9 +98,7 @@ function useChangelogData() {
             const lang = entry.languages.includes(locale)
               ? locale
               : entry.languages.includes('zh') ? 'zh' : entry.languages[0]
-            const res = await fetch(`/changelog/${entry.version}.${lang}.md`)
-            if (!res.ok) { throw new Error(`Failed to fetch ${entry.version}.${lang}.md`) }
-            const raw = await res.text()
+            const raw = await fetchChangelogMarkdown(entry.version, lang)
             const { body } = parseFrontmatter(raw)
             return {
               version: entry.version,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { ChangelogPage } from './components/changelog'
 import { CTASection } from './components/cta-section'
+import { DetailsSection } from './components/details'
 import { FAQ } from './components/faq'
 import { AwaitCycleIllustration, FeatureHighlight, MultiAgentIllustration } from './components/feature-highlight'
 import { FeaturesSection } from './components/features'
@@ -42,15 +43,13 @@ function useHashRoute(): [Route, () => void] {
 
 export function App() {
   const [route, goHome] = useHashRoute()
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <Nav />
-      {route === 'changelog' ? (
+  const routeContent = route === 'changelog'
+    ? (
         <main>
           <ChangelogPage onBack={goHome} />
         </main>
-      ) : (
+      )
+    : (
         <main>
           <Hero />
           <ProductPreview />
@@ -58,12 +57,13 @@ export function App() {
           <FeaturesSection />
           {/* <Principles /> */}
           <HowItWorks />
+          <DetailsSection />
           <FeatureHighlight
             eyebrow="Session Await"
             headline={(
               <>
                 Your agent pushed a PR. It&rsquo;s waiting for CI.
-{' '}
+                {' '}
                 <span style={{ color: 'var(--text-muted)' }}>You don&rsquo;t have to be.</span>
               </>
             )}
@@ -79,7 +79,7 @@ export function App() {
             headline={(
               <>
                 Run four agents on the same codebase.
-{' '}
+                {' '}
                 <span style={{ color: 'var(--text-muted)' }}>At the same time.</span>
               </>
             )}
@@ -92,7 +92,12 @@ export function App() {
           <FAQ />
           <CTASection />
         </main>
-      )}
+      )
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <Nav />
+      {routeContent}
       <Footer />
     </div>
   )
