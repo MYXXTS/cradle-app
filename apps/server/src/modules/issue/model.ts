@@ -1,6 +1,7 @@
 import { t } from 'elysia'
 
 import { SessionModel } from '../session/model'
+import { SessionGroupModel } from '../session-group/model'
 
 const priorityEnum = t.Union([
   t.Literal('none'),
@@ -149,6 +150,7 @@ export const IssueModel = {
   }),
 
   linkedSession: SessionModel.session,
+  linkedSessionGroup: SessionGroupModel.sessionGroup,
 
   commentAuthor: t.Object({
     kind: issueActorKindEnum,

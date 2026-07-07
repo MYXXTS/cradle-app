@@ -44,6 +44,7 @@ import { remoteHosts } from './modules/remote-hosts'
 import { search } from './modules/search'
 import { secrets } from './modules/secrets'
 import { session } from './modules/session'
+import { sessionGroup } from './modules/session-group'
 import { sessionAwait } from './modules/session-await'
 import { skills } from './modules/skills'
 import { registerSyncGatewayRoutes } from './modules/sync-gateway'
@@ -149,6 +150,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(automation)
   app.use(assets)
   app.use(session)
+  app.use(sessionGroup)
   app.use(sessionAwait)
   app.use(issue)
   app.use(kanban)

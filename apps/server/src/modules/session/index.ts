@@ -60,6 +60,7 @@ export const session = new Elysia({
         && body.providerTargetId === undefined
         && body.modelId === undefined
         && body.thinkingEffort === undefined
+        && body.sessionGroupId === undefined
       ) {
         throw new AppError({
           code: 'invalid_session_input',

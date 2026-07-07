@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type { Message, Session } from '@cradle/db'
-import { agents, backendRuns, backendSessionBindings, messages, sessions } from '@cradle/db'
+import { agents, backendRuns, backendSessionBindings, messages, sessionGroups, sessions } from '@cradle/db'
 import { and, desc, eq, inArray, isNotNull, isNull, max, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
@@ -74,6 +74,7 @@ const SessionCreateInputSchema = z.object({
   runtimeSettings: z.unknown().optional(),
   agentId: z.string().nullable().optional(),
   linkedIssueId: z.string().nullable().default(null),
+  sessionGroupId: z.string().nullable().optional(),
   worktreeId: z.string().nullable().optional(),
   configJson: z.string().optional(),
 })
@@ -188,6 +189,63 @@ function projectSessionStatus(input: {
     return 'error'
   }
   return 'idle'
+}
+
+export function aggregateSessionStatus(sessionIds: string[]): SessionStatus {
+  if (sessionIds.length === 0) {
+    return 'idle'
+  }
+
+  const statusesBySessionId = listStatusesBySessionIds(sessionIds)
+  let hasError = false
+  for (const sessionId of sessionIds) {
+    const status = statusesBySessionId.get(sessionId) ?? 'idle'
+    if (status === 'streaming') {
+      return 'streaming'
+    }
+    if (status === 'error') {
+      hasError = true
+    }
+  }
+  return hasError ? 'error' : 'idle'
+}
+
+function assertSessionGroupAssignment(input: {
+  sessionGroupId: string | null | undefined
+  workspaceId: string | null
+  sessionId?: string
+}): string | null {
+  if (input.sessionGroupId === undefined || input.sessionGroupId === null) {
+    return null
+  }
+
+  const group = db()
+    .select()
+    .from(sessionGroups)
+    .where(eq(sessionGroups.id, input.sessionGroupId))
+    .get()
+  if (!group) {
+    throw new AppError({
+      code: 'session_group_not_found',
+      status: 404,
+      message: 'Session group not found',
+      details: { sessionGroupId: input.sessionGroupId },
+    })
+  }
+  if (!input.workspaceId || input.workspaceId !== group.workspaceId) {
+    throw new AppError({
+      code: 'session_group_workspace_mismatch',
+      status: 409,
+      message: 'Session workspace does not match session group workspace',
+      details: {
+        sessionId: input.sessionId,
+        sessionWorkspaceId: input.workspaceId,
+        groupId: group.id,
+        groupWorkspaceId: group.workspaceId,
+      },
+    })
+  }
+  return input.sessionGroupId
 }
 
 function listStatusesBySessionIds(sessionIds: string[]): Map<string, SessionStatus> {
@@ -403,11 +461,12 @@ function assertRuntimeOwnedProviderTargetForRuntime(input: {
 }
 
 export function list(
-  input: { workspaceId?: string, origin?: string, archived?: boolean } = {},
+  input: { workspaceId?: string, origin?: string, archived?: boolean, sessionGroupId?: string } = {},
 ): SessionView[] {
   const predicates = [
     input.workspaceId ? eq(sessions.workspaceId, input.workspaceId) : undefined,
     input.origin ? eq(sessions.origin, input.origin) : undefined,
+    input.sessionGroupId ? eq(sessions.sessionGroupId, input.sessionGroupId) : undefined,
     input.archived ? isNotNull(sessions.archivedAt) : isNull(sessions.archivedAt),
   ].filter(predicate => predicate !== undefined)
   const where = predicates.length > 0 ? and(...predicates) : undefined
@@ -440,6 +499,10 @@ export function listLinkedToIssue(issueId: string): SessionView[] {
       row.latestUserMessageAt,
       row.latestAssistantMessageAt,
     ))
+}
+
+export function listBySessionGroupId(sessionGroupId: string): SessionView[] {
+  return list({ sessionGroupId, archived: false })
 }
 
 export function setArchived(input: { id: string, archived: boolean }): SessionView | null {
@@ -546,12 +609,17 @@ export function create(input: {
   runtimeSettings?: SessionRuntimeSettingsCreatePatch
   agentId?: string | null
   linkedIssueId?: string | null
+  sessionGroupId?: string | null
   worktreeId?: string | null
   configJson?: string
 }): SessionView {
   const parsed = SessionCreateInputSchema.parse(input)
   const resolved = resolveSessionCreateInput(parsed)
   const workspaceId = resolveSessionWorkspaceId(parsed)
+  const sessionGroupId = assertSessionGroupAssignment({
+    sessionGroupId: parsed.sessionGroupId,
+    workspaceId,
+  })
   const rowInput = z
     .object({
       configJson: z.string().default(() => resolved.configJson),
@@ -596,6 +664,7 @@ export function create(input: {
       agentId: resolved.agentId,
       configJson,
       linkedIssueId: parsed.linkedIssueId,
+      sessionGroupId,
       worktreeId: parsed.worktreeId ?? null,
     })
     .returning()
@@ -787,6 +856,7 @@ export async function update(input: {
   providerTargetId?: string
   modelId?: string | null
   thinkingEffort?: ChatThinkingEffort | null
+  sessionGroupId?: string | null
 }): Promise<SessionView | null> {
   const record = db().select().from(sessions).where(eq(sessions.id, input.id)).get()
   if (!record) {
@@ -798,6 +868,13 @@ export async function update(input: {
 
   if (input.pinned !== undefined) {
     patch.pinned = input.pinned ? 1 : 0
+  }
+  if (input.sessionGroupId !== undefined) {
+    patch.sessionGroupId = assertSessionGroupAssignment({
+      sessionGroupId: input.sessionGroupId,
+      workspaceId: record.workspaceId,
+      sessionId: record.id,
+    })
   }
   if (input.providerTargetId !== undefined) {
     if (assertRuntimeOwnedProviderTargetForRuntime({

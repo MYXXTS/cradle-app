@@ -136,6 +136,13 @@ export const issue = new Elysia({
     params: IssueModel.idParams,
     response: { 200: t.Array(IssueModel.linkedSession) },
   })
+  .get('/:id/session-groups', ({ params }) => Issue.listLinkedSessionGroups(params.id), {
+    detail: {
+      summary: 'List session groups linked to an issue',
+    },
+    params: IssueModel.idParams,
+    response: { 200: t.Array(IssueModel.linkedSessionGroup) },
+  })
   .get('/:id/isolation-context', ({ params }) => ({
     groups: Worktree.getIssueIsolationContext(params.id),
   }), {

@@ -22,6 +22,7 @@ import type { MutationActor, MutationActorKind } from '../../http/actor-context'
 import { db } from '../../infra'
 import { readRuntimeIssueActorLabel } from '../provider-contracts/runtime-compatibility'
 import * as Session from '../session/service'
+import * as SessionGroup from '../session-group/service'
 
 type StatusCategory = 'triage' | 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
 type IssueActorKind = Extract<MutationActorKind, 'user' | 'agent' | 'provider-target' | 'system'>
@@ -1452,6 +1453,11 @@ export function getLinkedIssue(sessionId: string): { issueId: string | null } {
 export function listLinkedSessions(issueId: string): Session.SessionView[] {
   getIssue(issueId)
   return Session.listLinkedToIssue(issueId)
+}
+
+export function listLinkedSessionGroups(issueId: string) {
+  getIssue(issueId)
+  return SessionGroup.listByLinkedIssue(issueId)
 }
 
 export function linkIssue(sessionId: string, issueId: string): { ok: true } {

@@ -1,7 +1,7 @@
 import type { Session } from '@cradle/db'
-import { agents, sessions } from '@cradle/db'
+import { agents, sessionGroups, sessions } from '@cradle/db'
 import type { UIMessage } from 'ai'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull, ne } from 'drizzle-orm'
 
 import { readTrustedAgentRuntimeConfig } from '../../../helpers/agent-runtime-config'
 import { readPositiveIntegerEnv } from '../../../helpers/env'
@@ -19,6 +19,51 @@ export interface ChatTurnContext {
   history?: UIMessage[]
 }
 
+function resolveSessionGroupPrompt(session: Session): string | undefined {
+  if (!session.sessionGroupId) {
+    return undefined
+  }
+
+  const group = db()
+    .select({
+      id: sessionGroups.id,
+      title: sessionGroups.title,
+    })
+    .from(sessionGroups)
+    .where(eq(sessionGroups.id, session.sessionGroupId))
+    .get()
+  if (!group) {
+    return undefined
+  }
+
+  const siblings = db()
+    .select({
+      id: sessions.id,
+      title: sessions.title,
+    })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.sessionGroupId, group.id),
+        ne(sessions.id, session.id),
+        isNull(sessions.archivedAt),
+      ),
+    )
+    .all()
+
+  const siblingLines = siblings.length > 0
+    ? siblings.map(sibling => `- ${sibling.title || sibling.id}`)
+    : ['- (none)']
+
+  return [
+    '## Session Group',
+    `You are working in Session Group "${group.title}".`,
+    'Sibling sessions in this group (separate conversation contexts):',
+    ...siblingLines,
+    'Do not assume shared transcript with sibling sessions.',
+  ].join('\n')
+}
+
 export function resolveSessionSystemPrompt(session: Session | null | undefined): string | undefined {
   let systemPrompt: string | undefined
   if (session?.agentId) {
@@ -29,6 +74,13 @@ export function resolveSessionSystemPrompt(session: Session | null | undefined):
   const workflow = getSystemWorkflow()
   if (workflow) {
     systemPrompt = systemPrompt ? `${workflow}\n\n---\n\n${systemPrompt}` : workflow
+  }
+
+  const sessionGroupPrompt = session ? resolveSessionGroupPrompt(session) : undefined
+  if (sessionGroupPrompt) {
+    systemPrompt = systemPrompt
+      ? `${systemPrompt}\n\n---\n\n${sessionGroupPrompt}`
+      : sessionGroupPrompt
   }
 
   return systemPrompt

@@ -29,6 +29,7 @@ export const SessionModel = {
     modelId: nullableString,
     thinkingEffort: t.Nullable(thinkingEffortSchema),
     linkedIssueId: nullableString,
+    sessionGroupId: nullableString,
     runtimeKind: runtimeKindSchema,
     status: sessionStatusSchema,
     pinned: t.Number(),
@@ -90,6 +91,7 @@ export const SessionModel = {
     runtimeSettings: t.Optional(sessionRuntimeSettingsPatchSchema),
     thinkingEffort: t.Optional(thinkingEffortSchema),
     linkedIssueId: t.Optional(nullableRequiredString),
+    sessionGroupId: t.Optional(nullableRequiredString),
     worktreeId: t.Optional(t.String({ minLength: 1 })),
     id: t.Optional(t.String()),
   }),
@@ -105,6 +107,7 @@ export const SessionModel = {
   listQuery: t.Object({
     workspaceId: t.Optional(t.String({ minLength: 1 })),
     origin: t.Optional(t.String({ minLength: 1 })),
+    sessionGroupId: t.Optional(t.String({ minLength: 1 })),
     archived: t.Optional(t.Boolean()),
   }),
 
@@ -114,6 +117,7 @@ export const SessionModel = {
     providerTargetId: t.Optional(t.String({ minLength: 1 })),
     modelId: t.Optional(nullableRequiredString),
     thinkingEffort: t.Optional(t.Nullable(thinkingEffortSchema)),
+    sessionGroupId: t.Optional(nullableRequiredString),
   }),
 
   archiveBody: t.Object({
