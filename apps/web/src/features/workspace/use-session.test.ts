@@ -22,6 +22,7 @@ function createSessionRow(overrides: Partial<SessionRow> & Pick<SessionRow, 'id'
     modelId: null,
     thinkingEffort: null,
     linkedIssueId: null,
+    sessionGroupId: null,
     runtimeKind: 'standard',
     status: 'idle',
     pinned: 0,

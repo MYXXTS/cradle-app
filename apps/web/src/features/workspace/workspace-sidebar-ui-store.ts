@@ -17,6 +17,7 @@ export const MAX_SESSION_PREVIEW_LIMIT = SESSION_PREVIEW_LIMIT_OPTIONS.at(-1) ??
 interface WorkspaceSidebarUiState {
   collapsedWorkspaceIds: WorkspaceSidebarFlagMap
   expandedSessionListWorkspaceIds: WorkspaceSidebarFlagMap
+  expandedSessionGroupIds: WorkspaceSidebarFlagMap
   sessionPreviewLimit: number
   projectFilter: WorkspaceSidebarProjectFilter
   projectSortKey: WorkspaceSidebarProjectSortKey
@@ -31,12 +32,15 @@ interface WorkspaceSidebarUiState {
   toggleWorkspaceExpanded: (workspaceId: string) => void
   setWorkspaceSessionListExpanded: (workspaceId: string, expanded: boolean) => void
   toggleWorkspaceSessionListExpanded: (workspaceId: string) => void
+  setSessionGroupExpanded: (groupId: string, expanded: boolean) => void
+  toggleSessionGroupExpanded: (groupId: string) => void
   pruneWorkspaceSidebarState: (workspaceIds: readonly string[]) => void
 }
 
 interface PersistedWorkspaceSidebarUiState {
   collapsedWorkspaceIds?: WorkspaceSidebarFlagMap
   expandedSessionListWorkspaceIds?: WorkspaceSidebarFlagMap
+  expandedSessionGroupIds?: WorkspaceSidebarFlagMap
   sessionPreviewLimit?: unknown
   projectFilter?: unknown
   projectSortKey?: unknown
@@ -124,6 +128,7 @@ export const useWorkspaceSidebarUiStore = create<WorkspaceSidebarUiState>()(
     set => ({
       collapsedWorkspaceIds: {},
       expandedSessionListWorkspaceIds: {},
+      expandedSessionGroupIds: {},
       sessionPreviewLimit: DEFAULT_SESSION_PREVIEW_LIMIT,
       projectFilter: 'all',
       projectSortKey: 'name',
@@ -157,6 +162,16 @@ export const useWorkspaceSidebarUiStore = create<WorkspaceSidebarUiState>()(
           expandedSessionListWorkspaceIds: setFlag(state.expandedSessionListWorkspaceIds, workspaceId, expanded),
         }
       }),
+      setSessionGroupExpanded: (groupId, expanded) => set((state) => {
+        const expandedSessionGroupIds = setFlag(state.expandedSessionGroupIds, groupId, expanded)
+        return expandedSessionGroupIds === state.expandedSessionGroupIds ? state : { expandedSessionGroupIds }
+      }),
+      toggleSessionGroupExpanded: groupId => set((state) => {
+        const expanded = state.expandedSessionGroupIds[groupId] !== true
+        return {
+          expandedSessionGroupIds: setFlag(state.expandedSessionGroupIds, groupId, expanded),
+        }
+      }),
       pruneWorkspaceSidebarState: workspaceIds => set((state) => {
         const allowedIds = new Set(workspaceIds)
         const collapsedWorkspaceIds = pruneFlags(state.collapsedWorkspaceIds, allowedIds)
@@ -176,10 +191,11 @@ export const useWorkspaceSidebarUiStore = create<WorkspaceSidebarUiState>()(
     {
       name: 'cradle:workspace-sidebar-ui:v1',
       storage: persistStorage,
-      version: 1,
+      version: 2,
       partialize: state => ({
         collapsedWorkspaceIds: state.collapsedWorkspaceIds,
         expandedSessionListWorkspaceIds: state.expandedSessionListWorkspaceIds,
+        expandedSessionGroupIds: state.expandedSessionGroupIds,
         sessionPreviewLimit: state.sessionPreviewLimit,
         projectFilter: state.projectFilter,
         projectSortKey: state.projectSortKey,
@@ -192,6 +208,7 @@ export const useWorkspaceSidebarUiStore = create<WorkspaceSidebarUiState>()(
           ...currentState,
           collapsedWorkspaceIds: normalizeFlags(persisted?.collapsedWorkspaceIds),
           expandedSessionListWorkspaceIds: normalizeFlags(persisted?.expandedSessionListWorkspaceIds),
+          expandedSessionGroupIds: normalizeFlags(persisted?.expandedSessionGroupIds),
           sessionPreviewLimit: normalizeSessionPreviewLimit(persisted?.sessionPreviewLimit),
           projectFilter: normalizeProjectFilter(persisted?.projectFilter),
           projectSortKey: normalizeProjectSortKey(persisted?.projectSortKey),

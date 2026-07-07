@@ -51,13 +51,28 @@ export function openHome(options: { replace?: boolean } = {}): void {
   openSurface(createHomeSurfaceDraft(), options)
 }
 
-export function openNewChat(options: { replace?: boolean, issueId?: string } = {}): void {
+export function openNewChat(options: {
+  replace?: boolean
+  issueId?: string
+  workspaceId?: string
+  sessionGroupId?: string
+} = {}): void {
+  const search: Record<string, string> = {}
+  if (options.issueId) {
+    search.issueId = options.issueId
+  }
+  if (options.workspaceId) {
+    search.workspaceId = options.workspaceId
+  }
+  if (options.sessionGroupId) {
+    search.sessionGroupId = options.sessionGroupId
+  }
   openSurface({
     id: 'new-chat',
     kind: 'new-chat',
     title: getI18n().t('search:command.newChat.label'),
-    route: options.issueId
-      ? { to: '/chat/new', search: { issueId: options.issueId } }
+    route: Object.keys(search).length > 0
+      ? { to: '/chat/new', search }
       : { to: '/chat/new' },
     closable: true,
   }, options)

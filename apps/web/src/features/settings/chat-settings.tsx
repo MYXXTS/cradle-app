@@ -79,6 +79,7 @@ function normalizeArchivedSession(session: {
   agentId: string | unknown | null
   modelId: string | unknown | null
   linkedIssueId: string | unknown | null
+  sessionGroupId?: string | unknown | null
   runtimeKind: WorkspaceSession['runtimeKind']
   status: WorkspaceSession['status']
   pinned: number
@@ -104,6 +105,7 @@ function normalizeArchivedSession(session: {
     agentId: typeof session.agentId === 'string' ? session.agentId : null,
     modelId: typeof session.modelId === 'string' ? session.modelId : null,
     linkedIssueId: typeof session.linkedIssueId === 'string' ? session.linkedIssueId : null,
+    sessionGroupId: typeof session.sessionGroupId === 'string' ? session.sessionGroupId : null,
     runtimeKind: session.runtimeKind,
     status: session.status,
     pinned: session.pinned,

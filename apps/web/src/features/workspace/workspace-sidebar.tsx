@@ -142,6 +142,20 @@ import { useTitleRegenerationStore } from '~/store/title-regeneration'
 import { SESSION_DRAG_MIME_TYPE } from './session-drag-data'
 import type { WorkspaceSession } from './use-session'
 import { isManualSession, sessionsQueryKey, updateSessionReadState, useAllSessions } from './use-session'
+import {
+  useAddSessionGroupMembers,
+  useCreateSessionGroup,
+  useDeleteSessionGroup,
+  useRemoveSessionGroupMember,
+  useSessionGroups,
+  useUpdateSessionGroup,
+  type WorkspaceSessionGroup,
+} from './use-session-group'
+import {
+  partitionWorkspaceSessions,
+  SessionGroupMenuItems,
+  WorkspaceSessionGroupSection,
+} from './workspace-session-groups'
 import type { CreateWorkspaceInput, WorkspaceRecognition } from './use-workspace'
 import {
   useAddWorkspace,
@@ -458,16 +472,24 @@ function SessionActionsMenu({
   state,
   session,
   workspaceId,
+  sessionGroups,
   onOpenChange,
   onPrepareSessionOpen,
   onStartRename,
+  onAddSessionToGroup,
+  onRemoveSessionFromGroup,
+  onCreateSessionGroupFromSession,
 }: {
   state: SessionMenuState
   session: WorkspaceSession | null
   workspaceId: string
+  sessionGroups: WorkspaceSessionGroup[]
   onOpenChange: (open: boolean) => void
   onPrepareSessionOpen: (session: WorkspaceSession) => void
   onStartRename: (sessionId: string) => void
+  onAddSessionToGroup: (sessionId: string, groupId: string) => void
+  onRemoveSessionFromGroup: (session: WorkspaceSession) => void
+  onCreateSessionGroupFromSession: (session: WorkspaceSession) => void
 }) {
   const { t } = useTranslation('workspace')
   const queryClient = useQueryClient()
@@ -720,6 +742,18 @@ function SessionActionsMenu({
           sideOffset={state.surface === 'context' ? 0 : 4}
         >
           <SessionMenuActionItems groups={actionGroups} testIdSurface={state.surface} />
+          {session
+            ? (
+                <SessionGroupMenuItems
+                  session={session}
+                  groups={sessionGroups}
+                  t={t}
+                  onAddToGroup={groupId => onAddSessionToGroup(session.id, groupId)}
+                  onRemoveFromGroup={() => onRemoveSessionFromGroup(session)}
+                  onCreateGroup={() => onCreateSessionGroupFromSession(session)}
+                />
+              )
+            : null}
         </MenuPopup>
       )
 : null}
@@ -2340,6 +2374,131 @@ const WorkspaceGroup = memo(
         return 0
       })
     }, [filteredSessions, locallyStreamingSessionIds])
+    const { data: sessionGroups = [] } = useSessionGroups(workspace.id)
+    const createSessionGroup = useCreateSessionGroup(workspace.id)
+    const updateSessionGroup = useUpdateSessionGroup(workspace.id)
+    const deleteSessionGroup = useDeleteSessionGroup(workspace.id)
+    const addSessionGroupMembers = useAddSessionGroupMembers(workspace.id)
+    const removeSessionGroupMember = useRemoveSessionGroupMember(workspace.id)
+    const [createGroupOpen, setCreateGroupOpen] = useState(false)
+    const [createGroupSeedSession, setCreateGroupSeedSession] = useState<WorkspaceSession | null>(null)
+    const [renameGroupTarget, setRenameGroupTarget] = useState<WorkspaceSessionGroup | null>(null)
+    const { grouped: groupedSessions, ungrouped: ungroupedSessions } = useMemo(
+      () => partitionWorkspaceSessions(sortedSessions, sessionGroups),
+      [sessionGroups, sortedSessions],
+    )
+    const sortSessionsForList = useCallback((items: WorkspaceSession[]) => {
+      return items.toSorted((a, b) => {
+        const pinDiff = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)
+        if (pinDiff !== 0) {
+          return pinDiff
+        }
+        const runningDiff
+          = (isSessionRunning(b, locallyStreamingSessionIds) ? 1 : 0)
+            - (isSessionRunning(a, locallyStreamingSessionIds) ? 1 : 0)
+        if (runningDiff !== 0) {
+          return runningDiff
+        }
+        return 0
+      })
+    }, [locallyStreamingSessionIds])
+    const handleCreateSessionGroup = useCallback(async (titleRaw: string) => {
+      const title = titleRaw.trim()
+      if (!title) {
+        return
+      }
+      try {
+        await createSessionGroup.mutateAsync({
+          body: {
+            workspaceId: workspace.id,
+            title,
+            ...(createGroupSeedSession ? { sessionIds: [createGroupSeedSession.id] } : {}),
+          },
+        })
+        setCreateGroupOpen(false)
+        setCreateGroupSeedSession(null)
+      }
+ catch (error) {
+        toastManager.add({
+          type: 'error',
+          title: t('sessionGroup.toast.createFailed'),
+          description: formatToastError(error),
+        })
+      }
+    }, [createGroupSeedSession, createSessionGroup, t, workspace.id])
+    const handleRenameSessionGroup = useCallback(async (titleRaw: string) => {
+      if (!renameGroupTarget) {
+        return
+      }
+      const title = titleRaw.trim()
+      if (!title || title === renameGroupTarget.title) {
+        setRenameGroupTarget(null)
+        return
+      }
+      try {
+        await updateSessionGroup.mutateAsync({
+          path: { id: renameGroupTarget.id },
+          body: { title },
+        })
+        setRenameGroupTarget(null)
+      }
+ catch (error) {
+        toastManager.add({
+          type: 'error',
+          title: t('sessionGroup.toast.renameFailed'),
+          description: formatToastError(error),
+        })
+      }
+    }, [renameGroupTarget, t, updateSessionGroup])
+    const handleDeleteSessionGroup = useCallback(async (group: WorkspaceSessionGroup) => {
+      try {
+        await deleteSessionGroup.mutateAsync({ path: { id: group.id } })
+      }
+ catch (error) {
+        toastManager.add({
+          type: 'error',
+          title: t('sessionGroup.toast.deleteFailed'),
+          description: formatToastError(error),
+        })
+      }
+    }, [deleteSessionGroup, t])
+    const handleAddSessionToGroup = useCallback(async (sessionId: string, groupId: string) => {
+      try {
+        await addSessionGroupMembers.mutateAsync({
+          path: { id: groupId },
+          body: { sessionIds: [sessionId] },
+        })
+      }
+ catch (error) {
+        toastManager.add({
+          type: 'error',
+          title: t('sessionGroup.toast.addMemberFailed'),
+          description: formatToastError(error),
+        })
+      }
+    }, [addSessionGroupMembers, t])
+    const handleRemoveSessionFromGroup = useCallback(async (session: WorkspaceSession) => {
+      if (!session.sessionGroupId) {
+        return
+      }
+      try {
+        await removeSessionGroupMember.mutateAsync({
+          groupId: session.sessionGroupId,
+          sessionId: session.id,
+        })
+      }
+ catch (error) {
+        toastManager.add({
+          type: 'error',
+          title: t('sessionGroup.toast.removeMemberFailed'),
+          description: formatToastError(error),
+        })
+      }
+    }, [removeSessionGroupMember, t])
+    const handleCreateSessionGroupFromSession = useCallback((session: WorkspaceSession) => {
+      setCreateGroupSeedSession(session)
+      setCreateGroupOpen(true)
+    }, [])
     const workspaceLocalPath = getLocalWorkspacePath(workspace)
     const workspaceLocationLabel = getWorkspaceLocationLabel(workspace)
 
@@ -2630,6 +2789,17 @@ const WorkspaceGroup = memo(
           invoke: async () => navigator.clipboard.writeText('.'),
         },
         {
+          key: 'new-session-group',
+          label: t('sessionGroup.action.create'),
+          icon: <FolderPlusIcon />,
+          testId: `workspace-new-session-group-${workspace.id}`,
+          invoke: () => {
+            setCreateGroupSeedSession(null)
+            setCreateGroupOpen(true)
+          },
+          separatorBefore: true,
+        },
+        {
           key: 'toggle-pin',
           label: workspacePinned ? t('workspace.action.unpin') : t('workspace.action.pin'),
           icon: workspacePinned ? <PinOffIcon /> : <PinIcon />,
@@ -2707,33 +2877,96 @@ const WorkspaceGroup = memo(
               onOpenChange={handleOpenCreateDialogChange}
               onCommit={handleCreateWorkspaceChild}
             />
+            <WorkspaceTextInputDialog
+              open={createGroupOpen}
+              title={t('sessionGroup.dialog.createTitle')}
+              initialValue=""
+              label={t('sessionGroup.dialog.titleLabel')}
+              confirmLabel={t('sessionGroup.dialog.create')}
+              onOpenChange={(open) => {
+                setCreateGroupOpen(open)
+                if (!open) {
+                  setCreateGroupSeedSession(null)
+                }
+              }}
+              onCommit={handleCreateSessionGroup}
+            />
+            <WorkspaceTextInputDialog
+              open={renameGroupTarget !== null}
+              title={t('sessionGroup.dialog.renameTitle')}
+              initialValue={renameGroupTarget?.title ?? ''}
+              label={t('sessionGroup.dialog.titleLabel')}
+              confirmLabel={t('sessionGroup.dialog.rename')}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setRenameGroupTarget(null)
+                }
+              }}
+              onCommit={handleRenameSessionGroup}
+            />
             <SessionActionsMenu
               state={sessionMenuState}
               session={activeMenuSession}
               workspaceId={workspace.id}
+              sessionGroups={sessionGroups}
               onOpenChange={handleSessionMenuOpenChange}
               onPrepareSessionOpen={handlePrepareSessionOpen}
               onStartRename={handleStartSessionRename}
+              onAddSessionToGroup={handleAddSessionToGroup}
+              onRemoveSessionFromGroup={handleRemoveSessionFromGroup}
+              onCreateSessionGroupFromSession={handleCreateSessionGroupFromSession}
             />
           </>
         )}
       >
-        <WorkspaceSessionListSection
-          workspaceId={workspace.id}
-          sortedSessions={sortedSessions}
-          renamingSessionId={renamingSessionId}
-          retainedSessionIds={retainedSessionIds}
-          locallyStreamingSessionIds={locallyStreamingSessionIds}
-          waitingForUserInputSessionIds={waitingForUserInputSessionIds}
-          locallyErroredSessionIds={locallyErroredSessionIds}
-          runtimeIconByKind={runtimeIconByKind}
-          t={t}
-          onPrepareSessionOpen={handlePrepareSessionOpen}
-          onPrefetchSession={prefetchSession}
-          onRenameCommit={handleRenameSession}
-          onRenameCancel={handleRenameCancel}
-          onOpenSessionMenu={handleOpenSessionMenu}
-        />
+        <div className="flex min-w-0 flex-col gap-1">
+          {groupedSessions.map(({ group, sessions: groupSessions }) => (
+            <WorkspaceSessionGroupSection
+              key={group.id}
+              group={group}
+              sessions={groupSessions}
+              workspaceId={workspace.id}
+              t={t}
+              onRenameGroup={setRenameGroupTarget}
+              onDeleteGroup={handleDeleteSessionGroup}
+            >
+              <WorkspaceSessionListSection
+                workspaceId={workspace.id}
+                sortedSessions={sortSessionsForList(groupSessions)}
+                renamingSessionId={renamingSessionId}
+                retainedSessionIds={retainedSessionIds}
+                locallyStreamingSessionIds={locallyStreamingSessionIds}
+                waitingForUserInputSessionIds={waitingForUserInputSessionIds}
+                locallyErroredSessionIds={locallyErroredSessionIds}
+                runtimeIconByKind={runtimeIconByKind}
+                t={t}
+                onPrepareSessionOpen={handlePrepareSessionOpen}
+                onPrefetchSession={prefetchSession}
+                onRenameCommit={handleRenameSession}
+                onRenameCancel={handleRenameCancel}
+                onOpenSessionMenu={handleOpenSessionMenu}
+              />
+            </WorkspaceSessionGroupSection>
+          ))}
+          {(ungroupedSessions.length > 0 || groupedSessions.length === 0) && (
+            <WorkspaceSessionListSection
+              workspaceId={workspace.id}
+              sortedSessions={sortSessionsForList(ungroupedSessions)}
+              renamingSessionId={renamingSessionId}
+              retainedSessionIds={retainedSessionIds}
+              locallyStreamingSessionIds={locallyStreamingSessionIds}
+              waitingForUserInputSessionIds={waitingForUserInputSessionIds}
+              locallyErroredSessionIds={locallyErroredSessionIds}
+              runtimeIconByKind={runtimeIconByKind}
+              t={t}
+              onPrepareSessionOpen={handlePrepareSessionOpen}
+              onPrefetchSession={prefetchSession}
+              onRenameCommit={handleRenameSession}
+              onRenameCancel={handleRenameCancel}
+              onOpenSessionMenu={handleOpenSessionMenu}
+            />
+          )}
+        </div>
       </WorkspaceGroupDisclosure>
     )
   },

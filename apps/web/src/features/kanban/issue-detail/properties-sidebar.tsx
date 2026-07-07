@@ -49,7 +49,7 @@ import {
 import { PriorityIcon } from '../shared/priority-icon'
 import { StatusIcon } from '../shared/status-icon'
 import type { IssuePriority } from '../use-kanban'
-import { useDelegateIssue, useIssueAgentSessions, useIssueLinkedSessions, usePatchIssueLabels, useRerunIssueAgentSession, useUndelegateIssue } from '../use-kanban'
+import { useDelegateIssue, useIssueAgentSessions, useIssueLinkedSessions, useIssueSessionGroups, usePatchIssueLabels, useRerunIssueAgentSession, useUndelegateIssue } from '../use-kanban'
 import type { StatusCategory } from '../use-view-config'
 import { RelationManager } from './relation-manager'
 
@@ -307,6 +307,12 @@ const linkedSessionStatusText = {
   error: 'Error',
 } satisfies Record<IssueLinkedSession['status'], string>
 
+const linkedSessionGroupStatusText = {
+  idle: 'Idle',
+  streaming: 'Running',
+  error: 'Error',
+} satisfies Record<'idle' | 'streaming' | 'error', string>
+
 function AgentSessionPanel({
   issue,
   readOnly = false,
@@ -316,12 +322,21 @@ function AgentSessionPanel({
 }) {
   const { data: sessions = [] } = useIssueAgentSessions(issue.id)
   const { data: linkedSessions = [] } = useIssueLinkedSessions(issue.id)
+  const { data: linkedSessionGroups = [] } = useIssueSessionGroups(issue.id)
   const rerunSession = useRerunIssueAgentSession()
   const currentSession = sessions.find(session => session.isCurrentDelegation) ?? null
   const currentAgentChatSessionId = currentSession?.chatSessionId ?? null
-  const ordinaryLinkedSessions = linkedSessions.filter(session => session.id !== currentAgentChatSessionId)
+  const groupedSessionIds = new Set(
+    linkedSessions
+      .filter(session =>
+        typeof session.sessionGroupId === 'string'
+        && linkedSessionGroups.some(group => group.id === session.sessionGroupId))
+      .map(session => session.id),
+  )
+  const ordinaryLinkedSessions = linkedSessions.filter(session =>
+    session.id !== currentAgentChatSessionId && !groupedSessionIds.has(session.id))
 
-  if (!currentSession && ordinaryLinkedSessions.length === 0) {
+  if (!currentSession && ordinaryLinkedSessions.length === 0 && linkedSessionGroups.length === 0) {
     return null
   }
 
@@ -394,8 +409,34 @@ function AgentSessionPanel({
           </div>
         </div>
       )}
-      {ordinaryLinkedSessions.length > 0 && (
+      {linkedSessionGroups.length > 0 && (
         <div className={cn('space-y-1.5', currentSession && 'mt-3 border-t border-border pt-2.5')}>
+          <div className="text-[12px] font-medium text-muted-foreground">
+            {linkedSessionGroups.length === 1 ? 'Session group' : 'Session groups'}
+          </div>
+          {linkedSessionGroups.map(group => (
+            <div key={group.id} className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-semibold text-foreground">
+                  {group.title}
+                </div>
+                <div className="mt-0.5 text-[12px] text-muted-foreground">
+                  {group.sessionCount}
+                  {' '}
+                  sessions ·
+                  {' '}
+                  {linkedSessionGroupStatusText[group.statusAggregate]}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {ordinaryLinkedSessions.length > 0 && (
+        <div className={cn(
+          'space-y-1.5',
+          (currentSession || linkedSessionGroups.length > 0) && 'mt-3 border-t border-border pt-2.5',
+        )}>
           <div className="text-[12px] font-medium text-muted-foreground">
             {ordinaryLinkedSessions.length === 1 ? 'Linked chat' : 'Linked chats'}
           </div>

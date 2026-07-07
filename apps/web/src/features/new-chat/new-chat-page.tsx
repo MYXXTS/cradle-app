@@ -82,6 +82,8 @@ function useNewChatPageOwner(
   active: boolean,
   replaceCurrentSurfaceOnSubmit: boolean,
   issueId: string | null = null,
+  initialWorkspaceId: string | null = null,
+  sessionGroupId: string | null = null,
 ) {
   const { t } = useTranslation('new-chat')
   const issueIsolationContext = useIssueIsolationContext(issueId)
@@ -102,6 +104,9 @@ function useNewChatPageOwner(
   const [quickActionText, setQuickActionText] = useState<string | undefined>(undefined)
   const [quickActionKey, setQuickActionKey] = useState(0)
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(() => {
+    if (initialWorkspaceId) {
+      return initialWorkspaceId
+    }
     try {
       return localStorage.getItem('cradle:lastWorkspaceId')
     }
@@ -164,6 +169,7 @@ function useNewChatPageOwner(
     const trimmedText = text.trim()
     try {
       const linkedIssueFields = issueId ? { linkedIssueId: issueId } : {}
+      const sessionGroupFields = sessionGroupId ? { sessionGroupId } : {}
       const worktreeFields = isolation?.choice === 'continue' && isolation.worktreeId
         ? { worktreeId: isolation.worktreeId }
         : {}
@@ -178,6 +184,7 @@ function useNewChatPageOwner(
           agentId: options.agentId,
           runtimeSettings: options.runtimeSettings,
           ...linkedIssueFields,
+          ...sessionGroupFields,
           ...worktreeFields,
         }
         const { data: sessionData } = await postSessions({
@@ -199,6 +206,7 @@ function useNewChatPageOwner(
           workspaceId: session.workspaceId ?? selectedProjectWorkspaceId ?? null,
           agentId: options.agentId,
           runtimeKind: options.runtimeKind,
+          sessionGroupId,
         }, { promote: true })
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: sessionsQueryKey(session.workspaceId ?? selectedProjectWorkspaceId) }),
@@ -225,6 +233,7 @@ function useNewChatPageOwner(
             agentId: options.agentId,
             runtimeSettings: options.runtimeSettings,
             ...linkedIssueFields,
+            ...sessionGroupFields,
             ...worktreeFields,
           }
         : {
@@ -235,6 +244,7 @@ function useNewChatPageOwner(
             runtimeKind: options.runtimeKind,
             runtimeSettings: options.runtimeSettings,
             ...linkedIssueFields,
+            ...sessionGroupFields,
             ...worktreeFields,
           }
       const { data: sessionData } = await postSessions({
@@ -258,6 +268,7 @@ function useNewChatPageOwner(
         providerTargetId: options.providerTargetId,
         modelId: options.modelId ?? null,
         runtimeKind: options.runtimeKind,
+        sessionGroupId,
       }, { promote: true })
       startOptimisticChatResponse({
         sessionId: session.id,
@@ -292,7 +303,7 @@ function useNewChatPageOwner(
       console.error('[NewChatPage] send failed:', err)
       return false
     }
-  }, [issueId, openCreatedChatSession, queryClient, selectedProjectWorkspaceId])
+  }, [issueId, openCreatedChatSession, queryClient, selectedProjectWorkspaceId, sessionGroupId])
 
   const handleSendToTarget = useCallback(async (
     text: string,
@@ -593,6 +604,8 @@ interface NewChatEntryPointProps {
   replaceCurrentSurfaceOnSubmit?: boolean
   testIdPrefix?: string
   issueId?: string | null
+  initialWorkspaceId?: string | null
+  sessionGroupId?: string | null
 }
 
 export function NewChatEntryPoint({
@@ -602,8 +615,16 @@ export function NewChatEntryPoint({
   replaceCurrentSurfaceOnSubmit = true,
   testIdPrefix = 'new-chat',
   issueId = null,
+  initialWorkspaceId = null,
+  sessionGroupId = null,
 }: NewChatEntryPointProps) {
-  const owner = useNewChatPageOwner(active, replaceCurrentSurfaceOnSubmit, issueId)
+  const owner = useNewChatPageOwner(
+    active,
+    replaceCurrentSurfaceOnSubmit,
+    issueId,
+    initialWorkspaceId,
+    sessionGroupId,
+  )
   const hasWorkspace = !!owner.selectedWorkspace
   const hasLocalWorkspace = !!owner.selectedWorkspaceLocalPath
   const isPlanMode = useNewChatStore(s => s.lastRuntimeSettings.interactionMode === 'plan')
@@ -668,5 +689,12 @@ export function NewChatEntryPoint({
 export function NewChatPage() {
   const isActive = useSurfaceActive()
   const search = useSearch({ from: '/chat/new' })
-  return <NewChatEntryPoint active={isActive} issueId={search.issueId ?? null} />
+  return (
+    <NewChatEntryPoint
+      active={isActive}
+      issueId={search.issueId ?? null}
+      initialWorkspaceId={search.workspaceId ?? null}
+      sessionGroupId={search.sessionGroupId ?? null}
+    />
+  )
 }

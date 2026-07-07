@@ -25,6 +25,7 @@ export interface WorkspaceSession {
   agentId: string | null
   modelId: string | null
   linkedIssueId: string | null
+  sessionGroupId: string | null
   runtimeKind: RuntimeKind
   status: 'idle' | 'streaming' | 'error'
   pinned: number
@@ -178,6 +179,7 @@ function createSessionListRow(
     agentId: null,
     modelId: null,
     linkedIssueId: null,
+    sessionGroupId: null,
     runtimeKind: 'standard',
     pinned: 0,
     archivedAt: null,
@@ -276,6 +278,7 @@ function asWorkspaceSession(session: GetSessionsResponse[number]): WorkspaceSess
     agentId: nullableString(session.agentId),
     modelId: nullableString(session.modelId),
     linkedIssueId: nullableString(session.linkedIssueId),
+    sessionGroupId: nullableString((session as { sessionGroupId?: unknown }).sessionGroupId),
     runtimeKind: session.runtimeKind,
     status: readSessionStatus(status),
     pinned: session.pinned,

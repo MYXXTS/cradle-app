@@ -20,6 +20,7 @@ import {
   getIssuesByIdFieldChanges,
   getIssuesByIdRelations,
   getIssuesByIdSessions,
+  getIssuesByIdSessionGroups,
   getIssuesMilestones,
   getIssuesSearch,
   getIssuesStatuses,
@@ -71,6 +72,7 @@ export const kanbanKeys = {
   issue: (id: string) => ['kanban', 'issue', id] as const,
   agentSessions: (issueId: string) => ['kanban', 'agentSessions', issueId] as const,
   linkedSessions: (issueId: string) => ['kanban', 'linkedSessions', issueId] as const,
+  linkedSessionGroups: (issueId: string) => ['kanban', 'linkedSessionGroups', issueId] as const,
   activity: (issueId: string) => ['kanban', 'activity', issueId] as const,
   comments: (issueId: string) => ['kanban', 'comments', issueId] as const,
   fieldChanges: (issueId: string) => ['kanban', 'fieldChanges', issueId] as const,
@@ -421,6 +423,7 @@ const IssueLinkedSessionSchema = z
     modelId: z.string().nullable(),
     thinkingEffort: z.string().nullable(),
     linkedIssueId: z.string().nullable(),
+    sessionGroupId: z.string().nullable(),
     runtimeKind: z.string(),
     status: z.enum(['idle', 'streaming', 'error']),
     pinned: z.number(),
@@ -440,6 +443,24 @@ const IssueLinkedSessionSchema = z
     isolationBoundaryRequired: z.boolean(),
   })
   .passthrough()
+const IssueSessionGroupSchema = z
+  .object({
+    id: z.string(),
+    workspaceId: z.string(),
+    title: z.string(),
+    description: z.string().nullable(),
+    linkedIssueId: z.string().nullable(),
+    status: z.enum(['active', 'archived']),
+    configJson: z.string(),
+    archivedAt: z.number().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    sessionCount: z.number(),
+    statusAggregate: z.enum(['idle', 'streaming', 'error']),
+    latestActivityAt: z.number().nullable(),
+  })
+  .passthrough()
+export type IssueSessionGroup = z.infer<typeof IssueSessionGroupSchema>
 const LinkedIssueRefSchema = z
   .object({
     issueId: z.string().nullable(),
@@ -887,6 +908,18 @@ export function useIssueLinkedSessions(issueId: string, enabled = true) {
     queryFn: async () => {
       const { data } = await getIssuesByIdSessions({ path: { id: issueId } })
       return z.array(IssueLinkedSessionSchema).parse(data) satisfies IssueLinkedSession[]
+    },
+    enabled: enabled && !!issueId,
+    ...queryRefreshPolicies.interactive,
+  })
+}
+
+export function useIssueSessionGroups(issueId: string, enabled = true) {
+  return useQuery({
+    queryKey: kanbanKeys.linkedSessionGroups(issueId),
+    queryFn: async () => {
+      const { data } = await getIssuesByIdSessionGroups({ path: { id: issueId } })
+      return z.array(IssueSessionGroupSchema).parse(data) satisfies IssueSessionGroup[]
     },
     enabled: enabled && !!issueId,
     ...queryRefreshPolicies.interactive,
