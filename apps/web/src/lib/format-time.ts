@@ -1,8 +1,8 @@
 import { getI18n } from '~/i18n/instance'
 
-function _timeAgo(timestamp: number, now: number): string {
+export function formatTimeAgo(timestampSeconds: number, nowMs = Date.now()): string {
   const t = getI18n().t
-  const seconds = Math.floor((now - timestamp) / 1000)
+  const seconds = Math.max(0, Math.floor(nowMs / 1000) - timestampSeconds)
   if (seconds < 60) {
     return t('common:time.justNow')
   }

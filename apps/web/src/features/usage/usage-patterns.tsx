@@ -1,13 +1,11 @@
-// "When are you most active" section. The day-of-week chart is computed for
-// real from the daily series (every usage row already carries a date, so the
-// weekday split needs no new backend work). The hour-of-day chart is MOCK —
-// see usage-mock-data.ts for exactly which backend endpoint would replace it.
+// "When are you most active" section. The day-of-week chart is computed from
+// daily rows; the hour-of-day chart uses the server-side usage_logs timestamp
+// aggregation.
 import type { TFunction } from 'i18next'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bar, BarChart, Cell, XAxis } from 'recharts'
 
-import { Badge } from '~/components/ui/badge'
 import type { ChartConfig } from '~/components/ui/chart'
 import { ChartContainer, ChartTooltip } from '~/components/ui/chart'
 import { cn } from '~/lib/cn'
@@ -15,23 +13,19 @@ import { formatPercentFromRatio, formatTokenCount } from '~/lib/number-format'
 
 import type { ModelTokenShare } from './usage-insights'
 import { modelBreakdownByWeekday, weekdayBreakdown, weekdayLabel } from './usage-insights'
-import { mockHourOfDayDistribution } from './usage-mock-data'
 import { ModelShareRows, TOOLTIP_CARD_CLASS } from './usage-model-tooltip'
-import type { DailyUsage, DailyUsageByModel, UsageSummary } from './use-usage-overview'
+import type { DailyUsage, DailyUsageByModel, HourlyUsage } from './use-usage-overview'
 
 interface UsagePatternsProps {
   daily: DailyUsage[]
   dailyByModel: DailyUsageByModel[]
-  summary: UsageSummary
+  hourly: HourlyUsage[]
 }
 
 const WEEKDAY_CHART_CONFIG = { tokens: { label: 'Tokens', color: '#3b82f6' } } satisfies ChartConfig
-// Muted neutral (not a second hue) — the "Preview" badge already flags this
-// chart as estimated, so the color itself signals "quieter / less certain"
-// rather than introducing a third competing accent color.
-const HOUR_CHART_CONFIG = { tokens: { label: 'Tokens', color: 'var(--muted-foreground)' } } satisfies ChartConfig
+const HOUR_CHART_CONFIG = { tokens: { label: 'Tokens', color: '#0f766e' } } satisfies ChartConfig
 
-export function UsagePatterns({ daily, dailyByModel, summary }: UsagePatternsProps) {
+export function UsagePatterns({ daily, dailyByModel, hourly }: UsagePatternsProps) {
   const { t } = useTranslation('usage')
 
   const modelSharesByWeekday = useMemo(() => modelBreakdownByWeekday(dailyByModel), [dailyByModel])
@@ -48,15 +42,14 @@ export function UsagePatterns({ daily, dailyByModel, summary }: UsagePatternsPro
   }, [daily, t])
 
   const hourData = useMemo(() => {
-    const buckets = mockHourOfDayDistribution(summary.totalTokens)
-    const maxTokens = Math.max(...buckets.map(entry => entry.tokens), 1)
-    return buckets.map(entry => ({
+    const maxTokens = Math.max(1, ...hourly.map(entry => entry.totalTokens))
+    return hourly.map(entry => ({
       label: String(entry.hour),
       hour: entry.hour,
-      tokens: entry.tokens,
-      isPeak: entry.tokens === maxTokens && entry.tokens > 0,
+      tokens: entry.totalTokens,
+      isPeak: entry.totalTokens === maxTokens && entry.totalTokens > 0,
     }))
-  }, [summary.totalTokens])
+  }, [hourly])
 
   if (weekdayData.every(entry => entry.tokens === 0)) {
     return null
@@ -101,12 +94,7 @@ export function UsagePatterns({ daily, dailyByModel, summary }: UsagePatternsPro
         </div>
 
         <div>
-          <div className="flex items-center gap-1.5">
-            <p className="text-[11px] font-medium text-muted-foreground">{t('patterns.byHour')}</p>
-            <Badge variant="outline" className="h-4 px-1.5 text-[9px] uppercase tracking-wide text-muted-foreground/70">
-              {t('patterns.previewBadge')}
-            </Badge>
-          </div>
+          <p className="text-[11px] font-medium text-muted-foreground">{t('patterns.byHour')}</p>
           <ChartContainer config={HOUR_CHART_CONFIG} className="mt-2 aspect-auto h-[140px] w-full">
             <BarChart data={hourData} margin={{ top: 6, right: 4, left: 4, bottom: 0 }} barCategoryGap="18%">
               <XAxis
@@ -124,26 +112,24 @@ export function UsagePatterns({ daily, dailyByModel, summary }: UsagePatternsPro
               />
               <Bar dataKey="tokens" radius={[3, 3, 0, 0]} maxBarSize={10}>
                 {hourData.map(entry => (
-                  <Cell key={entry.label} fill="currentColor" fillOpacity={entry.isPeak ? 0.45 : 0.18} className="text-foreground" />
+                  <Cell key={entry.label} fill={entry.isPeak ? '#0f766e' : 'color-mix(in oklch, #0f766e 30%, transparent)'} />
                 ))}
               </Bar>
             </BarChart>
           </ChartContainer>
           {/* The 24-bar hour chart is too dense to compare by eye, so call out
-              the busiest 3 hours as ranked share bars underneath. Neutral
-              color (not blue) keeps it consistent with the mock chart above. */}
+              the busiest 3 hours as ranked share bars underneath. */}
           <div className="mt-3">
             <p className="text-[10px] font-medium text-muted-foreground">{t('patterns.topHours')}</p>
             <PatternProgressList
               data={hourData}
               limit={3}
               labelClassName="w-10"
-              peakClassName="bg-foreground/55"
-              restClassName="bg-foreground/25"
+              peakClassName="bg-teal-700"
+              restClassName="bg-teal-700/35"
               formatLabel={entry => `${entry.label.padStart(2, '0')}:00`}
             />
           </div>
-          <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground/70">{t('patterns.previewHint')}</p>
         </div>
       </div>
     </div>
@@ -167,8 +153,8 @@ function renderPatternTooltip(active: boolean | undefined, payload: ReadonlyArra
   )
 }
 
-// The by-weekday chart is backed by real per-day rows, so — unlike the mock
-// by-hour chart above — its tooltip can show a real "which model" line.
+// The by-weekday chart is backed by per-day model rows, so its tooltip can
+// show a real "which model" line.
 function renderWeekdayTooltip(
   active: boolean | undefined,
   payload: ReadonlyArray<{ value?: unknown, payload?: { weekdayIndex: number } }> | undefined,

@@ -20,7 +20,7 @@ import { useUsageOverview } from './use-usage-overview'
 export function UsageDashboard() {
   const { t } = useTranslation('usage')
   const [range, setRange] = useState<UsageRangeKey>('30d')
-  const { daily, dailyByModel, summary, stats, costSummary, dailyCost, usageReady, hasData } = useUsageOverview()
+  const { daily, dailyByModel, hourly, summary, stats, recentSessions, costSummary, dailyCost, usageReady, hasData } = useUsageOverview()
 
   const hasCost = Boolean(costSummary && costSummary.totalCostUsd > 0)
   const hasRankedUsage = Boolean(
@@ -113,12 +113,14 @@ export function UsageDashboard() {
               )}
 
               <SectionCard>
-                <UsagePatterns daily={daily} dailyByModel={dailyByModel} summary={summary} />
+                <UsagePatterns daily={daily} dailyByModel={dailyByModel} hourly={hourly} />
               </SectionCard>
 
-              <SectionCard>
-                <UsageRecentSessions summary={summary} />
-              </SectionCard>
+              {recentSessions.length > 0 && (
+                <SectionCard>
+                  <UsageRecentSessions sessions={recentSessions} />
+                </SectionCard>
+              )}
             </div>
           </div>
         )}

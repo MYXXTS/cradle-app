@@ -1,38 +1,30 @@
-// Recent sessions preview — MOCK. `GET /usage/cost/sessions` already returns
-// real per-session cost/tokens, but not the title/agent/timestamp needed for
-// a readable list. See usage-mock-data.ts for the exact backend gap. Shown
-// with a persistent "Preview" badge so it never reads as real history.
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '~/components/ui/badge'
 import { cn } from '~/lib/cn'
+import { formatTimeAgo } from '~/lib/format-time'
 import { formatTokenCount, formatUsd } from '~/lib/number-format'
 
-import { mockRecentSessions } from './usage-mock-data'
-import type { UsageSummary } from './use-usage-overview'
+import type { RecentUsageSession } from './use-usage-overview'
 
 interface UsageRecentSessionsProps {
-  summary: UsageSummary | null
+  sessions: RecentUsageSession[]
 }
 
-export function UsageRecentSessions({ summary }: UsageRecentSessionsProps) {
+export function UsageRecentSessions({ sessions }: UsageRecentSessionsProps) {
   const { t } = useTranslation('usage')
-  const sessions = mockRecentSessions(summary)
+  const now = Date.now()
 
   return (
     <div>
       <div className="flex items-center gap-1.5">
         <h2 className="text-sm font-semibold text-foreground">{t('sessions.title')}</h2>
-        <Badge variant="outline" className="h-4 px-1.5 text-[9px] uppercase tracking-wide text-muted-foreground/70">
-          {t('patterns.previewBadge')}
-        </Badge>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{t('sessions.description')}</p>
 
       <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-foreground/6">
         {sessions.map((session, index) => (
           <div
-            key={session.id}
+            key={session.sessionId}
             className={cn(
               'flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-foreground/[0.03]',
               index < sessions.length - 1 && 'border-b border-foreground/5',
@@ -42,17 +34,17 @@ export function UsageRecentSessions({ summary }: UsageRecentSessionsProps) {
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-medium text-foreground">{session.title}</p>
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                {session.agentName}
+                {session.agentName ?? t('sessions.unknownAgent')}
                 {' · '}
                 <span className="font-mono">{session.modelId}</span>
                 {' · '}
-                {session.relativeTime}
+                {formatTimeAgo(session.lastUsageAt, now)}
               </p>
             </div>
             <div className="shrink-0 text-right">
               <p className="text-[13px] font-medium tabular-nums text-foreground">{formatUsd(session.costUsd)}</p>
               <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                {t('sessions.tokensAndTurns', { tokens: formatTokenCount(session.tokens), turns: session.turns })}
+                {t('sessions.tokensAndTurns', { tokens: formatTokenCount(session.totalTokens), turns: session.turnCount })}
               </p>
             </div>
           </div>
