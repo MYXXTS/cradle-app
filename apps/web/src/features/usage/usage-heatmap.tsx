@@ -246,12 +246,12 @@ function HeatmapTooltip({ hovered, modelShares }: { hovered: HoveredCell, modelS
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.94 }}
       transition={{ duration: 0.12, ease: 'easeOut' }}
-      className="pointer-events-none absolute z-50 w-fit max-w-64 -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-md bg-foreground px-3 py-1.5 text-xs text-background shadow-lg"
+      className="pointer-events-none absolute z-50 w-fit max-w-64 -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-md border border-white/10 bg-neutral-950 px-3 py-1.5 text-xs text-white shadow-lg shadow-black/20"
       style={{ left: hovered.x, top: hovered.y }}
       data-testid="usage-heatmap-tooltip"
     >
       <p className="font-medium" data-testid="usage-heatmap-tooltip-date">{cell.date}</p>
-      <p className="mt-0.5 text-background/70" data-testid="usage-heatmap-tooltip-metrics">
+      <p className="mt-0.5 text-white/70" data-testid="usage-heatmap-tooltip-metrics">
         {cell.tokens > 0
           ? t('heatmap.tooltipMetrics', { tokens: cell.tokens.toLocaleString(), turns: cell.usage?.count ?? 0 })
           : t('heatmap.tooltipNoUsage')}

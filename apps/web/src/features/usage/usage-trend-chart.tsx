@@ -126,7 +126,7 @@ export function UsageTrendChart({ daily, dailyCost, dailyByModel, range, hasCost
                 />
                 <ChartTooltip
                   cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
-                  allowEscapeViewBox={{ x: true, y: true }}
+                  allowEscapeViewBox={{ x: false, y: true }}
                   wrapperStyle={{ zIndex: 50 }}
                   content={({ active, payload }) => renderTokensTooltip(active, payload, modelSharesByDate, t)}
                 />
@@ -156,7 +156,7 @@ export function UsageTrendChart({ daily, dailyCost, dailyByModel, range, hasCost
                 />
                 <ChartTooltip
                   cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
-                  allowEscapeViewBox={{ x: true, y: true }}
+                  allowEscapeViewBox={{ x: false, y: true }}
                   wrapperStyle={{ zIndex: 50 }}
                   content={({ active, payload }) => renderCostTooltip(active, payload, t)}
                 />
@@ -187,7 +187,7 @@ function renderTokensTooltip(
   const shares = date ? modelSharesByDate.get(date) ?? [] : []
   return (
     <div className={cn(TOOLTIP_CARD_CLASS, 'min-w-52')}>
-      {date && <p className="font-medium text-foreground">{format(parseISO(date), 'PP')}</p>}
+      {date && <p className="font-medium text-white">{format(parseISO(date), 'PP')}</p>}
       <div className="mt-1 space-y-0.5">
         <TrendTooltipRow label={t('trend.prompt')} value={promptTokens} color="#3b82f6" />
         <TrendTooltipRow label={t('trend.completion')} value={completionTokens} color="#93c5fd" />
@@ -209,13 +209,13 @@ function renderCostTooltip(
   const value = Number(payload[0]?.value ?? 0)
   return (
     <div className={cn(TOOLTIP_CARD_CLASS, 'min-w-40')}>
-      {date && <p className="font-medium text-foreground">{format(parseISO(date), 'PP')}</p>}
+      {date && <p className="font-medium text-white">{format(parseISO(date), 'PP')}</p>}
       <div className="mt-1 flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
+        <span className="flex items-center gap-1.5 text-white/70">
           <span className="size-1.5 rounded-full bg-emerald-500" />
           {t('trend.cost')}
         </span>
-        <span className="font-mono font-medium tabular-nums text-foreground">{formatUsd(value)}</span>
+        <span className="font-mono font-medium tabular-nums text-white">{formatUsd(value)}</span>
       </div>
     </div>
   )
@@ -224,11 +224,11 @@ function renderCostTooltip(
 function TrendTooltipRow({ label, value, color }: { label: string, value: number, color: string }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-muted-foreground">
+      <span className="flex items-center gap-1.5 text-white/70">
         <span className="size-1.5 rounded-full" style={{ backgroundColor: color }} />
         {label}
       </span>
-      <span className="font-mono font-medium tabular-nums text-foreground">{formatTokenCount(value)}</span>
+      <span className="font-mono font-medium tabular-nums text-white">{formatTokenCount(value)}</span>
     </div>
   )
 }

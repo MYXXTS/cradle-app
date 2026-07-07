@@ -78,7 +78,7 @@ export function UsagePatterns({ daily, dailyByModel, summary }: UsagePatternsPro
               <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: 'currentColor', fillOpacity: 0.55 }} />
               <ChartTooltip
                 cursor={{ fill: 'currentColor', fillOpacity: 0.04 }}
-                allowEscapeViewBox={{ x: true, y: true }}
+                allowEscapeViewBox={{ x: false, y: true }}
                 wrapperStyle={{ zIndex: 50 }}
                 content={({ active, payload }) => renderWeekdayTooltip(active, payload, modelSharesByWeekday, t)}
               />
@@ -118,7 +118,7 @@ export function UsagePatterns({ daily, dailyByModel, summary }: UsagePatternsPro
               />
               <ChartTooltip
                 cursor={{ fill: 'currentColor', fillOpacity: 0.04 }}
-                allowEscapeViewBox={{ x: true, y: true }}
+                allowEscapeViewBox={{ x: false, y: true }}
                 wrapperStyle={{ zIndex: 50 }}
                 content={({ active, payload }) => renderPatternTooltip(active, payload)}
               />
@@ -160,8 +160,8 @@ function renderPatternTooltip(active: boolean | undefined, payload: ReadonlyArra
   return (
     <div className={cn(TOOLTIP_CARD_CLASS, 'min-w-40')}>
       <div className="flex items-center justify-between gap-3">
-        <p className="font-medium text-foreground">{hourLabel}</p>
-        <p className="tabular-nums text-[11px] text-muted-foreground">{formatTokenCount(tokens)}</p>
+        <p className="font-medium text-white">{hourLabel}</p>
+        <p className="tabular-nums text-[11px] text-white/70">{formatTokenCount(tokens)}</p>
       </div>
     </div>
   )
@@ -185,8 +185,8 @@ function renderWeekdayTooltip(
   return (
     <div className={cn(TOOLTIP_CARD_CLASS, 'min-w-52')}>
       <div className="flex items-center justify-between gap-3">
-        <p className="font-medium text-foreground">{weekdayName}</p>
-        <p className="tabular-nums text-[11px] text-muted-foreground">{formatTokenCount(tokens)}</p>
+        <p className="font-medium text-white">{weekdayName}</p>
+        <p className="tabular-nums text-[11px] text-white/70">{formatTokenCount(tokens)}</p>
       </div>
       <ModelShareRows shares={shares} tone="default" />
     </div>

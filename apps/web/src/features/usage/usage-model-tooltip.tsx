@@ -15,16 +15,14 @@ import type { ModelTokenShare } from './usage-insights'
 import { OTHER_MODEL_KEY } from './usage-insights'
 import { categoryColor } from './usage-palette'
 
-// Shared chrome for the light-toned (recharts) tooltips across the usage
-// dashboard — trend, by-weekday, and by-hour all use this so a hover looks
-// the same everywhere. Frosted rather than opaque so it sits over chart fills
-// without a hard edge, and a soft shadow instead of recharts' default heavy
-// drop shadow.
-export const TOOLTIP_CARD_CLASS = 'rounded-lg border border-border/60 bg-background/95 px-3 py-2 text-xs shadow-lg shadow-black/5 backdrop-blur-sm'
+// Shared chrome for Usage dashboard tooltips. Keep this fixed-dark rather
+// than semantic "foreground/background" so it does not flip to a white bubble
+// in dark mode.
+export const TOOLTIP_CARD_CLASS = 'rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-xs text-white shadow-lg shadow-black/20'
 
 const TONE_CLASSES = {
-  inverted: { border: 'border-background/15', label: 'text-background/70', value: 'text-background', track: 'bg-background/20' },
-  default: { border: 'border-border/50', label: 'text-muted-foreground', value: 'text-foreground', track: 'bg-foreground/10' },
+  inverted: { border: 'border-white/10', label: 'text-white/70', value: 'text-white', track: 'bg-white/15' },
+  default: { border: 'border-white/10', label: 'text-white/70', value: 'text-white', track: 'bg-white/15' },
 } as const
 
 export function ModelShareRows({ shares, tone = 'default' }: { shares: ModelTokenShare[], tone?: keyof typeof TONE_CLASSES }) {
