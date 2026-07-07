@@ -17,6 +17,16 @@ export const usage = new Elysia({
     query: UsageModel.dailyQuery,
     response: { 200: t.Array(UsageModel.dailyUsage) },
   })
+  .get('/daily-by-model', ({ query }) => Usage.getDailyUsageByModel(query.days), {
+    detail: {
+      'summary': 'Get daily usage broken down by model',
+      'x-cradle-cli': {
+        command: ['usage', 'daily-by-model'],
+      },
+    },
+    query: UsageModel.dailyQuery,
+    response: { 200: t.Array(UsageModel.dailyUsageByModel) },
+  })
   .get('/summary', () => Usage.getUsageSummary(), {
     detail: {
       'summary': 'Get usage summary',

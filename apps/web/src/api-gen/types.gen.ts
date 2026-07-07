@@ -1258,6 +1258,29 @@ export type GetUsageDailyResponses = {
 
 export type GetUsageDailyResponse = GetUsageDailyResponses[keyof GetUsageDailyResponses];
 
+export type GetUsageDailyByModelData = {
+    body?: never;
+    path?: never;
+    query?: {
+        days?: string | number;
+    };
+    url: '/usage/daily-by-model';
+};
+
+export type GetUsageDailyByModelResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        date: string;
+        modelId: string;
+        totalTokens: number;
+        count: number;
+    }>;
+};
+
+export type GetUsageDailyByModelResponse = GetUsageDailyByModelResponses[keyof GetUsageDailyByModelResponses];
+
 export type GetUsageSummaryData = {
     body?: never;
     path?: never;

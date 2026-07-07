@@ -12,6 +12,13 @@ export interface DailyUsage {
   count: number
 }
 
+export interface DailyUsageByModel {
+  date: string
+  modelId: string
+  totalTokens: number
+  count: number
+}
+
 export interface UsageSummary {
   totalPromptTokens: number
   totalCompletionTokens: number
@@ -46,6 +53,36 @@ export function getDailyUsage(days = 365): DailyUsage[] {
     date: row.date,
     promptTokens: row.prompt_tokens,
     completionTokens: row.completion_tokens,
+    totalTokens: row.total_tokens,
+    count: row.count,
+  }))
+}
+
+// Same grain as getDailyUsage, plus a model_id dimension — powers the
+// "which model" drill-down in heatmap/pattern tooltips on the usage
+// dashboard. Runs are pre-model, so a row's model can be null; those are
+// bucketed under 'unknown' rather than dropped, mirroring getDailyCost.
+export function getDailyUsageByModel(days = 365): DailyUsageByModel[] {
+  const rows = db().all<{
+    date: string
+    model_id: string
+    total_tokens: number
+    count: number
+  }>(sql`
+    SELECT
+      date(${usageLogs.createdAt}, 'unixepoch', 'localtime') AS date,
+      COALESCE(${usageLogs.modelId}, 'unknown') AS model_id,
+      SUM(${usageLogs.totalTokens}) AS total_tokens,
+      COUNT(*) AS count
+    FROM ${usageLogs}
+    WHERE ${usageLogs.createdAt} >= unixepoch('now', 'localtime', '-' || ${days} || ' days')
+    GROUP BY date(${usageLogs.createdAt}, 'unixepoch', 'localtime'), model_id
+    ORDER BY date ASC, total_tokens DESC
+  `)
+
+  return rows.map(row => ({
+    date: row.date,
+    modelId: row.model_id,
     totalTokens: row.total_tokens,
     count: row.count,
   }))

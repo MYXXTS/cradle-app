@@ -2,6 +2,7 @@
 // interactive recharts area chart (crosshair tooltip, gradient fills, a
 // tokens/cost toggle), following the same ChartContainer pattern already
 // used in features/agent-management/codex-account-diagnostics-panel.tsx.
+import { DownSmallLine } from '@mingcute/react'
 import { format, parseISO } from 'date-fns'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -9,10 +10,13 @@ import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 
 import type { ChartConfig } from '~/components/ui/chart'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '~/components/ui/chart'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
-import { formatTokenCount, formatUsd } from '~/lib/number-format'
+import { cn } from '~/lib/cn'
+import { formatPercentFromRatio, formatTokenCount, formatUsd } from '~/lib/number-format'
 
-import { denseCostSeries, denseTokenSeries } from './usage-insights'
+import type { TrendTokenBreakdown } from './usage-insights'
+import { denseCostSeries, denseTokenSeries, trendTokenBreakdown } from './usage-insights'
 import type { UsageRangeKey } from './usage-time-range'
 import { rangeDays } from './usage-time-range'
 import type { DailyCost, DailyUsage } from './use-usage-overview'
@@ -41,11 +45,16 @@ const COST_CHART_CONFIG = {
 export function UsageTrendChart({ daily, dailyCost, range, hasCost }: UsageTrendChartProps) {
   const { t } = useTranslation('usage')
   const [metric, setMetric] = useState<TrendMetric>('tokens')
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const days = rangeDays(range)
   const activeMetric = hasCost ? metric : 'tokens'
 
   const tokenData = useMemo(() => denseTokenSeries(daily, days), [daily, days])
   const costData = useMemo(() => denseCostSeries(dailyCost, days), [dailyCost, days])
+  // Prompt/completion split for the expandable details panel — only the
+  // tokens metric has a meaningful split to break out, so this stays computed
+  // regardless but only rendered when viewing tokens.
+  const breakdown = useMemo(() => trendTokenBreakdown(daily, days), [daily, days])
 
   const tickFormatter = (dateKey: string) => format(parseISO(dateKey), days > 90 ? 'MMM' : 'MMM d')
 
@@ -174,6 +183,89 @@ export function UsageTrendChart({ daily, dailyCost, range, hasCost }: UsageTrend
             </ChartContainer>
           )}
       </div>
+
+      {activeMetric === 'tokens' && (
+        <TrendBreakdownDetails breakdown={breakdown} open={detailsOpen} onOpenChange={setDetailsOpen} />
+      )}
+    </div>
+  )
+}
+
+// Expandable drill-down beneath the trend chart. The stacked area already
+// shows prompt vs completion *shape* over time; this surfaces the numbers a
+// user scanning "how much is input vs output, and when did it spike" actually
+// wants — share, averages, and the peak day — without cluttering the
+// always-visible chart area.
+function TrendBreakdownDetails({ breakdown, open, onOpenChange }: {
+  breakdown: TrendTokenBreakdown
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation('usage')
+  const avgPerActiveDay = breakdown.activeDays > 0 ? breakdown.total / breakdown.activeDays : 0
+
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange} className="mt-3">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          data-testid="usage-trend-details-toggle"
+          className="group flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <DownSmallLine className={cn('!size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-200', !open && '-rotate-90')} />
+          {open ? t('trend.hideDetails') : t('trend.showDetails')}
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-top-1 data-[state=open]:duration-200">
+        <div className="mt-3 rounded-xl bg-foreground/[0.02] p-3 ring-1 ring-foreground/6">
+          <div className="space-y-2">
+            <ShareBar label={t('trend.prompt')} color="#3b82f6" share={breakdown.prompt.share} total={breakdown.prompt.total} />
+            <ShareBar label={t('trend.completion')} color="#93c5fd" share={breakdown.completion.share} total={breakdown.completion.total} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-foreground/6 pt-3 sm:grid-cols-4">
+            <StatCell label={t('trend.avgPerDay')} value={formatTokenCount(avgPerActiveDay)} />
+            <StatCell label={t('trend.activeDays')} value={String(breakdown.activeDays)} />
+            <StatCell label={t('trend.outputRatio')} value={formatPercentFromRatio(breakdown.outputRatio)} />
+            <StatCell
+              label={t('trend.peak')}
+              value={breakdown.totalPeak
+                ? t('trend.peakValue', {
+                    tokens: formatTokenCount(breakdown.totalPeak.value),
+                    date: format(parseISO(breakdown.totalPeak.date), 'MMM d'),
+                  })
+                : '—'}
+            />
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function ShareBar({ label, color, share, total }: { label: string, color: string, share: number, total: number }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex w-24 shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <span className="truncate">{label}</span>
+      </span>
+      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-foreground/8">
+        <div
+          className="size-full rounded-full transition-[width] duration-500"
+          style={{ width: `${Math.max(share * 100, 0)}%`, backgroundColor: color }}
+        />
+      </div>
+      <span className="w-9 shrink-0 text-right text-[11px] font-medium tabular-nums text-foreground">{formatPercentFromRatio(share)}</span>
+      <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{formatTokenCount(total)}</span>
+    </div>
+  )
+}
+
+function StatCell({ label, value }: { label: string, value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate text-[12px] font-medium tabular-nums text-foreground">{value}</p>
     </div>
   )
 }

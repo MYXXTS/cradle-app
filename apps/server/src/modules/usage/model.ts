@@ -9,6 +9,13 @@ export const UsageModel = {
     count: t.Number(),
   }),
 
+  dailyUsageByModel: t.Object({
+    date: t.String(),
+    modelId: t.String(),
+    totalTokens: t.Number(),
+    count: t.Number(),
+  }),
+
   usageSummary: t.Object({
     totalPromptTokens: t.Number(),
     totalCompletionTokens: t.Number(),

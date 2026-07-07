@@ -1,10 +1,20 @@
+// GitHub-contributions-style heatmap. The 371 day cells share ONE tooltip
+// element driven by hover state, instead of mounting a separate Radix
+// Tooltip per cell — with that many trigger/portal pairs stacked edge to
+// edge, fast pointer movement across the grid could leave a stale tooltip
+// open (Radix's per-root open/close bookkeeping doesn't expect that many
+// instances this densely packed). A single positioned bubble that we show
+// and move ourselves has no such failure mode and is lighter besides.
+import { AnimatePresence, m } from 'motion/react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { formatTokenCount } from '~/lib/number-format'
 
 import { toDateKey } from './usage-date'
-import { mostActiveWeekday, weekdayLabel } from './usage-insights'
+import type { ModelTokenShare } from './usage-insights'
+import { modelBreakdownByDate, mostActiveWeekday, weekdayLabel } from './usage-insights'
+import { ModelShareRows } from './usage-model-tooltip'
 
 interface DailyUsage {
   date: string
@@ -14,8 +24,16 @@ interface DailyUsage {
   count: number
 }
 
+interface DailyUsageByModel {
+  date: string
+  modelId: string
+  totalTokens: number
+  count: number
+}
+
 interface UsageHeatmapProps {
   data: DailyUsage[]
+  dailyByModel?: DailyUsageByModel[]
   days?: number
 }
 
@@ -39,6 +57,12 @@ interface HeatmapCell {
   tokens: number
   usage: DailyUsage | null
   future: boolean
+}
+
+interface HoveredCell {
+  cell: HeatmapCell
+  x: number
+  y: number
 }
 
 function buildGrid(data: DailyUsage[]): {
@@ -99,99 +123,141 @@ function cellColor(intensity: number): string {
   return `oklch(${l} ${c} 255)`
 }
 
-function UsageHeatmapInner({ data }: UsageHeatmapProps) {
+function UsageHeatmapInner({ data, dailyByModel = [] }: UsageHeatmapProps) {
   const { t } = useTranslation('usage')
   const { weeks, monthLabels, maxTokens } = buildGrid(data)
   const topWeekday = mostActiveWeekday(data)
+  const modelSharesByDate = useMemo(() => modelBreakdownByDate(dailyByModel), [dailyByModel])
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [hovered, setHovered] = useState<HoveredCell | null>(null)
 
   const cellStep = CELL_SIZE + CELL_GAP
   const leftPad = 32
   const topPad = 20
 
+  function handleCellEnter(cell: HeatmapCell, event: React.MouseEvent<HTMLDivElement>) {
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    if (!containerRect) { return }
+    const targetRect = event.currentTarget.getBoundingClientRect()
+    setHovered({
+      cell,
+      x: targetRect.left - containerRect.left + targetRect.width / 2,
+      y: targetRect.top - containerRect.top,
+    })
+  }
+
   return (
-    <TooltipProvider delayDuration={0}>
-      <div data-testid="usage-heatmap" className="mx-auto w-fit">
-        {/* Month labels row */}
-        <div className="relative mb-0.5" style={{ height: topPad, marginLeft: leftPad }}>
-          {monthLabels.map(({ label, weekIndex }) => (
-            <span
-              key={`${label}-${weekIndex}`}
-              className="absolute text-[10px] text-muted-foreground/50"
-              style={{ left: weekIndex * cellStep }}
+    <div
+      ref={containerRef}
+      data-testid="usage-heatmap"
+      className="relative mx-auto w-fit"
+      onMouseLeave={() => setHovered(null)}
+    >
+      {/* Month labels row */}
+      <div className="relative mb-0.5" style={{ height: topPad, marginLeft: leftPad }}>
+        {monthLabels.map(({ label, weekIndex }) => (
+          <span
+            key={`${label}-${weekIndex}`}
+            className="absolute text-[10px] text-muted-foreground/50"
+            style={{ left: weekIndex * cellStep }}
+          >
+            {label}
+          </span>
+        ))}
+      </div>
+
+      {/* Grid + day labels */}
+      <div className="flex gap-0">
+        {/* Day labels column */}
+        <div className="flex flex-col" style={{ width: leftPad, gap: CELL_GAP }}>
+          {DAY_LABELS.map(({ key, label }) => (
+            <div
+              key={key}
+              className="flex items-center text-[10px] text-muted-foreground/40"
+              style={{ height: CELL_SIZE }}
             >
               {label}
-            </span>
+            </div>
           ))}
         </div>
 
-        {/* Grid + day labels */}
-        <div className="flex gap-0">
-          {/* Day labels column */}
-          <div className="flex flex-col" style={{ width: leftPad, gap: CELL_GAP }}>
-            {DAY_LABELS.map(({ key, label }) => (
-              <div
-                key={key}
-                className="flex items-center text-[10px] text-muted-foreground/40"
-                style={{ height: CELL_SIZE }}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-
-          {/* Weeks */}
-          <div className="flex" style={{ gap: CELL_GAP }}>
-            {weeks.map(week => (
-              <div key={week[0].date} className="flex flex-col" style={{ gap: CELL_GAP }}>
-                {week.map((cell) => {
-                  if (cell.future) {
-                    return <div key={cell.date} style={{ width: CELL_SIZE, height: CELL_SIZE }} />
-                  }
-                  const intensity = maxTokens > 0 ? cell.tokens / maxTokens : 0
-                  return (
-                    <Tooltip key={cell.date}>
-                      <TooltipTrigger asChild>
-                        <div
-                          data-testid="usage-heatmap-cell"
-                          data-date={cell.date}
-                          data-has-usage={cell.tokens > 0 ? 'true' : 'false'}
-                          style={{
-                            width: CELL_SIZE,
-                            height: CELL_SIZE,
-                            borderRadius: CELL_RADIUS,
-                            backgroundColor: cellColor(intensity),
-                            opacity: intensity === 0 ? 0.08 : 1,
-                          }}
-                          className="cursor-default transition-[opacity,transform] duration-150 hover:scale-110 hover:opacity-100 hover:ring-1 hover:ring-foreground/60"
-                        />
-                      </TooltipTrigger>
-                      <TooltipContent data-testid="usage-heatmap-tooltip" side="bottom" className="flex-col gap-0">
-                        <p className="font-medium" data-testid="usage-heatmap-tooltip-date">{cell.date}</p>
-                        <p className="text-background/70 mt-0.5" data-testid="usage-heatmap-tooltip-metrics">
-                          {cell.tokens > 0
-                            ? t('heatmap.tooltipMetrics', { tokens: cell.tokens.toLocaleString(), turns: cell.usage?.count ?? 0 })
-                            : t('heatmap.tooltipNoUsage')}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
+        {/* Weeks */}
+        <div className="flex" style={{ gap: CELL_GAP }}>
+          {weeks.map(week => (
+            <div key={week[0].date} className="flex flex-col" style={{ gap: CELL_GAP }}>
+              {week.map((cell) => {
+                if (cell.future) {
+                  return <div key={cell.date} style={{ width: CELL_SIZE, height: CELL_SIZE }} />
+                }
+                const intensity = maxTokens > 0 ? cell.tokens / maxTokens : 0
+                return (
+                  <div
+                    key={cell.date}
+                    data-testid="usage-heatmap-cell"
+                    data-date={cell.date}
+                    data-has-usage={cell.tokens > 0 ? 'true' : 'false'}
+                    style={{
+                      width: CELL_SIZE,
+                      height: CELL_SIZE,
+                      borderRadius: CELL_RADIUS,
+                      backgroundColor: cellColor(intensity),
+                      opacity: intensity === 0 ? 0.08 : 1,
+                    }}
+                    className="cursor-default transition-[opacity,transform] duration-150 hover:scale-110 hover:opacity-100 hover:ring-1 hover:ring-foreground/60"
+                    onMouseEnter={event => handleCellEnter(cell, event)}
+                  />
+                )
+              })}
+            </div>
+          ))}
         </div>
-
-        {topWeekday && (
-          <p className="mt-3 text-[11px] text-muted-foreground" style={{ marginLeft: leftPad }} data-testid="usage-heatmap-insight">
-            {t('heatmap.mostActiveWeekday', {
-              weekday: t(`patterns.weekdayFull.${weekdayLabel(topWeekday.weekdayIndex)}`),
-              tokens: formatTokenCount(topWeekday.totalTokens),
-              percent: Math.round(topWeekday.share * 100),
-            })}
-          </p>
-        )}
       </div>
-    </TooltipProvider>
+
+      <AnimatePresence>
+        {hovered && (
+          <HeatmapTooltip
+            hovered={hovered}
+            modelShares={modelSharesByDate.get(hovered.cell.date) ?? []}
+          />
+        )}
+      </AnimatePresence>
+
+      {topWeekday && (
+        <p className="mt-3 text-[11px] text-muted-foreground" style={{ marginLeft: leftPad }} data-testid="usage-heatmap-insight">
+          {t('heatmap.mostActiveWeekday', {
+            weekday: t(`patterns.weekdayFull.${weekdayLabel(topWeekday.weekdayIndex)}`),
+            tokens: formatTokenCount(topWeekday.totalTokens),
+            percent: Math.round(topWeekday.share * 100),
+          })}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function HeatmapTooltip({ hovered, modelShares }: { hovered: HoveredCell, modelShares: ModelTokenShare[] }) {
+  const { t } = useTranslation('usage')
+  const { cell } = hovered
+
+  return (
+    <m.div
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94 }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
+      className="pointer-events-none absolute z-50 w-fit max-w-64 -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-md bg-foreground px-3 py-1.5 text-xs text-background shadow-lg"
+      style={{ left: hovered.x, top: hovered.y }}
+      data-testid="usage-heatmap-tooltip"
+    >
+      <p className="font-medium" data-testid="usage-heatmap-tooltip-date">{cell.date}</p>
+      <p className="mt-0.5 text-background/70" data-testid="usage-heatmap-tooltip-metrics">
+        {cell.tokens > 0
+          ? t('heatmap.tooltipMetrics', { tokens: cell.tokens.toLocaleString(), turns: cell.usage?.count ?? 0 })
+          : t('heatmap.tooltipNoUsage')}
+      </p>
+      <ModelShareRows shares={modelShares} tone="inverted" />
+    </m.div>
   )
 }
 

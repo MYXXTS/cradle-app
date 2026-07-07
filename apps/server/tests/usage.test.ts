@@ -108,6 +108,14 @@ describe('usage capability', () => {
         { date: isoDaysAgo(0), promptTokens: 8, completionTokens: 7, totalTokens: 15, count: 1 },
       ])
 
+      const dailyByModelRes = await app.handle(new Request('http://localhost/usage/daily-by-model?days=30'))
+      expect(dailyByModelRes.status).toBe(200)
+      expect(await dailyByModelRes.json()).toEqual([
+        { date: isoDaysAgo(2), modelId: 'gpt-4o', totalTokens: 15, count: 1 },
+        { date: isoDaysAgo(1), modelId: 'gpt-4o', totalTokens: 30, count: 1 },
+        { date: isoDaysAgo(0), modelId: 'gpt-4o-mini', totalTokens: 15, count: 1 },
+      ])
+
       const summaryRes = await app.handle(new Request('http://localhost/usage/summary'))
       expect(summaryRes.status).toBe(200)
       expect(await summaryRes.json()).toEqual({

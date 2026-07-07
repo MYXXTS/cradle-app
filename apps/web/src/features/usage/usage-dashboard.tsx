@@ -20,7 +20,7 @@ import { useUsageOverview } from './use-usage-overview'
 export function UsageDashboard() {
   const { t } = useTranslation('usage')
   const [range, setRange] = useState<UsageRangeKey>('30d')
-  const { daily, summary, stats, costSummary, dailyCost, usageReady, hasData } = useUsageOverview()
+  const { daily, dailyByModel, summary, stats, costSummary, dailyCost, usageReady, hasData } = useUsageOverview()
 
   const hasCost = Boolean(costSummary && costSummary.totalCostUsd > 0)
   const hasRankedUsage = Boolean(
@@ -71,9 +71,12 @@ export function UsageDashboard() {
         {/* Loading skeleton — first paint only, before any cached data exists */}
         {!usageReady && !hasData && <UsageDashboardSkeleton />}
 
-        {/* Main dashboard body */}
+        {/* Main dashboard body. Deliberately mixed: the opening KPI/trend zone
+            stays card-less (big numbers and a floating chart carry it), then
+            a hairline marks the switch into the denser, boxed "widgets" below
+            — one visual language for the whole page would read as flat. */}
         {usageReady && hasData && summary && stats && (
-          <div className="mt-8 space-y-10">
+          <div className="mt-10">
             <UsageHeroCards
               daily={daily}
               dailyCost={dailyCost}
@@ -85,36 +88,38 @@ export function UsageDashboard() {
 
             <SecondaryStats summary={summary} stats={stats} />
 
-            <SectionCard>
+            <div className="mt-10">
               <UsageTrendChart daily={daily} dailyCost={dailyCost} range={range} hasCost={hasCost} />
-            </SectionCard>
+            </div>
 
-            <SectionCard>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="size-1.5 rounded-full bg-blue-500" />
-                  <h2 className="text-sm font-semibold text-foreground">{t('heatmap.title')}</h2>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{t('heatmap.description')}</p>
-              </div>
-              <div className="mt-4">
-                <UsageHeatmap data={daily} />
-              </div>
-            </SectionCard>
-
-            {hasRankedUsage && (
+            <div className="mt-12 space-y-8 border-t border-foreground/8 pt-10">
               <SectionCard>
-                <UsageBreakdown summary={summary} costSummary={costSummary} />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="size-1.5 rounded-full bg-blue-500" />
+                    <h2 className="text-sm font-semibold text-foreground">{t('heatmap.title')}</h2>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('heatmap.description')}</p>
+                </div>
+                <div className="mt-4">
+                  <UsageHeatmap data={daily} dailyByModel={dailyByModel} />
+                </div>
               </SectionCard>
-            )}
 
-            <SectionCard>
-              <UsagePatterns daily={daily} summary={summary} />
-            </SectionCard>
+              {hasRankedUsage && (
+                <SectionCard>
+                  <UsageBreakdown summary={summary} costSummary={costSummary} />
+                </SectionCard>
+              )}
 
-            <SectionCard>
-              <UsageRecentSessions summary={summary} />
-            </SectionCard>
+              <SectionCard>
+                <UsagePatterns daily={daily} dailyByModel={dailyByModel} summary={summary} />
+              </SectionCard>
+
+              <SectionCard>
+                <UsageRecentSessions summary={summary} />
+              </SectionCard>
+            </div>
           </div>
         )}
 
@@ -149,28 +154,35 @@ const SKELETON_STAT_KEYS = ['stat-1', 'stat-2', 'stat-3', 'stat-4', 'stat-5', 's
 
 function UsageDashboardSkeleton() {
   return (
-    <div className="mt-8 space-y-10">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="mt-10">
+      <div className="flex flex-wrap gap-x-10 gap-y-6">
         {SKELETON_HERO_KEYS.map(key => (
-          <Skeleton key={key} className="h-28 rounded-2xl" />
+          <div key={key} className="space-y-2">
+            <Skeleton className="h-3 w-16 rounded-full" />
+            <Skeleton className="h-8 w-24 rounded-md" />
+          </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="mt-8 flex flex-wrap gap-x-8 gap-y-3 border-t border-foreground/6 pt-5">
         {SKELETON_STAT_KEYS.map(key => (
-          <Skeleton key={key} className="h-7 w-24 rounded-full" />
+          <Skeleton key={key} className="h-8 w-20 rounded-md" />
         ))}
       </div>
-      <Skeleton className="h-64 rounded-2xl" />
-      <Skeleton className="h-48 rounded-2xl" />
+      <Skeleton className="mt-10 h-64 rounded-2xl" />
+      <div className="mt-12 space-y-8 border-t border-foreground/8 pt-10">
+        <Skeleton className="h-48 rounded-2xl" />
+        <Skeleton className="h-48 rounded-2xl" />
+      </div>
     </div>
   )
 }
 
-// Secondary detail row — a quiet "meta stats" strip beneath the flashier hero
-// cards above. Deliberately neutral/monochrome (color already lives in the
-// hero cards and charts — see Von Restorff, if everything is colorful nothing
-// stands out), but housed in the same card shell as every other section below
-// it so it reads as "grounded detail", not stray floating text.
+// Secondary detail row — a quiet "meta stats" strip beneath the flashier
+// headline numbers above. Card-less like the rest of the hero zone, just
+// hairline-topped to read as "supporting detail" for what's above rather
+// than a new section. Deliberately neutral/monochrome (color already lives
+// in the hero numbers and charts — Von Restorff: if everything is colorful,
+// nothing stands out).
 function SecondaryStats({ summary, stats }: { summary: UsageSummary, stats: UsageStats }) {
   const { t } = useTranslation('usage')
   const cells: Array<{ label: string, value: string, testId: string }> = [
@@ -191,19 +203,13 @@ function SecondaryStats({ summary, stats }: { summary: UsageSummary, stats: Usag
   }
 
   return (
-    <SectionCard className="p-2">
-      <div className="flex flex-wrap">
-        {cells.map(cell => (
-          <div
-            key={cell.testId}
-            className="min-w-[104px] flex-1 rounded-xl px-3.5 py-2.5 transition-colors duration-150 hover:bg-foreground/[0.03]"
-            data-testid={cell.testId}
-          >
-            <p className="text-[10.5px] text-muted-foreground" data-testid={`${cell.testId}-label`}>{cell.label}</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground" data-testid={`${cell.testId}-value`}>{cell.value}</p>
-          </div>
-        ))}
-      </div>
-    </SectionCard>
+    <div className="mt-8 flex flex-wrap gap-x-8 gap-y-3 border-t border-foreground/6 pt-5">
+      {cells.map(cell => (
+        <div key={cell.testId} className="min-w-[92px]" data-testid={cell.testId}>
+          <p className="text-[10.5px] text-muted-foreground" data-testid={`${cell.testId}-label`}>{cell.label}</p>
+          <p className="mt-0.5 text-[13px] font-medium tabular-nums text-foreground" data-testid={`${cell.testId}-value`}>{cell.value}</p>
+        </div>
+      ))}
+    </div>
   )
 }

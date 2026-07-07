@@ -259,6 +259,13 @@ export const zGetUsageDailyQuery = z.object({
     ]).optional()
 });
 
+export const zGetUsageDailyByModelQuery = z.object({
+    days: z.union([
+        z.string(),
+        z.number().gte(1)
+    ]).optional()
+});
+
 export const zGetUsageSessionsBySessionIdPath = z.object({
     sessionId: z.string().min(1)
 });
