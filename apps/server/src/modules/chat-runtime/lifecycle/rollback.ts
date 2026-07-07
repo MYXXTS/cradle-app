@@ -66,23 +66,16 @@ export async function rollbackLastTurn(
   }
 
   const resolved = await resolveRuntimeSessionContext(sessionId)
-  if (
-    !resolved.runtime.capabilities.supportsLastTurnRollback
-    || !resolved.runtime.rollbackLastTurn
-  ) {
-    throw new AppError({
-      code: 'chat_rollback_not_supported',
-      status: 501,
-      message: 'The current chat runtime does not support last-turn rollback',
-      details: { sessionId, runtimeKind: resolved.runtimeKind },
-    })
-  }
-
   cancelPendingRuntimeGoalContinuation(sessionId)
-  const providerResult = await resolved.runtime.rollbackLastTurn(
-    buildRuntimeProviderInput(resolved),
-  )
   const messageIds = tailRows.map(row => row.id)
+  const providerResult = shouldRollbackProviderTurn(tailRows)
+    ? await rollbackProviderLastTurn(sessionId, resolved)
+    : {
+        runtimeKind: resolved.runtimeKind,
+        providerSessionId: resolved.runtimeSession.providerSessionId,
+        rolledBackTurns: 0,
+        fileChangesReverted: false as const,
+      }
 
   try {
     await commitLastTurnRolledBack({
@@ -126,6 +119,69 @@ export async function rollbackLastTurn(
     providerSessionId: providerResult.providerSessionId,
     providerRolledBackTurns: providerResult.rolledBackTurns,
     fileChangesReverted: providerResult.fileChangesReverted,
+  }
+}
+
+async function rollbackProviderLastTurn(
+  sessionId: string,
+  resolved: Awaited<ReturnType<typeof resolveRuntimeSessionContext>>,
+): Promise<{
+  runtimeKind: string
+  providerSessionId: string | null
+  rolledBackTurns: number
+  fileChangesReverted: false
+}> {
+  if (
+    !resolved.runtime.capabilities.supportsLastTurnRollback
+    || !resolved.runtime.rollbackLastTurn
+  ) {
+    throw new AppError({
+      code: 'chat_rollback_not_supported',
+      status: 501,
+      message: 'The current chat runtime does not support last-turn rollback',
+      details: { sessionId, runtimeKind: resolved.runtimeKind },
+    })
+  }
+
+  try {
+    return await resolved.runtime.rollbackLastTurn(buildRuntimeProviderInput(resolved))
+  }
+  catch (error) {
+    if (error instanceof AppError) {
+      throw error
+    }
+    throw new AppError({
+      code: 'chat_rollback_provider_failed',
+      status: 502,
+      message: 'The provider failed to roll back the last turn',
+      details: {
+        sessionId,
+        runtimeKind: resolved.runtimeKind,
+        providerSessionId: resolved.runtimeSession.providerSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    })
+  }
+}
+
+export function shouldRollbackProviderTurn(tailRows: (typeof messages.$inferSelect)[]): boolean {
+  return tailRows.some(row =>
+    row.role === 'assistant'
+    && (
+      row.status !== 'failed'
+      || row.content.trim().length > 0
+      || hasNonEmptyMessageParts(row.messageJson)
+    ),
+  )
+}
+
+function hasNonEmptyMessageParts(messageJson: string): boolean {
+  try {
+    const parsed = JSON.parse(messageJson) as { parts?: unknown }
+    return Array.isArray(parsed.parts) && parsed.parts.length > 0
+  }
+  catch {
+    return true
   }
 }
 
