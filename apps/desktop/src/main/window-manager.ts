@@ -2,15 +2,15 @@ import { join } from 'node:path'
 
 import { app, BrowserWindow, nativeTheme, screen } from 'electron'
 
+import {
+  resolveTrafficLightPosition,
+  resolveWindowControlsOverlay,
+  resolveWindowControlsSafeArea,
+} from '../shared/window-controls-safe-area'
 import { resolveDesktopPreloadPath, resolveDesktopRendererIndexPath, resolveDesktopRendererTearoffPath } from './desktop-assets'
 import { installExternalLinkPolicy } from './external-link-policy'
 import { subscribeAcpDevtool, subscribeIpcDevtool } from './ipc-devtool'
 import { readStoredWindowSize, resolveWindowBoundsNearPoint, resolveWindowSize, writeStoredWindowSize } from './window-state'
-import {
-  resolveWindowControlsSafeArea,
-  resolveTrafficLightPosition,
-  resolveWindowControlsOverlay,
-} from '../shared/window-controls-safe-area'
 
 const TEAROFF_WINDOW_DEFAULT_WIDTH = 720
 const TEAROFF_WINDOW_DEFAULT_HEIGHT = 640

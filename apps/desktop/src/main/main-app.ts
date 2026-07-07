@@ -1,8 +1,13 @@
 import { join, resolve } from 'node:path'
 
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, screen } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen } from 'electron'
 import windowStateKeeper from 'electron-window-state'
 
+import {
+  resolveTrafficLightPosition,
+  resolveWindowControlsOverlay,
+  resolveWindowControlsSafeArea,
+} from '../shared/window-controls-safe-area'
 import {
   registerBrowserIpcHandlers,
   sendBrowserAnnotationRuntimeEvent,
@@ -51,11 +56,6 @@ import { TrayManager } from './tray-manager'
 import { DesktopUpdateManager } from './update-manager'
 import { WindowManager } from './window-manager'
 import { readStoredWindowBounds, resolveVisibleWindowBounds } from './window-state'
-import {
-  resolveWindowControlsSafeArea,
-  resolveTrafficLightPosition,
-  resolveWindowControlsOverlay,
-} from '../shared/window-controls-safe-area'
 
 let mainWindow: BrowserWindow | null = null
 let windowManager: WindowManager | undefined

@@ -105,6 +105,7 @@ import {
 import { resolveCodexRuntimeContext } from './config/runtime-context'
 import { toSandboxPolicy } from './config/sandbox-policy'
 import { createCodexGoalContinuation } from './goal-continuation'
+import { readLocalImageDataUrl } from './local-image-data-url'
 import {
   CODEX_RUNTIME_CAPABILITIES,
   CODEX_RUNTIME_KIND as RUNTIME_KIND,
@@ -126,7 +127,6 @@ import {
 } from './projection/state-projector'
 import { projectCodexUiSlotStates } from './projection/ui-slot-projector'
 import { codexRequestError, formatUnknownError } from './provider-errors'
-import { readLocalImageDataUrl } from './local-image-data-url'
 import type { CodexAppServerItem } from './tools/mapper'
 import { buildCodexToolInput, buildCodexToolOutput, readCodexToolError, readCodexToolName } from './tools/mapper'
 import { CodexActiveTurnRegistry } from './turn/active-turn-registry'

@@ -5,6 +5,7 @@ import { extname, isAbsolute, join, relative } from 'node:path'
 import { createServices, getIpcContext, IpcMethod, IpcService } from '@cradle/ipc'
 import { app, BrowserWindow, dialog, screen, shell as nativeLauncher, systemPreferences } from 'electron'
 
+import { resolveWindowControlsSafeArea } from '../shared/window-controls-safe-area'
 import type {
   ChatEventTailBroker,
   DesktopChatEventTailAbortRequest,
@@ -41,7 +42,6 @@ import type {
   MacPermissionsRequestResult,
   MacPermissionsStatus,
 } from './mac-bridge-protocol'
-import { resolveWindowControlsSafeArea } from '../shared/window-controls-safe-area'
 import type { MacScreenshotSinkId, MacScreenshotSinkResult } from './mac-screenshot-sinks'
 import { runMacScreenshotSink } from './mac-screenshot-sinks'
 import type { CodexAppshotObservedAsset, CodexAppshotObserveResult } from './native-appshot-codex-assets'

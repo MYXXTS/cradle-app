@@ -11,6 +11,7 @@ import { createBoundedTextCollector } from '../../bounded-text-collector'
 import { providerChunk } from '../../kit/chunk-mapper'
 import { isCodexAppServerToolApprovalRequest } from '../app-server/server-request-methods'
 import type { ResponseItem as CodexResponseItem } from '../app-server-protocol/ResponseItem'
+import { readLocalImageDataUrl } from '../local-image-data-url'
 import type { CodexAppServerItem } from '../tools/mapper'
 import {
   buildCodexServerRequestToolInput,
@@ -21,7 +22,6 @@ import {
   readCodexToolError,
   readCodexToolName,
 } from '../tools/mapper'
-import { readLocalImageDataUrl } from '../local-image-data-url'
 
 export interface CodexAppServerMapperState {
   openReasoningItemIds: Set<string>
