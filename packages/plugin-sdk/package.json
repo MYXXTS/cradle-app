@@ -2,6 +2,10 @@
   "name": "@cradle/plugin-sdk",
   "type": "module",
   "version": "0.2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wibus-wee/cradle-app.git"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -1,0 +1,135 @@
+name: Release Plugin SDK
+
+on:
+  push:
+    tags:
+      - 'sdk-v*.*.*'
+      - 'sdk-dev-*'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        required: true
+        type: choice
+        options:
+          - dev
+          - release
+      version:
+        description: 'Dev display version (e.g. 20260707.1) or release SemVer (e.g. 0.2.1)'
+        required: true
+
+permissions:
+  id-token: write # npm trusted publishing (OIDC)
+  contents: read
+
+concurrency:
+  group: release-plugin-sdk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve release params
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.params.outputs.channel }}
+      npm_version: ${{ steps.params.outputs.npm_version }}
+      npm_dist_tag: ${{ steps.params.outputs.npm_dist_tag }}
+      release_tag: ${{ steps.params.outputs.release_tag }}
+    steps:
+      - name: Resolve parameters
+        id: params
+        shell: bash
+        run: |
+          semver_regex='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          RUN_NUMBER="${{ github.run_number }}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CHANNEL="${{ inputs.channel }}"
+            INPUT_VERSION="${{ inputs.version }}"
+
+            if [ "$CHANNEL" = "dev" ]; then
+              DISPLAY_VERSION="$INPUT_VERSION"
+              NPM_VERSION="0.0.0-dev.${RUN_NUMBER}"
+              RELEASE_TAG="sdk-dev-${DISPLAY_VERSION}"
+              NPM_DIST_TAG="dev"
+            else
+              DISPLAY_VERSION="${INPUT_VERSION#v}"
+              NPM_VERSION="$DISPLAY_VERSION"
+              RELEASE_TAG="sdk-v${DISPLAY_VERSION}"
+              NPM_DIST_TAG="latest"
+            fi
+          else
+            TAG="${GITHUB_REF_NAME}"
+
+            if [[ "$TAG" == sdk-dev-* ]]; then
+              CHANNEL="dev"
+              DISPLAY_VERSION="${TAG#sdk-dev-}"
+              NPM_VERSION="0.0.0-dev.${RUN_NUMBER}"
+              RELEASE_TAG="$TAG"
+              NPM_DIST_TAG="dev"
+            else
+              CHANNEL="release"
+              DISPLAY_VERSION="${TAG#sdk-v}"
+              NPM_VERSION="$DISPLAY_VERSION"
+              RELEASE_TAG="$TAG"
+              NPM_DIST_TAG="latest"
+            fi
+          fi
+
+          if [[ ! "$NPM_VERSION" =~ $semver_regex ]]; then
+            echo "npm version must be SemVer-compatible: $NPM_VERSION" >&2
+            exit 1
+          fi
+
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_dist_tag=$NPM_DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Channel: $CHANNEL"
+          echo "npm version: $NPM_VERSION"
+          echo "npm dist-tag: $NPM_DIST_TAG"
+          echo "Release tag: $RELEASE_TAG"
+
+  publish:
+    name: Publish @cradleapp/plugin-sdk
+    needs: [resolve]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.2.2
+
+      - name: Setup Node.js (OIDC)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify package
+        run: |
+          pnpm --filter @cradle/plugin-sdk build
+          pnpm --filter @cradle/plugin-sdk typecheck
+          pnpm --filter @cradle/server exec vitest run src/plugins/sdk-contract-boundary.test.ts
+
+      - name: Set publish metadata
+        working-directory: packages/plugin-sdk
+        env:
+          NPM_VERSION: ${{ needs.resolve.outputs.npm_version }}
+        run: |
+          npm pkg set "name=@cradleapp/plugin-sdk"
+          npm pkg set "version=${NPM_VERSION}"
+
+      - name: Publish to npm
+        working-directory: packages/plugin-sdk
+        env:
+          NPM_DIST_TAG: ${{ needs.resolve.outputs.npm_dist_tag }}
+        run: npm publish --access public --tag "$NPM_DIST_TAG"

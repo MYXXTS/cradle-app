@@ -69,7 +69,7 @@ mkdir -p plugins/my-plugin/src
 For an in-repository plugin, use the workspace dependency shown below. For an external plugin repository, install the published SDK package instead:
 
 ```bash
-pnpm add -D @cradle/plugin-sdk
+pnpm add -D @cradleapp/plugin-sdk
 ```
 
 ### Step 2: Create `plugins/my-plugin/package.json`
@@ -1788,6 +1788,37 @@ The host validates plugin modules at load time. If validation fails, a `PluginLo
 - Individual plugin failures don't crash the system
 - Web plugin loading uses `Promise.allSettled` — one failure doesn't block others
 - Invalid `package.json` files are silently skipped
+
+---
+
+## npm release
+
+The SDK is published to npm as **`@cradleapp/plugin-sdk`** via GitHub Actions (`.github/workflows/release-plugin-sdk.yml`) using [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC — no long-lived tokens).
+
+### One-time npm setup
+
+On [npmjs.com](https://www.npmjs.com), open `@cradleapp/plugin-sdk` → **Trusted publishing** and add:
+
+| Field | Value |
+|-------|-------|
+| Provider | GitHub Actions |
+| Repository | `wibus-wee/cradle-app` |
+| Workflow filename | `release-plugin-sdk.yml` |
+
+Optionally set **Publishing access** to disallow traditional tokens once CI publish is verified.
+
+Later releases use `/release-sdk` or git tags (see `.claude/skills/release-sdk/SKILL.md`).
+
+### Release channels
+
+| Channel | Git tag | npm dist-tag | npm version example |
+|---------|---------|--------------|---------------------|
+| dev | `sdk-dev-20260707.1` | `dev` | `0.0.0-dev.<run_number>` |
+| release | `sdk-v0.2.1` | `latest` | `0.2.1` |
+
+Install dev builds: `pnpm add -D @cradleapp/plugin-sdk@dev`
+
+The monorepo keeps the workspace package name `@cradle/plugin-sdk`; CI rewrites the publish name to `@cradleapp/plugin-sdk` at release time.
 
 ---
 
