@@ -713,6 +713,15 @@ describe('preferences capability', () => {
     let app: Awaited<ReturnType<typeof createServerApp>> | undefined
 
     try {
+      setCodexChatgptModelListClientFactoryForTests(() => ({
+        initialize: vi.fn(async () => undefined),
+        request: vi.fn(async (method: string) => {
+          if (method === 'account/login/start') return {}
+          return { data: [], nextCursor: null }
+        }),
+        nextNotification: vi.fn(async () => null),
+        close: vi.fn(),
+      }))
       app = await createServerApp()
       const credential = saveSecret({
         kind: 'chatgpt-auth',
