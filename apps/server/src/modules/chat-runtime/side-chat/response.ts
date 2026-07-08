@@ -11,16 +11,15 @@ import {
 import { getRuntimeRegistry } from '../chat-runtime-provider-registry'
 import { resolveSessionSystemPrompt } from '../context/turn-context'
 import type { ChatContextPart } from '../context-parts'
-import type { ChatRuntimeSettingsPatch, ChatThinkingEffort } from '../runtime-provider-types'
+import type { RuntimeSettingsPatch, ChatThinkingEffort } from '../runtime-provider-types'
 import {
   assertProviderBoundRunContext,
   assertRunnableSession,
   assertRuntimeCompatibleTarget,
 } from '../runtime-session-context'
 import {
-  mergeRuntimeSettings,
-  normalizeRuntimeSettingsPatch,
   readSessionRuntimeSettings,
+  resolveRunRuntimeSettings,
 } from '../runtime-settings'
 import { createUserMessage } from '../ui-message'
 import { createLiveSideConversationStream } from './live-stream'
@@ -32,7 +31,7 @@ export interface StreamSideConversationResponseInput {
   contextParts?: ChatContextPart[]
   modelId?: string | null
   thinkingEffort?: ChatThinkingEffort
-  runtimeSettings?: ChatRuntimeSettingsPatch
+  runtimeSettings?: RuntimeSettingsPatch
 }
 
 export interface StreamSideConversationResponseResult {
@@ -95,10 +94,12 @@ export async function streamSideConversationResponse(
   const runId = randomUUID()
   const assistantMessageId = randomUUID()
   const userMessageId = randomUUID()
-  const parentRuntimeSettings = readSessionRuntimeSettings(parentContext.session.configJson)
-  const runtimeSettings = mergeRuntimeSettings(
+  const runtimeKind = parentContext.session.runtimeKind ?? 'standard'
+  const parentRuntimeSettings = readSessionRuntimeSettings(runtimeKind, parentContext.session.configJson)
+  const runtimeSettings = resolveRunRuntimeSettings(
+    runtimeKind,
     parentRuntimeSettings,
-    normalizeRuntimeSettingsPatch(input.runtimeSettings),
+    input.runtimeSettings,
   )
   const message = createUserMessage(userMessageId, userText, files, contextParts)
   const modelId

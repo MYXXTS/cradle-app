@@ -3,10 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '../../infra'
 import { liveRuntimeSessionRegistry } from './runtime-live-session-registry'
-import type { ChatRuntimeSettings, RuntimeSession } from './runtime-provider-types'
+import type { RuntimeSettings, RuntimeSession } from './runtime-provider-types'
 import { updateSessionRuntimeSettings } from './runtime-settings-api'
 
-const runtimeKind = 'runtime-settings-test-runtime'
+const runtimeKind = 'codex'
 
 afterEach(() => {
   liveRuntimeSessionRegistry.clear()
@@ -30,7 +30,7 @@ function insertSession(input: {
 
 function registerLiveRuntimeSession(input: {
   sessionId: string
-  updateRuntimeSettings: (settings: ChatRuntimeSettings) => Promise<void>
+  updateRuntimeSettings: (settings: RuntimeSettings) => Promise<void>
 }): void {
   liveRuntimeSessionRegistry.register({
     sessionId: input.sessionId,
@@ -53,7 +53,7 @@ describe('updateSessionRuntimeSettings', () => {
     insertSession({
       sessionId: 'idle-runtime-settings-session',
     })
-    const updateRuntimeSettings = vi.fn(async (_settings: ChatRuntimeSettings) => undefined)
+    const updateRuntimeSettings = vi.fn(async (_settings: RuntimeSettings) => undefined)
     registerLiveRuntimeSession({
       sessionId: 'idle-runtime-settings-session',
       updateRuntimeSettings,

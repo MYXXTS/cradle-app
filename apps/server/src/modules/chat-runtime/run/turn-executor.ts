@@ -7,7 +7,7 @@ import { truncateSnapshotPayload } from '../message-snapshot-compaction'
 import { publishProviderThreadEvent } from '../provider-threads/live-streams'
 import type { ActiveRun } from '../run-registry'
 import type {
-  ChatRuntimeSettings,
+  RuntimeSettings,
   ChatThinkingEffort,
   RuntimeGoalContinuationOptions,
   RuntimeProviderTargetProfile,
@@ -52,7 +52,7 @@ export interface ExecuteRunInput {
   profile: RuntimeProviderTargetProfile | null
   modelId?: string | null
   thinkingEffort?: ChatThinkingEffort
-  runtimeSettings?: ChatRuntimeSettings
+  runtimeSettings?: RuntimeSettings
   systemPrompt?: string
   transcript?: CradleTurnTranscript
   history?: UIMessage[]

@@ -10,7 +10,7 @@ import {
 import { isTerminalUIMessageChunk } from '../run/stream-chunks'
 import type {
   ChatRuntime,
-  ChatRuntimeSettings,
+  RuntimeSettings,
   ChatThinkingEffort,
   RuntimeProviderTargetProfile,
   RuntimeSession,
@@ -26,7 +26,7 @@ export interface LiveSideConversationStreamInput {
   responseMessageId: string
   modelId?: string
   thinkingEffort?: ChatThinkingEffort
-  runtimeSettings: ChatRuntimeSettings
+  runtimeSettings: RuntimeSettings
   systemPrompt?: string
   history?: UIMessage[]
   onComplete?: (assistantMessage: UIMessage) => void

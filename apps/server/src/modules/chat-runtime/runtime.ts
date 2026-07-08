@@ -80,7 +80,7 @@ import { executeRun as executeRunWithDeps } from './run/turn-executor'
 import type { ActiveRun } from './run-registry'
 import { runRegistry } from './run-registry'
 import type {
-  ChatRuntimeSettingsPatch,
+  RuntimeSettingsPatch,
   ChatThinkingEffort,
   RuntimeGoalContinuationOptions,
 } from './runtime-provider-types'
@@ -250,7 +250,8 @@ const queueDrainDeps: QueueDrainDeps = {
     runRegistry.hasActiveRunForSession(sessionId) || runRegistry.hasPendingRun(sessionId),
   readSessionRuntimeSettings: (sessionId) => {
     const session = assertStoredSession(sessionId)
-    return readSessionRuntimeSettings(session.configJson)
+    const runtimeKind = session.runtimeKind ?? 'standard'
+    return readSessionRuntimeSettings(runtimeKind, session.configJson)
   },
   createQueuedRun: async (input) => {
     const run = await createRun({
@@ -363,7 +364,7 @@ export async function streamResponse(input: {
   providerTargetId?: string
   modelId?: string | null
   thinkingEffort?: ChatThinkingEffort
-  runtimeSettings?: ChatRuntimeSettingsPatch
+  runtimeSettings?: RuntimeSettingsPatch
 }): Promise<{
   runId: string
   assistantMessageId: string

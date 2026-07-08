@@ -13,6 +13,7 @@ import type {
   RuntimeSlashCommand,
   RuntimeUiSlot,
 } from '../../chat-runtime/runtime-provider-types'
+import { readRuntimeSettingsSchema } from '../../chat-runtime/runtime-settings-registry'
 import type { RuntimeKind } from '../../provider-contracts/types'
 
 export const CLAUDE_AGENT_RUNTIME_KIND: RuntimeKind = 'claude-agent'
@@ -24,6 +25,7 @@ export const CLAUDE_AGENT_RUNTIME_METADATA = {
   iconKey: 'claude-agent',
   surfaces: ['chat', 'jarvis'],
   sortOrder: 30,
+  settingsSchema: readRuntimeSettingsSchema('claude-agent') ?? undefined,
   composer: {
     inputMode: 'rich',
     modelSelection: 'alias-matrix',

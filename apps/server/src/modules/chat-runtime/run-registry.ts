@@ -2,7 +2,7 @@ import type { UIMessage, UIMessageChunk } from 'ai'
 
 import type { FinalMessageProjectionState } from './run/final-message-projection'
 import type { ChatMessageStatus } from './run/stream-chunks'
-import type { ChatRuntime, ChatRuntimeSettings, RuntimeSession } from './runtime-provider-types'
+import type { ChatRuntime, RuntimeSettings, RuntimeSession } from './runtime-provider-types'
 
 export type TerminalChatMessageStatus = Exclude<ChatMessageStatus, 'streaming'>
 
@@ -44,7 +44,7 @@ export interface ActiveRun {
   terminalStatus?: TerminalChatMessageStatus
   cancelRequested?: boolean
   queueItemId?: string
-  runtimeSettings: ChatRuntimeSettings
+  runtimeSettings: RuntimeSettings
   internalContinuation?: 'runtimeGoal'
   runSnapshotId?: string | null
   runSnapshotSeq: number

@@ -827,7 +827,7 @@ export type ChatSessionTailEventPayload
       runId: string
       assistantMessageId: string | null
       queueItemId: string | null
-      runtimeSettings?: ChatRuntimeSettings
+      runtimeSettings?: RuntimeSettings
     }
     | { messageId: string, status: 'streaming' | 'complete' | 'aborted' | 'failed' }
     | {
@@ -897,7 +897,7 @@ export interface ProviderContext {
   resolveSkillPaths?: (workspacePath: string) => string[]
   updateSessionRuntimeSettings?: (input: {
     sessionId: string
-    patch: ChatRuntimeSettingsPatch
+    patch: RuntimeSettingsPatch
   }) => Promise<void>
   requestUserInput?: (input: RuntimeUserInputRequest) => Promise<RuntimeUserInputResolution>
   requestToolApproval?: (input: RuntimeToolApprovalRequest) => Promise<RuntimeToolApprovalResolution>
@@ -1112,18 +1112,12 @@ export interface ChatRuntimeCatalogItem extends ChatRuntimeMetadata {
   capabilities: ChatRuntimeCapabilities | null
 }
 
-export type ChatRuntimeAccessMode = 'approval-required' | 'full-access'
-export type ChatRuntimeInteractionMode = 'default' | 'plan'
+export type RuntimeSettingsValue = string | number | boolean
 
-export interface ChatRuntimeSettings {
-  accessMode: ChatRuntimeAccessMode
-  interactionMode: ChatRuntimeInteractionMode
-}
+/** Provider-native session runtime settings persisted in `config_json.runtimeSettings`. */
+export type RuntimeSettings = Record<string, RuntimeSettingsValue>
 
-export interface ChatRuntimeSettingsPatch {
-  accessMode?: ChatRuntimeAccessMode
-  interactionMode?: ChatRuntimeInteractionMode
-}
+export type RuntimeSettingsPatch = Partial<RuntimeSettings>
 
 export interface RuntimeSession {
   id: string
@@ -1186,7 +1180,7 @@ export interface StreamTurnInput {
   agentId?: string | null
   providerOptions?: {
     thinkingEffort?: ChatThinkingEffort
-    runtimeSettings?: ChatRuntimeSettings
+    runtimeSettings?: RuntimeSettings
   }
   systemPrompt?: string
   history?: UIMessage[]
@@ -1391,7 +1385,7 @@ export interface GenerateSessionTitleInput extends GetCapabilitiesInput {
 export interface UpdateRuntimeSettingsInput {
   runtimeSession: RuntimeSession
   profile: RuntimeProviderTargetProfile | null
-  settings: ChatRuntimeSettings
+  settings: RuntimeSettings
 }
 
 export interface RuntimeGoalContinuationOptions {

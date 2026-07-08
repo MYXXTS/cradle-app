@@ -12,7 +12,7 @@ import type { ChatSessionQueueMode } from '../queue/session-queue'
 import type { ActiveRun, PendingRunState } from '../run-registry'
 import { runRegistry } from '../run-registry'
 import type {
-  ChatRuntimeSettingsPatch,
+  RuntimeSettingsPatch,
   ChatThinkingEffort,
 } from '../runtime-provider-types'
 import {
@@ -24,9 +24,8 @@ import {
   resolveRuntimeSessionForContext,
 } from '../runtime-session-context'
 import {
-  mergeRuntimeSettings,
-  normalizeRuntimeSettingsPatch,
   readSessionRuntimeSettings,
+  resolveRunRuntimeSettings,
 } from '../runtime-settings'
 import { isChatStreamTraceEnabled, recordChatStreamTrace } from '../stream-trace'
 import {
@@ -53,7 +52,7 @@ export interface CreateRunInput {
   providerTargetId?: string
   modelId?: string | null
   thinkingEffort?: ChatThinkingEffort
-  runtimeSettings?: ChatRuntimeSettingsPatch
+  runtimeSettings?: RuntimeSettingsPatch
   continuationMode?: ChatSessionQueueMode
   queueItemId?: string
   internalContinuation?: 'runtimeGoal'
@@ -179,10 +178,11 @@ export async function createRun(
     }
     const runtimeRequestMessages = requestMessages
 
-    const sessionRuntimeSettings = readSessionRuntimeSettings(context.session.configJson)
-    const runtimeSettings = mergeRuntimeSettings(
+    const sessionRuntimeSettings = readSessionRuntimeSettings(runtimeKind, context.session.configJson)
+    const runtimeSettings = resolveRunRuntimeSettings(
+      runtimeKind,
       sessionRuntimeSettings,
-      normalizeRuntimeSettingsPatch(input.runtimeSettings),
+      input.runtimeSettings,
     )
     const requestedModelId
       = input.modelId !== undefined

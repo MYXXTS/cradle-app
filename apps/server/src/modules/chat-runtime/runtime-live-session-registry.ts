@@ -1,11 +1,11 @@
-import type { ChatRuntimeSettings, RuntimeSession } from './runtime-provider-types'
+import type { RuntimeSettings, RuntimeSession } from './runtime-provider-types'
 
 export interface LiveRuntimeSessionRecord {
   sessionId: string
   runtimeKind: string
   providerTargetId: string | null
   readRuntimeSession: () => RuntimeSession
-  updateRuntimeSettings: (settings: ChatRuntimeSettings) => Promise<void>
+  updateRuntimeSettings: (settings: RuntimeSettings) => Promise<void>
 }
 
 class LiveRuntimeSessionRegistry {

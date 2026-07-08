@@ -42,7 +42,7 @@ import { db } from '../../infra'
 import { getRuntimeRegistry, listRuntimeCatalog } from '../chat-runtime/chat-runtime-provider-registry'
 import * as ChatRuntime from '../chat-runtime/runtime'
 import type {
-  ChatRuntimeSettings,
+  RuntimeSettings,
   RuntimeProviderTargetProfile,
 } from '../chat-runtime/runtime-provider-types'
 import * as Git from '../git/service'
@@ -112,7 +112,7 @@ const GUIDE_ARTIFACT_START = '<cradle_guide>'
 const GUIDE_ARTIFACT_END = '</cradle_guide>'
 const COMMIT_PLAN_ARTIFACT_START = '<cradle_commit_plan>'
 const COMMIT_PLAN_ARTIFACT_END = '</cradle_commit_plan>'
-const GUIDE_RUNTIME_SETTINGS: ChatRuntimeSettings = {
+const GUIDE_RUNTIME_SETTINGS: RuntimeSettings = {
   accessMode: 'full-access',
   interactionMode: 'default',
 }

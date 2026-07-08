@@ -18,9 +18,9 @@ import type { ChatMessageStatus } from './run/stream-chunks'
 import { readDeltaChunkTextLength } from './run/stream-chunks'
 import type { ActiveRun } from './run-registry'
 import { runRegistry } from './run-registry'
-import type { ChatRuntimeSettings, RuntimeGoalContinuationOptions } from './runtime-provider-types'
+import type { RuntimeSettings, RuntimeGoalContinuationOptions } from './runtime-provider-types'
 import { isProviderTargetAvailable } from './runtime-session-context'
-import { DEFAULT_RUNTIME_SETTINGS, readSessionRuntimeSettings } from './runtime-settings'
+import { getDefaultRuntimeSettings, readSessionRuntimeSettings } from './runtime-settings'
 
 export interface ActiveRunSummary {
   runId: string
@@ -69,7 +69,7 @@ export interface RuntimeSessionRunDto {
   modelId: string | null
   providerSessionId: string | null
   queueItemId: string | null
-  runtimeSettings: ChatRuntimeSettings
+  runtimeSettings: RuntimeSettings
 }
 
 export interface ChatRuntimeSessionStatusDto {
@@ -79,7 +79,7 @@ export interface ChatRuntimeSessionStatusDto {
   providerTargetId: string | null
   providerSessionId: string | null
   modelId: string | null
-  runtimeSettings: ChatRuntimeSettings
+  runtimeSettings: RuntimeSettings
   pendingQueueItemId: string | null
   hasActiveGoal: boolean
   supportsLastTurnRollback: boolean
@@ -206,7 +206,7 @@ export async function getRuntimeSessionStatus(
       ?? binding?.requestedModelId
       ?? null
   const runtimeSettings
-    = activeRun?.runtimeSettings ?? readSessionRuntimeSettings(session.configJson)
+    = activeRun?.runtimeSettings ?? readSessionRuntimeSettings(runtimeKind, session.configJson)
   const pendingUserInputs = activeRun
     ? listPendingRuntimeUserInputSummaries({ sessionId, runId: activeRun.runId })
     : []
@@ -288,9 +288,10 @@ function toRuntimeSessionRunDto(
   fallback: {
     modelId?: string | null
     providerSessionId?: string | null
-    runtimeSettings?: ChatRuntimeSettings
+    runtimeSettings?: RuntimeSettings
   } = {},
 ): RuntimeSessionRunDto {
+  const runtimeKind = activeRun?.runtimeSession.runtimeKind ?? 'standard'
   return {
     runId: activeRun?.runId ?? run?.id ?? '',
     messageId: activeRun?.messageId ?? run?.messageId ?? null,
@@ -303,6 +304,6 @@ function toRuntimeSessionRunDto(
       activeRun?.runtimeSession.providerSessionId ?? fallback.providerSessionId ?? null,
     queueItemId: activeRun?.queueItemId ?? null,
     runtimeSettings:
-      activeRun?.runtimeSettings ?? fallback.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS,
+      activeRun?.runtimeSettings ?? fallback.runtimeSettings ?? getDefaultRuntimeSettings(runtimeKind),
   }
 }

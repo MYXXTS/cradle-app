@@ -14,7 +14,7 @@ import { parseJsonObjectOrEmpty } from '../../helpers/json-record'
 import { db } from '../../infra'
 import { commitSessionEventsWithProjection } from '../chat-runtime/es/commands'
 import type {
-  ChatRuntimeSettingsPatch,
+  RuntimeSettingsPatch,
   ChatThinkingEffort,
 } from '../chat-runtime/runtime-provider-types'
 import type { SessionClaudeAgentConfigPatchInput } from '../chat-runtime/runtime-settings'
@@ -56,7 +56,7 @@ export type SessionView = Session & {
   isolationBoundaryRequired: boolean
 }
 
-type SessionRuntimeSettingsCreatePatch = ChatRuntimeSettingsPatch & {
+type SessionRuntimeSettingsCreatePatch = RuntimeSettingsPatch & {
   claudeAgent?: SessionClaudeAgentConfigPatchInput | null
 }
 
@@ -626,8 +626,9 @@ export function create(input: {
     })
     .parse(parsed)
   const runtimeSettings = mergeRuntimeSettings(
-    readSessionRuntimeSettings(rowInput.configJson),
-    normalizeRuntimeSettingsPatch(parsed.runtimeSettings),
+    resolved.runtimeKind,
+    readSessionRuntimeSettings(resolved.runtimeKind, rowInput.configJson),
+    normalizeRuntimeSettingsPatch(resolved.runtimeKind, parsed.runtimeSettings),
   )
   const rawRuntimeSettings
     = parsed.runtimeSettings && typeof parsed.runtimeSettings === 'object'
@@ -636,6 +637,7 @@ export function create(input: {
   const updateClaudeAgent = hasOwn(rawRuntimeSettings, 'claudeAgent')
   const runtimeConfigJson = writeSessionRuntimeConfigJson({
     configJson: rowInput.configJson,
+    runtimeKind: resolved.runtimeKind,
     runtimeSettings,
     claudeAgent: updateClaudeAgent
       ? normalizeClaudeAgentConfigPatch(rawRuntimeSettings.claudeAgent)

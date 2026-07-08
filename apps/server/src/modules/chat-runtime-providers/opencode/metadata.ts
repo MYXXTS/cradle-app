@@ -8,6 +8,7 @@ import type {
   ChatRuntimeCapabilities,
   ChatRuntimeMetadata,
 } from '../../chat-runtime/runtime-provider-types'
+import { readRuntimeSettingsSchema } from '../../chat-runtime/runtime-settings-registry'
 import type { RuntimeKind } from '../../provider-contracts/types'
 
 export const OPENCODE_RUNTIME_KIND: RuntimeKind = 'opencode'
@@ -20,6 +21,7 @@ export const OPENCODE_RUNTIME_METADATA = {
   iconKey: 'opencode',
   surfaces: ['chat', 'jarvis'],
   sortOrder: 25,
+  settingsSchema: readRuntimeSettingsSchema('opencode') ?? undefined,
 } satisfies ChatRuntimeMetadata
 
 export const OPENCODE_RUNTIME_CAPABILITIES = {
