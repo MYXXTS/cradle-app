@@ -37,8 +37,8 @@ interface ReviewTopBarProps {
   onRefresh: () => void
   refreshPending: boolean
   isFetching: boolean
-  onOpenGuide: () => void
-  hasGuide: boolean
+  onOpenGuide?: () => void
+  hasGuide?: boolean
   onOpenCommit?: () => void
   hasCommitPlan?: boolean
   threadsRailCollapsed: boolean
@@ -71,7 +71,7 @@ export function ReviewTopBar({
   refreshPending,
   isFetching,
   onOpenGuide,
-  hasGuide,
+  hasGuide = false,
   onOpenCommit,
   hasCommitPlan,
   threadsRailCollapsed,
@@ -128,11 +128,13 @@ export function ReviewTopBar({
         onToggleGenerated={() => onPreference({ collapseGeneratedFiles: !review.preferences.collapseGeneratedFiles })}
       />
 
-     <Button variant="ghost" size="sm" onClick={onOpenGuide} className="h-7 gap-1.5 px-2 text-[12px]">
-       <ListTreeIcon className="size-3.5" />
-       Guide
-       {hasGuide && <span className="size-1.5 rounded-full bg-emerald-500" aria-label="Guide generated" />}
-     </Button>
+     {onOpenGuide && (
+       <Button variant="ghost" size="sm" onClick={onOpenGuide} className="h-7 gap-1.5 px-2 text-[12px]">
+         <ListTreeIcon className="size-3.5" />
+         Guide
+         {hasGuide && <span className="size-1.5 rounded-full bg-emerald-500" aria-label="Guide generated" />}
+       </Button>
+     )}
 
       {/* Commit plan — only for reviews whose changes can be staged into commits. */}
       {onOpenCommit && (

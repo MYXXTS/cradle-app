@@ -22,7 +22,7 @@ Runtime UI state is read from native OpenCode APIs where the SDK has stable read
 
 Input projection preserves text and AI SDK file parts. `input-projector.ts` maps text parts to OpenCode text parts and file/image parts with `mediaType`, `filename`, and `url` to OpenCode `FilePartInput`.
 
-Title regeneration uses opencode `session.summarize()` with `small_model` when configured, then reads the updated session title through `session.get()`. In `@opencode-ai/sdk@1.17.11`, `session.summarize()` returns a boolean rather than the title string.
+Title generation runs opportunistically after the first successful turn and explicit regeneration uses the same provider hook. Both paths call opencode `session.summarize()` with `small_model` when configured, then read the updated session title through `session.get()` and write the cleaned title back through `session.update()`. In `@opencode-ai/sdk@1.17.11`, `session.summarize()` returns a boolean rather than the title string.
 
 Runtime settings are supported for interaction mode: Cradle `default` mode maps to OpenCode `build` agent and Cradle `plan` mode maps to OpenCode `plan` agent. `updateRuntimeSettings()` is intentionally a no-op because OpenCode mode is applied per turn from Chat Runtime provider options rather than persisted into global OpenCode config.
 

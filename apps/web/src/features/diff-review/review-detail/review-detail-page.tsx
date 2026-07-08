@@ -13,6 +13,7 @@ import {
   getSelectedReviewRange,
 } from '../shared/diff-items'
 import { navigateToCommitView, navigateToGuideView, navigateToReviewsList } from '../shared/navigation'
+import { reviewSupportsCommitPlan, reviewSupportsGuide } from '../shared/guide-insights'
 import type { DiffStyle, ReviewFile, ReviewThread } from '../shared/types'
 import { useReview } from '../shared/use-review'
 import { AgentRail } from './agent-rail'
@@ -262,9 +263,13 @@ export function ReviewDetailPage({
         onRefresh={() => refreshMutation.mutate()}
         refreshPending={refreshMutation.isPending}
         isFetching={isFetching}
-        onOpenGuide={() => navigateToGuideView(workspaceId, review.id, repositoryPath)}
+        onOpenGuide={reviewSupportsGuide(review)
+          ? () => navigateToGuideView(workspaceId, review.id, repositoryPath)
+          : undefined}
         hasGuide={review.guide.steps.length > 0}
-        onOpenCommit={() => navigateToCommitView(workspaceId, review.id, repositoryPath)}
+        onOpenCommit={reviewSupportsCommitPlan(review)
+          ? () => navigateToCommitView(workspaceId, review.id, repositoryPath)
+          : undefined}
         hasCommitPlan={review.commitPlans.length > 0}
         threadsRailCollapsed={threadsRailCollapsed}
         agentRailActive={!threadsRailCollapsed && railMode === 'agent'}
