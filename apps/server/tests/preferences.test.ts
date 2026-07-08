@@ -716,7 +716,9 @@ describe('preferences capability', () => {
       setCodexChatgptModelListClientFactoryForTests(() => ({
         initialize: vi.fn(async () => undefined),
         request: vi.fn(async (method: string) => {
-          if (method === 'account/login/start') return {}
+          if (method === 'account/login/start') {
+            return {}
+          }
           return { data: [], nextCursor: null }
         }),
         nextNotification: vi.fn(async () => null),
