@@ -302,7 +302,7 @@ function GuideChapterRail({
   return (
     <nav
       aria-label="Guide chapters"
-      className="hidden w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/40 px-3 py-8 xl:flex"
+      className="hidden w-68 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/40 px-3 py-8 xl:flex"
     >
       <p className="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/50">
         Chapters

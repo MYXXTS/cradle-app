@@ -1,0 +1,32 @@
+import { Value } from '@sinclair/typebox/value'
+import { describe, expect, it } from 'vitest'
+
+import { sessionRuntimeSettingsPatchSchema } from './runtime-settings-model'
+
+describe('sessionRuntimeSettingsPatchSchema', () => {
+  it('accepts provider-native runtime settings', () => {
+    expect(Value.Check(sessionRuntimeSettingsPatchSchema, {
+      permissionMode: 'plan',
+    })).toBe(true)
+  })
+
+  it('accepts claudeAgent alias config alongside runtime settings', () => {
+    expect(Value.Check(sessionRuntimeSettingsPatchSchema, {
+      permissionMode: 'bypassPermissions',
+      claudeAgent: {
+        modelAliases: {
+          haiku: 'claude-haiku-4-5',
+          sonnet: 'claude-sonnet-4-6',
+          opus: 'claude-opus-4-6',
+        },
+      },
+    })).toBe(true)
+  })
+
+  it('rejects nested objects other than claudeAgent', () => {
+    expect(Value.Check(sessionRuntimeSettingsPatchSchema, {
+      permissionMode: 'plan',
+      nested: { bad: true },
+    })).toBe(false)
+  })
+})

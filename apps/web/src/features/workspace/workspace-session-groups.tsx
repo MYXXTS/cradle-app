@@ -61,12 +61,6 @@ export function partitionWorkspaceSessions(
   return { grouped, ungrouped }
 }
 
-const groupStatusLabel = {
-  idle: 'Idle',
-  streaming: 'Running',
-  error: 'Error',
-} satisfies Record<WorkspaceSessionGroup['statusAggregate'], string>
-
 interface WorkspaceSessionGroupSectionProps {
   group: WorkspaceSessionGroup
   sessions: WorkspaceSession[]
@@ -102,36 +96,34 @@ export const WorkspaceSessionGroupSection = memo(({
   }, [group.id, workspaceId])
 
   return (
-    <div className="min-w-0" data-testid={`session-group-${group.id}`}>
-      <div className="flex min-w-0 items-center gap-0.5 pr-1">
+    <div
+      className="ml-4.25 flex min-w-0 flex-col gap-0.5 border-l border-sidebar-border/50 pl-2 py-0.5"
+      data-testid={`session-group-${group.id}`}
+    >
+      <div className="group flex min-w-0 items-center gap-0.5 pr-1">
         <button
           type="button"
           onClick={toggleExpanded}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-expanded={expanded}
           data-testid={`session-group-toggle-${group.id}`}
         >
           {expanded
-            ? <ChevronUpIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-            : <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />}
-          <FolderClosedIcon className="size-3 shrink-0 text-muted-foreground/80" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-sidebar-foreground/90">
+            ? <ChevronUpIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            : <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/80" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-sidebar-foreground/90">
             {group.title}
           </span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">
+          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
             {sessions.length}
           </span>
-          {group.statusAggregate !== 'idle' && (
-            <span className="shrink-0 text-[10px] text-muted-foreground">
-              {groupStatusLabel[group.statusAggregate]}
-            </span>
-          )}
         </button>
         <Button
           type="button"
           variant="ghost"
           size="icon-xs"
-          className="size-6 shrink-0 text-muted-foreground"
+          className="size-6 shrink-0 text-muted-foreground/70 hover:text-foreground"
           aria-label={t('sessionGroup.action.newSession')}
           title={t('sessionGroup.action.newSession')}
           data-testid={`session-group-new-session-${group.id}`}
@@ -146,7 +138,7 @@ export const WorkspaceSessionGroupSection = memo(({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                className="size-6 shrink-0 text-muted-foreground"
+                className="size-6 shrink-0 text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent/80 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
                 aria-label={t('sessionGroup.action.menu')}
                 data-testid={`session-group-menu-${group.id}`}
               />
@@ -167,13 +159,7 @@ export const WorkspaceSessionGroupSection = memo(({
           </MenuPopup>
         </Menu>
       </div>
-      {expanded
-        ? (
-            <div className="ml-4.25 border-l border-sidebar-border/50 pl-2 py-0.5">
-              {children}
-            </div>
-          )
-        : null}
+      {expanded ? children : null}
     </div>
   )
 })

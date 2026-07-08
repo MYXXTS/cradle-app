@@ -23,6 +23,7 @@ import { runtimeComposerUsesCollapsedInput } from '~/features/agent-runtime/use-
 import type { DraftChatComposerSubmitOptions } from '~/features/chat/composer/draft-chat-composer'
 import { DraftChatComposer } from '~/features/chat/composer/draft-chat-composer'
 import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
+import { readRunRuntimeSettingsPatch } from '~/features/chat/runtime/runtime-settings-presenter'
 import { startOptimisticChatResponse } from '~/features/chat/session/optimistic-chat-turn'
 import { getWorkspaceLocationLabel } from '~/features/workspace/types'
 import { sessionsQueryKey, updateSessionInSessionLists } from '~/features/workspace/use-session'
@@ -561,7 +562,7 @@ function useWorkspaceDetailOwner(workspaceId: string) {
         contextParts,
         modelId: opts.modelId,
         thinkingEffort: opts.thinkingEffort,
-        runtimeSettings: opts.runtimeSettings,
+        runtimeSettings: readRunRuntimeSettingsPatch(opts.runtimeSettings),
       },
       onAccepted: () => {
         void Promise.all([
