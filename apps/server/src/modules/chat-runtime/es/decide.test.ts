@@ -71,9 +71,10 @@ function queueItemEnqueued(queueItemId: string): Extract<ChatSessionEvent, { typ
         providerTargetId: null,
         modelId: null,
         thinkingEffort: null,
-        permissionMode: null,
-        runtimeAccessMode: 'approval-required',
-        runtimeInteractionMode: 'default',
+        runtimeSettingsJson: JSON.stringify({
+          accessMode: 'approval-required',
+          interactionMode: 'default',
+        }),
         position: 1,
         sourceRunId: null,
         startedRunId: null,

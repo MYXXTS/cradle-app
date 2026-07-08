@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { AppError } from '../../../errors/app-error'
 import { currentUnixSeconds } from '../../../helpers/time'
 import { db } from '../../../infra'
+import type { RuntimeKind } from '../../provider-contracts/types'
 import { runtimeOwnsProviderTarget } from '../../provider-contracts/runtime-compatibility'
 import {
   cancelQueuedSessionItem,
@@ -21,9 +22,8 @@ import {
   getSessionRunContext,
 } from '../runtime-session-context'
 import {
-  mergeRuntimeSettings,
-  normalizeRuntimeSettingsPatch,
   readSessionRuntimeSettings,
+  resolveRunRuntimeSettings,
 } from '../runtime-settings'
 import type {
   ChatSessionQueueItemDto,
@@ -36,12 +36,17 @@ import {
   readPersistedThinkingEffort,
   serializeQueueContextParts,
   serializeQueueFiles,
+  serializeQueueRuntimeSettings,
   toQueueItemDto,
 } from './session-queue'
 
 export interface SessionQueueApiDeps {
   finalizeInterruptedPersistedStreamingSessionIfIdle: (sessionId: string) => Promise<void>
   scheduleSessionQueueDrain: (sessionId: string) => void
+}
+
+function readSessionRuntimeKind(session: { runtimeKind: RuntimeKind | null }): RuntimeKind {
+  return session.runtimeKind ?? 'standard'
 }
 
 function readPersistedQueueProviderTargetId(input: {
@@ -60,7 +65,7 @@ function readPersistedQueueProviderTargetId(input: {
 
 export function listSessionQueueItems(sessionId: string): ChatSessionQueueItemDto[] {
   const session = assertStoredSession(sessionId)
-  const runtimeSettings = readSessionRuntimeSettings(session.configJson)
+  const runtimeKind = readSessionRuntimeKind(session)
   return db()
     .select()
     .from(chatSessionQueueItems)
@@ -69,7 +74,7 @@ export function listSessionQueueItems(sessionId: string): ChatSessionQueueItemDt
     )
     .all()
     .sort(compareQueueRows)
-    .map(row => toQueueItemDto(row, runtimeSettings))
+    .map(row => toQueueItemDto(runtimeKind, row))
 }
 
 export async function enqueueSessionQueueItem(
@@ -106,10 +111,12 @@ export async function enqueueSessionQueueItem(
   const position
     = pendingRows.reduce((maxPosition, row) => Math.max(maxPosition, row.position), 0) + 1
   const now = currentUnixSeconds()
-  const baseRuntimeSettings = readSessionRuntimeSettings(context.session.configJson)
-  const runtimeSettings = mergeRuntimeSettings(
+  const runtimeKind = readSessionRuntimeKind(context.session)
+  const baseRuntimeSettings = readSessionRuntimeSettings(runtimeKind, context.session.configJson)
+  const runtimeSettings = resolveRunRuntimeSettings(
+    runtimeKind,
     baseRuntimeSettings,
-    normalizeRuntimeSettingsPatch(input.runtimeSettings),
+    input.runtimeSettings,
   )
   const providerTargetId = readPersistedQueueProviderTargetId({
     providerTargetId: input.providerTargetId,
@@ -126,9 +133,7 @@ export async function enqueueSessionQueueItem(
     providerTargetId,
     modelId: input.modelId?.trim() || null,
     thinkingEffort: readPersistedThinkingEffort(input.thinkingEffort),
-    permissionMode: null,
-    runtimeAccessMode: runtimeSettings.accessMode,
-    runtimeInteractionMode: runtimeSettings.interactionMode,
+    runtimeSettingsJson: serializeQueueRuntimeSettings(runtimeKind, runtimeSettings),
     position,
     sourceRunId: runRegistry.getActiveRunIdForSession(input.sessionId) ?? null,
     startedRunId: null,
@@ -144,7 +149,7 @@ export async function enqueueSessionQueueItem(
   ])
 
   deps.scheduleSessionQueueDrain(input.sessionId)
-  return toQueueItemDto(row, runtimeSettings)
+  return toQueueItemDto(runtimeKind, row)
 }
 
 export async function cancelSessionQueueItem(
@@ -152,6 +157,8 @@ export async function cancelSessionQueueItem(
   queueItemId: string,
 ): Promise<ChatSessionQueueItemDto> {
   assertRunnableSession(sessionId)
+  const session = assertStoredSession(sessionId)
+  const runtimeKind = readSessionRuntimeKind(session)
   const row = db()
     .select()
     .from(chatSessionQueueItems)
@@ -201,7 +208,7 @@ export async function cancelSessionQueueItem(
     })
   }
   await normalizeSessionQueuePositions(sessionId)
-  return toQueueItemDto(updated)
+  return toQueueItemDto(runtimeKind, updated)
 }
 
 export async function reorderSessionQueueItems(
@@ -209,6 +216,8 @@ export async function reorderSessionQueueItems(
   queueItemIds: string[],
 ): Promise<ChatSessionQueueItemDto[]> {
   assertRunnableSession(sessionId)
+  const session = assertStoredSession(sessionId)
+  const runtimeKind = readSessionRuntimeKind(session)
   const pendingRows = listPendingQueueRows(sessionId)
   const pendingIds = pendingRows.map(row => row.id)
   const requestedIds = new Set(queueItemIds)
@@ -234,9 +243,7 @@ export async function reorderSessionQueueItems(
       .filter((row): row is (typeof pendingRows)[number] => Boolean(row)),
   )
 
-  const session = assertStoredSession(sessionId)
-  const runtimeSettings = readSessionRuntimeSettings(session.configJson)
-  return listPendingQueueRows(sessionId).map(row => toQueueItemDto(row, runtimeSettings))
+  return listPendingQueueRows(sessionId).map(row => toQueueItemDto(runtimeKind, row))
 }
 
 export async function updateSessionQueueItem(
@@ -284,10 +291,12 @@ export async function updateSessionQueueItem(
   }
 
   const session = assertStoredSession(input.sessionId)
-  const baseRuntimeSettings = readSessionRuntimeSettings(session.configJson)
-  const runtimeSettings = mergeRuntimeSettings(
+  const runtimeKind = readSessionRuntimeKind(session)
+  const baseRuntimeSettings = readSessionRuntimeSettings(runtimeKind, session.configJson)
+  const runtimeSettings = resolveRunRuntimeSettings(
+    runtimeKind,
     baseRuntimeSettings,
-    normalizeRuntimeSettingsPatch(input.runtimeSettings),
+    input.runtimeSettings,
   )
   const providerTargetId = readPersistedQueueProviderTargetId({
     providerTargetId: input.providerTargetId,
@@ -306,8 +315,7 @@ export async function updateSessionQueueItem(
         providerTargetId,
         modelId: input.modelId?.trim() || null,
         thinkingEffort: readPersistedThinkingEffort(input.thinkingEffort),
-        runtimeAccessMode: runtimeSettings.accessMode,
-        runtimeInteractionMode: runtimeSettings.interactionMode,
+        runtimeSettingsJson: serializeQueueRuntimeSettings(runtimeKind, runtimeSettings),
         updatedAt: now,
       },
     },
@@ -318,5 +326,5 @@ export async function updateSessionQueueItem(
     .from(chatSessionQueueItems)
     .where(eq(chatSessionQueueItems.id, input.queueItemId))
     .get()
-  return toQueueItemDto(updatedRow ?? row, runtimeSettings)
+  return toQueueItemDto(runtimeKind, updatedRow ?? row)
 }

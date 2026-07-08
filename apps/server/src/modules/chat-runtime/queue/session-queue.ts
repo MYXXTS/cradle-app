@@ -4,17 +4,17 @@ import { and, eq } from 'drizzle-orm'
 
 import { AppError } from '../../../errors/app-error'
 import { db } from '../../../infra'
+import type { RuntimeKind } from '../../provider-contracts/types'
 import type { ChatContextPart } from '../context-parts'
 import type {
-  ChatRuntimeSettings,
-  ChatRuntimeSettingsPatch,
   ChatThinkingEffort,
+  RuntimeSettings,
+  RuntimeSettingsPatch,
 } from '../runtime-provider-types'
 import {
-  DEFAULT_RUNTIME_SETTINGS,
+  getDefaultRuntimeSettings,
   mergeRuntimeSettings,
-  normalizeRuntimeAccessMode,
-  normalizeRuntimeInteractionMode,
+  normalizeRuntimeSettingsPatch,
 } from '../runtime-settings'
 
 export type PersistedThinkingEffort = Extract<ChatThinkingEffort, 'low' | 'medium' | 'high' | 'xhigh'>
@@ -33,7 +33,7 @@ export interface ChatSessionQueueItemDto {
   providerTargetId: string | null
   modelId: string | null
   thinkingEffort: PersistedThinkingEffort | null
-  runtimeSettings: ChatRuntimeSettings
+  runtimeSettings: RuntimeSettings
   position: number
   sourceRunId: string | null
   startedRunId: string | null
@@ -50,7 +50,7 @@ export interface EnqueueSessionQueueItemInput {
   providerTargetId?: string
   modelId?: string | null
   thinkingEffort?: PersistedThinkingEffort
-  runtimeSettings?: ChatRuntimeSettingsPatch
+  runtimeSettings?: RuntimeSettingsPatch
 }
 
 export interface UpdateSessionQueueItemInput extends EnqueueSessionQueueItemInput {
@@ -95,7 +95,7 @@ export function parseQueueFiles(filesJson: string): FileUIPart[] {
   try {
     return JSON.parse(filesJson) as FileUIPart[]
   }
- catch (error) {
+  catch (error) {
     throw new AppError({
       code: 'chat_queue_item_invalid',
       status: 500,
@@ -111,7 +111,7 @@ export function parseQueueContextParts(contextPartsJson: string): ChatContextPar
   try {
     return JSON.parse(contextPartsJson) as ChatContextPart[]
   }
- catch (error) {
+  catch (error) {
     throw new AppError({
       code: 'chat_queue_item_invalid',
       status: 500,
@@ -131,20 +131,75 @@ export function serializeQueueContextParts(contextParts: ChatContextPart[]): str
   return JSON.stringify(contextParts)
 }
 
+export function serializeQueueRuntimeSettings(
+  runtimeKind: RuntimeKind,
+  settings: RuntimeSettings,
+): string {
+  return JSON.stringify(mergeRuntimeSettings(runtimeKind, getDefaultRuntimeSettings(runtimeKind), settings))
+}
+
+type LegacyQueueItemRuntimeFields = {
+  permissionMode?: 'bypassPermissions' | 'plan' | null
+  runtimeAccessMode?: 'approval-required' | 'full-access' | null
+  runtimeInteractionMode?: 'default' | 'plan' | null
+}
+
+/** Normalize queue item facts from legacy ES payloads into `runtime_settings_json`. */
+export function normalizeQueueItemRuntimeSettingsJson(
+  item: { runtimeSettingsJson?: string } & LegacyQueueItemRuntimeFields,
+): string {
+  if (typeof item.runtimeSettingsJson === 'string' && item.runtimeSettingsJson.length > 0) {
+    return item.runtimeSettingsJson
+  }
+  const settings: RuntimeSettings = {}
+  if (item.permissionMode === 'plan') {
+    settings.permissionMode = 'plan'
+  }
+  if (item.runtimeAccessMode === 'approval-required' || item.runtimeAccessMode === 'full-access') {
+    settings.accessMode = item.runtimeAccessMode
+  }
+  if (item.runtimeInteractionMode === 'plan') {
+    settings.interactionMode = 'plan'
+    if (!settings.permissionMode) {
+      settings.permissionMode = 'plan'
+    }
+  }
+  else if (item.runtimeInteractionMode === 'default') {
+    settings.interactionMode = 'default'
+  }
+  if (Object.keys(settings).length === 0) {
+    return '{}'
+  }
+  return JSON.stringify(settings)
+}
+
+export function projectQueueItemFactRow(
+  item: QueueItemRow | (Omit<QueueItemRow, 'runtimeSettingsJson'> & LegacyQueueItemRuntimeFields & { runtimeSettingsJson?: string }),
+): QueueItemRow {
+  return {
+    ...item,
+    runtimeSettingsJson: normalizeQueueItemRuntimeSettingsJson(item),
+  } as QueueItemRow
+}
+
+export function parseQueueRuntimeSettings(
+  runtimeKind: RuntimeKind,
+  runtimeSettingsJson: string,
+): RuntimeSettings {
+  try {
+    const parsed = JSON.parse(runtimeSettingsJson) as unknown
+    return mergeRuntimeSettings(runtimeKind, getDefaultRuntimeSettings(runtimeKind), normalizeRuntimeSettingsPatch(runtimeKind, parsed))
+  }
+  catch {
+    return getDefaultRuntimeSettings(runtimeKind)
+  }
+}
+
 export function readQueueItemRuntimeSettings(
-  row: Pick<QueueItemRow, 'permissionMode' | 'runtimeAccessMode' | 'runtimeInteractionMode'>,
-  sessionRuntimeSettings: ChatRuntimeSettings,
-): ChatRuntimeSettings {
-  const accessMode
-    = normalizeRuntimeAccessMode(row.runtimeAccessMode)
-      ?? (row.permissionMode === 'plan' ? 'approval-required' : DEFAULT_RUNTIME_SETTINGS.accessMode)
-  const interactionMode
-    = normalizeRuntimeInteractionMode(row.runtimeInteractionMode)
-      ?? (row.permissionMode === 'plan' ? 'plan' : DEFAULT_RUNTIME_SETTINGS.interactionMode)
-  return mergeRuntimeSettings(sessionRuntimeSettings, {
-    accessMode,
-    interactionMode,
-  })
+  runtimeKind: RuntimeKind,
+  row: Pick<QueueItemRow, 'runtimeSettingsJson'>,
+): RuntimeSettings {
+  return parseQueueRuntimeSettings(runtimeKind, row.runtimeSettingsJson)
 }
 
 export function readPersistedThinkingEffort(effort: unknown): PersistedThinkingEffort | null {
@@ -154,10 +209,10 @@ export function readPersistedThinkingEffort(effort: unknown): PersistedThinkingE
 }
 
 export function toQueueItemDto(
+  runtimeKind: RuntimeKind,
   row: QueueItemRow,
-  sessionRuntimeSettings: ChatRuntimeSettings = DEFAULT_RUNTIME_SETTINGS,
 ): ChatSessionQueueItemDto {
-  const runtimeSettings = readQueueItemRuntimeSettings(row, sessionRuntimeSettings)
+  const runtimeSettings = readQueueItemRuntimeSettings(runtimeKind, row)
   return {
     id: row.id,
     sessionId: row.sessionId,
@@ -209,6 +264,6 @@ export function listPendingQueueRows(sessionId: string): QueueItemRow[] {
         eq(chatSessionQueueItems.status, 'pending'),
       ),
     )
-    .orderBy(chatSessionQueueItems.position, chatSessionQueueItems.createdAt)
     .all()
+    .sort(compareQueueRows)
 }

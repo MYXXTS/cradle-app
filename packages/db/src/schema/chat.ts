@@ -148,15 +148,7 @@ export const chatSessionQueueItems = sqliteTable('chat_session_queue_items', {
   thinkingEffort: text('thinking_effort', {
     enum: ['low', 'medium', 'high', 'xhigh'],
   }),
-  permissionMode: text('permission_mode', {
-    enum: ['bypassPermissions', 'plan'],
-  }),
-  runtimeAccessMode: text('runtime_access_mode', {
-    enum: ['approval-required', 'full-access'],
-  }),
-  runtimeInteractionMode: text('runtime_interaction_mode', {
-    enum: ['default', 'plan'],
-  }),
+  runtimeSettingsJson: text('runtime_settings_json').notNull().default('{}'),
   position: int('position').notNull(),
   sourceRunId: text('source_run_id'),
   startedRunId: text('started_run_id'),

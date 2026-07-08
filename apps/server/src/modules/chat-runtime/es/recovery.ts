@@ -10,7 +10,7 @@ import { and, desc, eq, or, sql } from 'drizzle-orm'
 
 import { currentUnixSeconds } from '../../../helpers/time'
 import { db } from '../../../infra'
-import { DEFAULT_RUNTIME_SETTINGS } from '../runtime-settings'
+import { getDefaultRuntimeSettings } from '../runtime-settings'
 import { parseStoredMessageSnapshot } from '../ui-message'
 import {
   appendDecidedSessionEvents,
@@ -370,10 +370,7 @@ function readMissingRunBootstrapEvents(input: {
           providerTargetId: queueItem.providerTargetId,
           modelId: queueItem.modelId,
           thinkingEffort: queueItem.thinkingEffort,
-          permissionMode: queueItem.permissionMode,
-          runtimeAccessMode: queueItem.runtimeAccessMode ?? DEFAULT_RUNTIME_SETTINGS.accessMode,
-          runtimeInteractionMode:
-            queueItem.runtimeInteractionMode ?? DEFAULT_RUNTIME_SETTINGS.interactionMode,
+          runtimeSettingsJson: queueItem.runtimeSettingsJson,
           position: queueItem.position,
           sourceRunId: queueItem.sourceRunId,
           startedRunId: null,

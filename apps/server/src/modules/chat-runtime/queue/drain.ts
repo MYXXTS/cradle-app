@@ -1,6 +1,7 @@
 import type { FileUIPart } from 'ai'
 
 import { AppError } from '../../../errors/app-error'
+import { assertStoredSession } from '../runtime-session-context'
 import type { ChatContextPart } from '../context-parts'
 import {
   claimSessionQueueItem,
@@ -10,7 +11,7 @@ import {
   releaseSessionQueueItem,
 } from '../es/commands'
 import type { SerializedChatError } from '../run/errors'
-import type { ChatRuntimeSettings } from '../runtime-provider-types'
+import type { RuntimeSettings } from '../runtime-provider-types'
 import type { PersistedThinkingEffort } from './session-queue'
 import {
   compareQueueRows,
@@ -26,7 +27,7 @@ const requestedDrainSessionIds = new Set<string>()
 
 export interface QueueDrainDeps {
   hasActiveOrPendingRun: (sessionId: string) => boolean
-  readSessionRuntimeSettings: (sessionId: string) => ChatRuntimeSettings
+  readSessionRuntimeSettings: (sessionId: string) => RuntimeSettings
   createQueuedRun: (input: {
     sessionId: string
     text: string
@@ -35,7 +36,7 @@ export interface QueueDrainDeps {
     providerTargetId?: string
     modelId?: string
     thinkingEffort?: PersistedThinkingEffort
-    runtimeSettings: ChatRuntimeSettings
+    runtimeSettings: RuntimeSettings
     queueItemId: string
   }) => Promise<{ runId: string }>
   serializeError: (error: unknown) => SerializedChatError
@@ -78,10 +79,9 @@ async function drainSessionQueue(sessionId: string, deps: QueueDrainDeps): Promi
       }
 
       try {
-        const runtimeSettings = readQueueItemRuntimeSettings(
-          claimed,
-          deps.readSessionRuntimeSettings(sessionId),
-        )
+        const session = assertStoredSession(sessionId)
+        const runtimeKind = session.runtimeKind ?? 'standard'
+        const runtimeSettings = readQueueItemRuntimeSettings(runtimeKind, claimed)
         await deps.createQueuedRun({
           sessionId,
           text: claimed.text,

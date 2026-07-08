@@ -1,6 +1,6 @@
 import type { PersistedThinkingEffort } from '../queue/session-queue'
 import type { ChatMessageStatus } from '../run/stream-chunks'
-import type { ChatRuntimeSettings } from '../runtime-provider-types'
+import type { RuntimeSettings } from '../runtime-provider-types'
 
 export const CHAT_SESSION_AGGREGATE_TYPE = 'ChatSession'
 export const CHAT_SESSION_EVENT_SCHEMA_VERSION = 2
@@ -88,9 +88,7 @@ export interface QueueItemFact {
   providerTargetId: string | null
   modelId: string | null
   thinkingEffort: PersistedThinkingEffort | null
-  permissionMode: 'bypassPermissions' | 'plan' | null
-  runtimeAccessMode: ChatRuntimeSettings['accessMode']
-  runtimeInteractionMode: ChatRuntimeSettings['interactionMode']
+  runtimeSettingsJson: string
   position: number
   sourceRunId: string | null
   startedRunId: string | null
@@ -111,7 +109,7 @@ export interface RunStartedPayload extends VersionedChatSessionPayload {
   run: BackendRunStartedFact
   assistantMessage?: (MessageRecordedFact & { role: 'assistant', status: 'streaming' }) | null
   queueItemId?: string | null
-  runtimeSettings?: ChatRuntimeSettings
+  runtimeSettings?: RuntimeSettings
 }
 
 export interface AssistantMessageCompletedPayload extends VersionedChatSessionPayload {
@@ -191,8 +189,7 @@ export interface QueueItemUpdatedPayload extends VersionedChatSessionPayload {
   providerTargetId: string | null
   modelId: string | null
   thinkingEffort: PersistedThinkingEffort | null
-  runtimeAccessMode: ChatRuntimeSettings['accessMode']
-  runtimeInteractionMode: ChatRuntimeSettings['interactionMode']
+  runtimeSettingsJson: string
   updatedAt: number
 }
 

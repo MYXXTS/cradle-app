@@ -8,6 +8,7 @@ import {
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 
 import { applyPlanImplementationApprovalResponse } from '../interaction/plan-implementation-message'
+import { normalizeQueueItemRuntimeSettingsJson } from '../queue/session-queue'
 import { compactStoredMessageSnapshot } from '../message-snapshot-compaction'
 import type { ChatMessageStatus } from '../run/stream-chunks'
 import { parseStoredMessageSnapshot } from '../stream/projection'
@@ -119,10 +120,15 @@ export function projectChatSessionEvent(d: ProjectorDb, event: ChatSessionEvent)
     case 'PlanImplementationResponded':
       projectPlanImplementationResponded(d, event.payload)
       break
-    case 'QueueItemEnqueued':
-      d.insert(chatSessionQueueItems).values(event.payload.item).run()
+    case 'QueueItemEnqueued': {
+      const item = event.payload.item
+      d.insert(chatSessionQueueItems).values({
+        ...item,
+        runtimeSettingsJson: normalizeQueueItemRuntimeSettingsJson(item),
+      }).run()
       touchSession(d, event.payload.item.sessionId, event.payload.item.updatedAt)
       break
+    }
     case 'QueueItemClaimed':
       projectQueueItemClaimed(d, event.payload)
       break
@@ -403,7 +409,10 @@ function projectQueueItemReordered(d: ProjectorDb, payload: QueueItemReorderedPa
   touchSession(d, payload.sessionId, payload.updatedAt)
 }
 
-function projectQueueItemUpdated(d: ProjectorDb, payload: QueueItemUpdatedPayload): void {
+function projectQueueItemUpdated(d: ProjectorDb, payload: QueueItemUpdatedPayload & {
+  runtimeAccessMode?: 'approval-required' | 'full-access' | null
+  runtimeInteractionMode?: 'default' | 'plan' | null
+}): void {
   d.update(chatSessionQueueItems)
     .set({
       text: payload.text,
@@ -412,8 +421,7 @@ function projectQueueItemUpdated(d: ProjectorDb, payload: QueueItemUpdatedPayloa
       providerTargetId: payload.providerTargetId,
       modelId: payload.modelId,
       thinkingEffort: payload.thinkingEffort,
-      runtimeAccessMode: payload.runtimeAccessMode,
-      runtimeInteractionMode: payload.runtimeInteractionMode,
+      runtimeSettingsJson: normalizeQueueItemRuntimeSettingsJson(payload),
       updatedAt: payload.updatedAt,
     })
     .where(
