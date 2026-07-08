@@ -1,9 +1,10 @@
 import { unlinkSync } from 'node:fs'
 
 import type {
-  ChatRuntimeSettings,
+  RuntimeSettings,
   StreamTurnInput,
 } from '../../../chat-runtime/runtime-provider-types'
+import { readCodexLikeRuntimeSettings } from '../../../chat-runtime/runtime-settings'
 import {
   ProviderErrors,
   ProviderRuntimeError,
@@ -53,7 +54,7 @@ export interface CodexStreamTurnContext {
   agentId: string | null
   runtimeContext: ReturnType<typeof resolveCodexRuntimeContext>
   systemPromptFile: string | null
-  runtimeSettings: ChatRuntimeSettings | undefined
+  runtimeSettings: RuntimeSettings | undefined
   requestedReasoningEffort: ReasoningEffort
   runtimeAccess: CodexStreamRuntimeAccess | null
   skillExtraRoots: string[]
@@ -107,7 +108,7 @@ export function resolveCodexStreamTurnContext(
       config.reasoningEffort,
     )
     const runtimeAccess = runtimeSettings
-      ? projectCodexRuntimeAccessMode(runtimeSettings.accessMode, {
+      ? projectCodexRuntimeAccessMode(readCodexLikeRuntimeSettings(runtimeSettings).accessMode, {
           writableRoots: runtimeContext.runtimeWorkspaceRoots,
           additionalDirectories: config.additionalDirectories,
         })

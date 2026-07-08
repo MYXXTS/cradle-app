@@ -1013,7 +1013,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Plan the work'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'plan' },
+        runtimeSettings: { permissionMode: 'plan' },
       },
     })) {
       // Drain stream.
@@ -1021,8 +1021,9 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
 
     const options = readQueryOptions(0)
     expect(options).toEqual(expect.objectContaining({
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
+      permissionMode: 'plan',
+      allowDangerouslySkipPermissions: false,
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
     }))
     expect(options.disallowedTools).toEqual([])
     expect(options.disallowedTools).not.toContain('AskUserQuestion')
@@ -1057,6 +1058,38 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     expect(requestToolApproval).not.toHaveBeenCalled()
   })
 
+  it('resumes the provider session in plan mode to preserve prompt cache continuity', async () => {
+    sdkMocks.query.mockReturnValue(createAsyncQuery([
+      {
+        type: 'result',
+        session_id: 'claude-session-plan-resume',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ]))
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+    })
+    for await (const _chunk of provider.streamTurn({
+      runId: 'run-claude-agent-plan-resume',
+      runtimeSession: createResumedRuntimeSession(),
+      profile: createProfile(),
+      message: createUserMessage('Continue planning'),
+      workspaceId: 'workspace-1',
+      providerOptions: {
+        runtimeSettings: { permissionMode: 'plan' },
+      },
+    })) {
+      // Drain stream.
+    }
+
+    expect(readQueryOptions(0)).toEqual(expect.objectContaining({
+      resume: 'claude-session-1',
+      permissionMode: 'plan',
+      allowDangerouslySkipPermissions: false,
+    }))
+  })
+
   it('routes AskUserQuestion through requestUserInput regardless of plan mode', async () => {
     const requestUserInput = vi.fn(async (request: RuntimeUserInputRequest) => ({
       requestId: request.providerRequestId,
@@ -1081,7 +1114,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Plan the work and ask before implementing'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'plan' },
+        runtimeSettings: { permissionMode: 'plan' },
       },
     })) {
       // Drain stream.
@@ -1136,7 +1169,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Run a command'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'full-access', interactionMode: 'default' },
+        runtimeSettings: { permissionMode: 'bypassPermissions' },
       },
     })) {
       // Drain stream.
@@ -1174,7 +1207,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Run a command'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'default' },
+        runtimeSettings: { permissionMode: 'bypassPermissions' },
       },
     })
     const pendingNext = stream.next()
@@ -1209,10 +1242,14 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     })
   })
 
-  it('updates active bridge runtime settings without mutating SDK permission mode', async () => {
+  it('updates active bridge runtime settings and syncs SDK plan permission mode', async () => {
     const activeQuery = createPendingQuery()
     const permissionError = new Error('Cannot set permission mode to bypassPermissions')
-    activeQuery.setPermissionMode.mockRejectedValue(permissionError)
+    activeQuery.setPermissionMode.mockImplementation(async (mode: string) => {
+      if (mode === 'bypassPermissions') {
+        throw permissionError
+      }
+    })
     sdkMocks.query.mockReturnValue(activeQuery)
 
     const provider = new ClaudeAgentProvider({
@@ -1226,7 +1263,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Implement the change'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'full-access', interactionMode: 'default' },
+        runtimeSettings: { permissionMode: 'bypassPermissions' },
       },
     })
     const pendingNext = stream.next()
@@ -1241,9 +1278,9 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     await expect(provider.updateRuntimeSettings({
       runtimeSession,
       profile: createProfile(),
-      settings: { accessMode: 'approval-required', interactionMode: 'plan' },
+      settings: { permissionMode: 'plan' },
     })).resolves.toBeUndefined()
-    expect(activeQuery.setPermissionMode).not.toHaveBeenCalled()
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('plan')
 
     await expect((options.canUseTool as CanUseTool)(
       'Bash',
@@ -1276,7 +1313,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Keep query alive'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'plan' },
+        runtimeSettings: { permissionMode: 'plan' },
       },
     })
     const pendingNext = stream.next()
@@ -1290,18 +1327,17 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     expect(liveRuntimeSession?.readRuntimeSession()).toBe(runtimeSession)
 
     await liveRuntimeSession!.updateRuntimeSettings({
-      accessMode: 'full-access',
-      interactionMode: 'default',
+      permissionMode: 'bypassPermissions',
     })
 
-    expect(activeQuery.setPermissionMode).not.toHaveBeenCalled()
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('bypassPermissions')
 
     activeQuery.close()
     await pendingNext
     expect(liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)).toBeUndefined()
   })
 
-  it('resyncs reused canUseTool callback from plan to default without SDK permission mutation', async () => {
+  it('resyncs reused canUseTool callback when approval mode changes on a live query', async () => {
     const prompts: unknown[] = []
     let activeQuery: ReturnType<typeof createPromptDrivenQuery> | null = null
     sdkMocks.query.mockImplementation((call: { prompt?: AsyncIterable<{ message: { content: unknown } }> }) => {
@@ -1342,18 +1378,18 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         message: createUserMessage('Start in plan mode'),
         workspaceId: 'workspace-1',
         providerOptions: {
-          runtimeSettings: { accessMode: 'approval-required', interactionMode: 'plan' },
+          runtimeSettings: { permissionMode: 'plan' },
         },
       })) {
         // Drain stream.
       }
 
       expect(readQueryOptions(0)).toEqual(expect.objectContaining({
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        permissionMode: 'plan',
+        allowDangerouslySkipPermissions: false,
       }))
       const originalCanUseTool = readQueryOptions(0).canUseTool as CanUseTool
-      expect(readActiveQuery().setPermissionMode).not.toHaveBeenCalled()
+      expect(readActiveQuery().setPermissionMode).toHaveBeenCalledWith('plan')
 
       for await (const _chunk of provider.streamTurn({
         runId: 'run-claude-agent-reused-default',
@@ -1362,14 +1398,14 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         message: createUserMessage('Implement now'),
         workspaceId: 'workspace-1',
         providerOptions: {
-          runtimeSettings: { accessMode: 'full-access', interactionMode: 'default' },
+          runtimeSettings: { permissionMode: 'bypassPermissions' },
         },
       })) {
         // Drain stream.
       }
 
       expect(sdkMocks.query).toHaveBeenCalledOnce()
-      expect(readActiveQuery().setPermissionMode).not.toHaveBeenCalled()
+      expect(readActiveQuery().setPermissionMode).toHaveBeenCalledWith('bypassPermissions')
       await expect(originalCanUseTool(
         'Bash',
         { command: 'echo now allowed' },
@@ -1388,7 +1424,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     }
   })
 
-  it('keeps approval-required in SDK bypass mode until Cradle permission control is designed', async () => {
+  it('routes approval-required tools through Cradle when permission mode changes on a live query', async () => {
     const prompts: unknown[] = []
     let activeQuery: ReturnType<typeof createPromptDrivenQuery> | null = null
     sdkMocks.query.mockImplementation((call: { prompt?: AsyncIterable<{ message: { content: unknown } }> }) => {
@@ -1434,7 +1470,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         message: createUserMessage('Start with full access'),
         workspaceId: 'workspace-1',
         providerOptions: {
-          runtimeSettings: { accessMode: 'full-access', interactionMode: 'default' },
+          runtimeSettings: { permissionMode: 'bypassPermissions' },
         },
       })) {
         // Drain stream.
@@ -1452,14 +1488,14 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         message: createUserMessage('Now require approval'),
         workspaceId: 'workspace-1',
         providerOptions: {
-          runtimeSettings: { accessMode: 'approval-required', interactionMode: 'default' },
+          runtimeSettings: { permissionMode: 'default' },
         },
       })) {
         // Drain stream.
       }
 
       expect(sdkMocks.query).toHaveBeenCalledOnce()
-      expect(readActiveQuery().setPermissionMode).not.toHaveBeenCalled()
+      expect(readActiveQuery().setPermissionMode).toHaveBeenCalledWith('default')
       await expect(originalCanUseTool(
         'Bash',
         { command: 'pwd' },
@@ -1471,7 +1507,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         behavior: 'allow',
         updatedInput: { command: 'pwd' },
       })
-      expect(requestToolApproval).not.toHaveBeenCalled()
+      expect(requestToolApproval).toHaveBeenCalledOnce()
       expect(prompts).toEqual(['Start with full access', 'Now require approval'])
     }
     finally {
@@ -1515,7 +1551,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Plan the work'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'plan' },
+        runtimeSettings: { permissionMode: 'plan' },
       },
     })) {
       chunks.push(chunk)
@@ -1562,26 +1598,8 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
   })
 
   it('writes Cradle interaction mode when Claude requests EnterPlanMode', async () => {
-    sdkMocks.query.mockReturnValue(createAsyncQuery([
-      {
-        type: 'assistant',
-        session_id: 'claude-session-enter-plan',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'toolu_enter_plan_1',
-              name: 'EnterPlanMode',
-            },
-          ],
-        },
-      },
-      {
-        type: 'result',
-        session_id: 'claude-session-enter-plan',
-        usage: { input_tokens: 1, output_tokens: 1 },
-      },
-    ]))
+    const activeQuery = createControllableQuery()
+    sdkMocks.query.mockReturnValue(activeQuery)
 
     const updateSessionRuntimeSettings = vi.fn().mockResolvedValue(undefined)
     const provider = new ClaudeAgentProvider({
@@ -1589,20 +1607,48 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       updateSessionRuntimeSettings,
     })
 
-    for await (const _chunk of provider.streamTurn({
+    const stream = provider.streamTurn({
       runId: 'run-claude-agent-enter-plan',
       runtimeSession: createRuntimeSession(),
       profile: createProfile(),
       message: createUserMessage('Plan first'),
       workspaceId: 'workspace-1',
-    })) {
+    })
+    const pendingNext = stream.next()
+    void pendingNext.catch(() => undefined)
+
+    await vi.waitFor(() => {
+      expect(sdkMocks.query).toHaveBeenCalledOnce()
+    })
+
+    activeQuery.push({
+      type: 'assistant',
+      session_id: 'claude-session-enter-plan',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_enter_plan_1',
+            name: 'EnterPlanMode',
+          },
+        ],
+      },
+    })
+    activeQuery.push({
+      type: 'result',
+      session_id: 'claude-session-enter-plan',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    activeQuery.close()
+    for await (const _chunk of stream) {
       // Drain stream.
     }
 
     expect(updateSessionRuntimeSettings).toHaveBeenCalledWith({
       sessionId: 'chat-session-1',
-      patch: { interactionMode: 'plan' },
+      patch: { permissionMode: 'plan' },
     })
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('plan')
   })
 
   it('projects captured TodoWrite state into progress UI slot state', async () => {
@@ -2839,7 +2885,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Launch child work needing approval'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'default' },
+        runtimeSettings: { permissionMode: 'bypassPermissions' },
       },
       onProviderThreadEvent: (event) => {
         providerThreadEvents.push(event)
@@ -2919,7 +2965,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       message: createUserMessage('Launch child work with unresolved approval'),
       workspaceId: 'workspace-1',
       providerOptions: {
-        runtimeSettings: { accessMode: 'approval-required', interactionMode: 'default' },
+        runtimeSettings: { permissionMode: 'bypassPermissions' },
       },
       onProviderThreadEvent: (event) => {
         providerThreadEvents.push(event)

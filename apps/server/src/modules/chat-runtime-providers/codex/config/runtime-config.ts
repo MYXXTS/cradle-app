@@ -6,10 +6,10 @@ import { join } from 'node:path'
 import type { RegisteredMcpServer } from '../../../../plugins/mcp-registry'
 import { getRegisteredMcpServers } from '../../../../plugins/mcp-registry'
 import type {
-  ChatRuntimeAccessMode,
-  ChatRuntimeSettings,
   ChatThinkingEffort,
+  RuntimeSettings,
 } from '../../../chat-runtime/runtime-provider-types'
+import { readCodexLikeRuntimeSettings } from '../../../chat-runtime/runtime-settings'
 import type { CodexAuthMode, CodexConfig } from '../../../provider-contracts/provider-base'
 import type { CodexAppServerAuthResolution } from '../app-server/chatgpt-auth'
 import {
@@ -191,7 +191,7 @@ export function writeSystemPromptFile(systemPrompt: string | undefined): string 
 }
 
 export function projectCodexRuntimeAccessMode(
-  accessMode: ChatRuntimeAccessMode,
+  accessMode: 'approval-required' | 'full-access',
   input: {
     writableRoots: string[]
     additionalDirectories: string[]
@@ -216,11 +216,12 @@ export function projectCodexRuntimeAccessMode(
 }
 
 export function buildCodexCollaborationMode(
-  settings: ChatRuntimeSettings,
+  settings: RuntimeSettings,
   input: { model: string, effort: ReasoningEffort },
 ): CollaborationMode {
+  const codexSettings = readCodexLikeRuntimeSettings(settings)
   return {
-    mode: settings.interactionMode,
+    mode: codexSettings.interactionMode,
     settings: {
       model: input.model,
       reasoning_effort: input.effort,

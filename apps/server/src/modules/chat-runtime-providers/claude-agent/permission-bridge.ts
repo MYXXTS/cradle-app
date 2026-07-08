@@ -6,7 +6,7 @@
 
 import type { CanUseTool, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk'
 
-import type { ChatRuntimeSettings, GetCapabilitiesInput, ProviderContext, StreamTurnInput } from '../../chat-runtime/runtime-provider-types'
+import type { GetCapabilitiesInput, ProviderContext, RuntimeSettings, StreamTurnInput } from '../../chat-runtime/runtime-provider-types'
 import { requireRuntimeProviderTargetProfile } from '../../chat-runtime/runtime-provider-types'
 import { requestProviderToolApproval } from '../kit/permission-bridge'
 import { CLAUDE_AGENT_RUNTIME_KIND } from './metadata'
@@ -30,7 +30,7 @@ export interface ClaudeAgentToolApprovalRequest {
 export interface ClaudeAgentPermissionBridgeState {
   runtimeInput: StreamTurnInput | GetCapabilitiesInput
   permissionMode: Options['permissionMode']
-  runtimeSettings: ChatRuntimeSettings | null | undefined
+  runtimeSettings: RuntimeSettings | null | undefined
 }
 
 export function createClaudeAgentPermissionBridgeState(input: ClaudeAgentPermissionBridgeState): ClaudeAgentPermissionBridgeState {
@@ -144,13 +144,13 @@ async function handleClaudeAgentToolPermissionRequest(input: {
   deps: ProviderContext
   runtimeInput: StreamTurnInput | GetCapabilitiesInput
   permissionMode: Options['permissionMode']
-  runtimeSettings: ChatRuntimeSettings | null | undefined
+  runtimeSettings: RuntimeSettings | null | undefined
   toolName: string
   toolInput: Record<string, unknown>
   options: ClaudeAgentCanUseToolOptions
   emitToolApprovalRequest?: (request: ClaudeAgentToolApprovalRequest) => void
 }): Promise<PermissionResult> {
-  if (input.runtimeSettings?.interactionMode === 'plan') {
+  if (input.permissionMode === 'plan') {
     return {
       behavior: 'deny',
       message: CLAUDE_AGENT_PLAN_MODE_DENIAL_MESSAGE,

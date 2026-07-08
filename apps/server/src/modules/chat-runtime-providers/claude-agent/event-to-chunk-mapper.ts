@@ -25,6 +25,8 @@ import {
   CLAUDE_PLAN_IMPLEMENTATION_TOOL_NAME,
   isClaudeAgentEnterPlanModeToolName,
   isClaudeAgentExitPlanModeToolName,
+  isClaudeAgentIntentionalExitPlanModeDenial,
+  isClaudePlanFilePath,
 } from './plan-mode'
 import { ClaudeCodeToolName } from './tools/identity'
 import { createClaudeCodeToolInputPayload, createClaudeCodeToolResultPayload, normalizeClaudeCodeToolApiName } from './tools/mapper'
@@ -36,8 +38,6 @@ import {
 } from './tools/task-progress-state'
 import type { TodoPluginItem } from './tools/todo-plugin-state'
 import { isTodoWriteToolName, synthesizeTodoWritePluginState } from './tools/todo-plugin-state'
-
-const CLAUDE_PLAN_FILE_PATH_SEGMENT = '/.claude/plans/'
 
 interface BetaContentBlock {
   type: string
@@ -135,7 +135,7 @@ export interface ClaudeAgentCapturedTodos {
 
 export interface ClaudeAgentCapturedInteractionMode {
   toolCallId: string
-  interactionMode: 'plan'
+  permissionMode: 'plan'
 }
 
 export interface ClaudeAgentCapturedCrewCall {
@@ -1016,7 +1016,7 @@ function emitToolUseChunks(
   }
 
   if (isClaudeAgentEnterPlanModeToolName(toolName) && !current.interactionModeCaptured) {
-    capturedInteractionModes.push({ toolCallId, interactionMode: 'plan' })
+    capturedInteractionModes.push({ toolCallId, permissionMode: 'plan' })
     current.interactionModeCaptured = true
   }
 
@@ -1081,7 +1081,7 @@ function captureClaudePlanFileWrite(
     : typeof input.filePath === 'string'
       ? input.filePath
       : ''
-  if (!filePath.includes(CLAUDE_PLAN_FILE_PATH_SEGMENT) || !filePath.endsWith('.md')) {
+  if (!isClaudePlanFilePath(filePath)) {
     return
   }
   if (typeof input.content !== 'string' || input.content.trim().length === 0) {
@@ -1149,16 +1149,7 @@ function isCapturedExitPlanModeError(
   const toolName = state.toolNamesByToolCallId.get(toolCallId)
   return toolName !== undefined
     && isClaudeAgentExitPlanModeToolName(toolName)
-    && state.capturedExitPlanToolCallIds.has(toolCallId)
-    && isCapturedExitPlanModeErrorText(errorText)
-}
-
-function isCapturedExitPlanModeErrorText(errorText: string): boolean {
-  const normalizedErrorText = errorText.startsWith('Error: ')
-    ? errorText.slice('Error: '.length)
-    : errorText
-  return normalizedErrorText === CLAUDE_EXIT_PLAN_MODE_CAPTURED_MESSAGE
-    || normalizedErrorText === 'Exit plan mode?'
+    && isClaudeAgentIntentionalExitPlanModeDenial(errorText)
 }
 
 function appendToolInputText(

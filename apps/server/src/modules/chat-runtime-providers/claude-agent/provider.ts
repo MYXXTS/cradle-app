@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import type { AccountInfo, Query, SDKAuthStatusMessage, SDKMessage, SDKRateLimitEvent, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { AccountInfo, Options, Query, SDKAuthStatusMessage, SDKMessage, SDKRateLimitEvent, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { getSessionInfo, getSubagentMessages, listSubagents, query, renameSession } from '@anthropic-ai/claude-agent-sdk'
 import type { LangfuseGeneration } from '@langfuse/tracing'
 import { startObservation } from '@langfuse/tracing'
@@ -46,6 +46,10 @@ import {
   requireRuntimeProviderTargetProfile,
 } from '../../chat-runtime/runtime-provider-types'
 import { isChatStreamTraceEnabled, recordChatStreamTrace } from '../../chat-runtime/stream-trace'
+import {
+  getDefaultRuntimeSettings,
+  mergeRuntimeSettings,
+} from '../../chat-runtime/runtime-settings'
 import type { TokenUsage } from '../../chat-runtime-engine/ai-sdk-engine'
 import { readTrustedClaudeAgentConfig } from '../../provider-contracts/provider-base'
 import { AsyncEventQueue } from '../async-event-queue'
@@ -64,10 +68,12 @@ import {
   createClaudeStderrSink,
   describeClaudeAgentUserContent,
   projectClaudeAgentInput,
-  projectRuntimeSettingsToClaudePermissionMode,
   readClaudeAgentModelId,
   shouldPersistClaudeAgentSdkSession,
 } from './input-projector'
+import {
+  readClaudeAgentPermissionMode,
+} from './runtime-settings'
 import {
   CLAUDE_AGENT_RUNTIME_CAPABILITIES,
   CLAUDE_AGENT_RUNTIME_KIND,
@@ -129,6 +135,7 @@ type ActiveClaudeQuery = {
   onProviderSyntheticTurnEvent: StreamTurnInput['onProviderSyntheticTurnEvent'] | null
   closed: boolean
   stderrSink: ClaudeStderrSink
+  allowDangerouslySkipPermissions: boolean
 }
 
 type ActiveClaudeTurn = {
@@ -214,8 +221,8 @@ interface ClaudeSubagentProjectedEntry {
 
 function readActiveClaudeQueryPermissionMode(
   permissionMode: ReturnType<typeof buildClaudeQueryOptions>['permissionMode'],
-): 'bypassPermissions' | 'plan' {
-  return permissionMode === 'plan' ? 'plan' : 'bypassPermissions'
+): Options['permissionMode'] {
+  return permissionMode ?? 'bypassPermissions'
 }
 
 function closeClaudeQuery(activeQuery: Query): void {
@@ -238,7 +245,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
   private readonly compactStates = new Map<string, RuntimeCompactUiSlotState>()
   private readonly lastContextUsageBySession = new Map<string, RuntimeContextUsage>()
   private readonly lastContextUsageSampledAtBySession = new Map<string, number>()
-  private readonly activePermissionModesBySession = new Map<string, 'bypassPermissions' | 'plan'>()
+  private readonly activePermissionModesBySession = new Map<string, Options['permissionMode']>()
   private _lastUsage: TokenUsage | null = null
   private _totalUsage: TokenUsage | null = null
 
@@ -459,12 +466,19 @@ export class ClaudeAgentProvider implements ChatRuntime {
       this.closeSessionQuery(sessionId, activeEntry)
       activeEntry = undefined
     }
+    const planModeActive = readClaudeAgentPermissionMode(input.providerOptions?.runtimeSettings) === 'plan'
+    // Only recreate when the in-memory query was built with skip=true; new options still resume
+    // the same provider session so prompt cache and thread continuity are preserved.
+    if (activeEntry && planModeActive && (activeEntry.allowDangerouslySkipPermissions ?? true)) {
+      this.closeSessionQuery(sessionId, activeEntry)
+      activeEntry = undefined
+    }
     const permissionBridgeState = activeEntry?.permissionBridgeState ?? createClaudeAgentPermissionBridgeState({
       runtimeInput: input,
       permissionMode: 'bypassPermissions',
       runtimeSettings: input.providerOptions?.runtimeSettings,
     })
-    let turnPermissionMode: 'bypassPermissions' | 'plan' = 'bypassPermissions'
+    let turnPermissionMode: Options['permissionMode'] = 'bypassPermissions'
     // Reuse the long-lived query's stderr sink when the session already exists;
     // otherwise create one for the new query. The sink must outlive the
     // pump loop so it can enrich the surfaced error when the process exits.
@@ -484,6 +498,15 @@ export class ClaudeAgentProvider implements ChatRuntime {
       this.activePermissionModesBySession.set(sessionId, turnPermissionMode)
       const inputStream = new ClaudeAgentInputStream()
       const activeQuery = query({ prompt: inputStream, options: queryOptions })
+      if (turnPermissionMode === 'plan') {
+        void activeQuery.setPermissionMode('plan').catch((error) => {
+          this.deps.logger?.warn?.('Claude Agent failed to sync SDK plan permission mode after query start', {
+            error,
+            sessionId,
+            resumed: shouldResumeProviderSession,
+          })
+        })
+      }
       const taskLaunchesById: Map<string, ClaudeCrewLink> = new Map()
       activeEntry = {
         query: activeQuery,
@@ -502,6 +525,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
         onProviderSyntheticTurnEvent: null,
         closed: false,
         stderrSink,
+        allowDangerouslySkipPermissions: queryOptions.allowDangerouslySkipPermissions ?? true,
       }
       this.activeQueries.set(sessionId, activeEntry)
       const registeredEntry = activeEntry
@@ -720,7 +744,18 @@ export class ClaudeAgentProvider implements ChatRuntime {
       writeClaudeAgentTaskActivity(entry.runtimeSession, taskActivity)
     }
     for (const mode of result.capturedInteractionModes) {
-      await this.requestRuntimeInteractionModeUpdate(entry.runtimeSession, mode.interactionMode)
+      const nextSettings = mergeRuntimeSettings(
+        this.runtimeKind,
+        entry.permissionBridgeState.runtimeSettings ?? getDefaultRuntimeSettings(this.runtimeKind),
+        { permissionMode: mode.permissionMode },
+      )
+      const projectedMode = readClaudeAgentPermissionMode(nextSettings)
+      await this.updateActiveQueryPermissionMode({
+        runtimeSession: entry.runtimeSession,
+        mode: projectedMode,
+        runtimeSettings: nextSettings,
+      })
+      void this.requestRuntimePermissionModeUpdate(entry.runtimeSession, mode.permissionMode)
     }
 
     if (turn && isChatStreamTraceEnabled()) {
@@ -1253,7 +1288,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
 
   private async updateActiveQueryPermissionMode(
     input: Pick<UpdateRuntimeSettingsInput, 'runtimeSession'> & {
-      mode: 'bypassPermissions' | 'plan'
+      mode: Options['permissionMode']
       runtimeInput?: StreamTurnInput | GetCapabilitiesInput
       runtimeSettings?: UpdateRuntimeSettingsInput['settings']
     },
@@ -1263,20 +1298,21 @@ export class ClaudeAgentProvider implements ChatRuntime {
     if (!entry) {
       return
     }
-    if (this.activePermissionModesBySession.get(sessionId) !== input.mode) {
-      await entry.query.setPermissionMode(input.mode)
+    const mode = input.mode ?? 'bypassPermissions'
+    if (this.activePermissionModesBySession.get(sessionId) !== mode) {
+      await entry.query.setPermissionMode(mode)
     }
-    this.activePermissionModesBySession.set(sessionId, input.mode)
+    this.activePermissionModesBySession.set(sessionId, mode)
     updateClaudeAgentPermissionBridgeState(entry.permissionBridgeState, {
       runtimeInput: input.runtimeInput ?? entry.permissionBridgeState.runtimeInput,
-      permissionMode: input.mode,
+      permissionMode: mode,
       runtimeSettings: input.runtimeSettings ?? entry.permissionBridgeState.runtimeSettings,
     })
   }
 
-  private async requestRuntimeInteractionModeUpdate(
+  private async requestRuntimePermissionModeUpdate(
     runtimeSession: RuntimeSession,
-    interactionMode: 'plan',
+    permissionMode: 'plan',
   ): Promise<void> {
     if (!this.deps.updateSessionRuntimeSettings) {
       return
@@ -1285,20 +1321,20 @@ export class ClaudeAgentProvider implements ChatRuntime {
     try {
       await this.deps.updateSessionRuntimeSettings({
         sessionId: runtimeSession.chatSessionId,
-        patch: { interactionMode },
+        patch: { permissionMode },
       })
     }
     catch (error) {
-      this.deps.logger?.warn?.('Claude Agent runtime interaction mode update failed', {
+      this.deps.logger?.warn?.('Claude Agent runtime permission mode update failed', {
         error,
         sessionId: runtimeSession.chatSessionId,
-        interactionMode,
+        permissionMode,
       })
     }
   }
 
   async updateRuntimeSettings(input: UpdateRuntimeSettingsInput): Promise<void> {
-    const mode = projectRuntimeSettingsToClaudePermissionMode(input.settings) ?? 'bypassPermissions'
+    const mode = readClaudeAgentPermissionMode(input.settings)
     await this.updateActiveQueryPermissionMode({
       runtimeSession: input.runtimeSession,
       mode,

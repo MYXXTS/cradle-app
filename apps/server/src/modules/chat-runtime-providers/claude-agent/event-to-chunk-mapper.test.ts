@@ -270,7 +270,7 @@ describe('mapClaudeAgentMessageToChunks', () => {
       { type: 'tool-input-start', toolCallId: 'toolu_enter_plan_1', toolName: 'EnterPlanMode' },
     ])
     expect(first.capturedInteractionModes).toEqual([
-      { toolCallId: 'toolu_enter_plan_1', interactionMode: 'plan' },
+      { toolCallId: 'toolu_enter_plan_1', permissionMode: 'plan' },
     ])
     expect(second.chunks).toEqual([])
     expect(second.capturedInteractionModes).toEqual([])
@@ -383,6 +383,68 @@ describe('mapClaudeAgentMessageToChunks', () => {
             tool_use_id: 'toolu_exit_plan_1',
             is_error: true,
             content: 'Exit plan mode?',
+          },
+        ],
+      },
+    } as unknown as SDKMessage, state)
+
+    expect(denial.chunks).toEqual([])
+  })
+
+  it('captures Cradle plan-file ExitPlanMode signals from yml artifacts and suppresses denial errors', async () => {
+    const state = createClaudeAgentChunkMapperState('text-1')
+    const plan = '# Implementation Plan\n\n1. Inspect\n2. Patch\n3. Verify'
+    const planPath = '/Users/wibus/Library/Application Support/@cradle/desktop/data/runtimes/claude-agent/plans/example.yml'
+
+    await mapClaudeAgentMessageToChunks({
+      type: 'assistant',
+      session_id: 'cladle-session-plan-file',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_write_plan_1',
+            name: 'Write',
+            input: {
+              file_path: planPath,
+              content: plan,
+            },
+          },
+        ],
+      },
+    } as unknown as SDKMessage, state)
+
+    const capture = await mapClaudeAgentMessageToChunks({
+      type: 'assistant',
+      session_id: 'cradle-session-plan-file',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_exit_plan_1',
+            name: 'ExitPlanMode',
+            input: {
+              allowedPrompts: [
+                { tool: 'Bash', prompt: 'run build for testing' },
+              ],
+            },
+          },
+        ],
+      },
+    } as unknown as SDKMessage, state)
+
+    expect(capture.capturedPlans).toEqual([{ toolCallId: 'toolu_exit_plan_1', content: plan }])
+
+    const denial = await mapClaudeAgentMessageToChunks({
+      type: 'user',
+      session_id: 'cradle-session-plan-file',
+      message: {
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_exit_plan_1',
+            is_error: true,
+            content: 'Error: Cradle captured the proposed plan. Stop here and wait for the user to refine or implement it in a later turn.',
           },
         ],
       },

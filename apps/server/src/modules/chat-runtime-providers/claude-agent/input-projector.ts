@@ -10,7 +10,6 @@ import type { UIMessage } from 'ai'
 import { readObjectRecord as readRecord } from '../../../helpers/json-record'
 import { getRegisteredMcpServers } from '../../../plugins/mcp-registry'
 import type {
-  ChatRuntimeSettings,
   GetCapabilitiesInput,
   ProviderContext,
   RuntimeProviderTargetProfile,
@@ -33,6 +32,10 @@ import type { ProviderInputPart } from '../kit/input-projector'
 import { projectProviderInputParts } from '../kit/input-projector'
 import { readWorkspaceProviderStateSnapshot } from '../kit/state-snapshot'
 import { CLAUDE_AGENT_RUNTIME_KIND } from './metadata'
+import {
+  readClaudeAgentAllowDangerouslySkipPermissions,
+  readClaudeAgentPermissionMode,
+} from './runtime-settings'
 import type { ClaudeAgentPermissionBridgeState, ClaudeAgentToolApprovalRequest } from './permission-bridge'
 import {
   createClaudeAgentCanUseTool,
@@ -194,7 +197,8 @@ export function buildClaudeQueryOptions(input: {
     : null
   const effectiveModel = readClaudeAgentModelId(input.input, config)
   const providerOptions = 'providerOptions' in input.input ? input.input.providerOptions : undefined
-  const permissionMode: Options['permissionMode'] = 'bypassPermissions'
+  const runtimeSettings = providerOptions?.runtimeSettings
+  const permissionMode: Options['permissionMode'] = readClaudeAgentPermissionMode(runtimeSettings)
   if (authMode === 'apiKey' && !anthropicCredential) {
     throw new ProviderRuntimeError(ProviderErrors.authFailed(CLAUDE_AGENT_RUNTIME_KIND))
   }
@@ -209,7 +213,7 @@ export function buildClaudeQueryOptions(input: {
     abortController: input.abortController,
     cwd: runtimeContext.cwd,
     permissionMode,
-    allowDangerouslySkipPermissions: true,
+    allowDangerouslySkipPermissions: readClaudeAgentAllowDangerouslySkipPermissions(runtimeSettings),
     maxTurns: config.maxTurns,
     additionalDirectories: uniquePaths([
       ...runtimeContext.additionalDirectories,
@@ -222,7 +226,9 @@ export function buildClaudeQueryOptions(input: {
     persistSession: shouldPersistSession,
     systemPrompt: input.input.systemPrompt
       ? { type: 'preset' as const, preset: 'claude_code' as const, append: input.input.systemPrompt }
-      : undefined,
+      : permissionMode === 'plan'
+        ? { type: 'preset' as const, preset: 'claude_code' as const }
+        : undefined,
   }
   if (config.skills === 'all' || (Array.isArray(config.skills) && config.skills.length > 0)) {
     queryOptions.skills = config.skills
@@ -408,15 +414,6 @@ function readClaudeAgentEffort(
     default:
       return configured
   }
-}
-
-export function projectRuntimeSettingsToClaudePermissionMode(
-  settings: ChatRuntimeSettings | null | undefined,
-): 'bypassPermissions' | null {
-  if (!settings) {
-    return null
-  }
-  return 'bypassPermissions'
 }
 
 export function readClaudeAgentModelId(

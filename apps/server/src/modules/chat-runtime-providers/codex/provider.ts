@@ -51,7 +51,7 @@ import {
   ProviderRuntimeError,
   requireRuntimeProviderTargetProfile,
 } from '../../chat-runtime/runtime-provider-types'
-import type { TokenUsage } from '../../chat-runtime-engine/ai-sdk-engine'
+import { readCodexLikeRuntimeSettings } from '../../chat-runtime/runtime-settings'
 import { createDedupeKey, OBSERVABILITY_CODES } from '../../observability/contract'
 import { readTrustedCodexConfig } from '../../provider-contracts/provider-base'
 import { createBoundedTextCollector } from '../bounded-text-collector'
@@ -1572,7 +1572,7 @@ export class CodexProvider implements ChatRuntime {
     const config = readTrustedCodexConfig(profile.configJson)
     const snapshot = readWorkspaceProviderStateSnapshot(input.runtimeSession.providerStateSnapshot)
     const runtimeContext = resolveCodexRuntimeContext(snapshot.workspacePath ?? '.', snapshot.agentId ?? null)
-    const access = projectCodexRuntimeAccessMode(input.settings.accessMode, {
+    const access = projectCodexRuntimeAccessMode(readCodexLikeRuntimeSettings(input.settings).accessMode, {
       writableRoots: runtimeContext.runtimeWorkspaceRoots,
       additionalDirectories: config.additionalDirectories,
     })
