@@ -16,6 +16,7 @@ import {
   runtimeComposerAllowsEmptySubmit,
   runtimeComposerUsesAliasMatrixModelSelection,
   runtimeComposerUsesCollapsedInput,
+  useRuntimeCatalog,
 } from '~/features/agent-runtime/use-runtime-catalog'
 import { ComposerToolbar, useComposerState } from '~/features/composer-toolbar'
 import type { RuntimeProviderBinding } from '~/features/composer-toolbar/types'
@@ -28,13 +29,17 @@ import { openSettingsSection as openSettingsRouteSection } from '~/navigation/na
 import { useNewChatStore } from '~/store/new-chat'
 import { useSettingsOverlayStore } from '~/store/settings-overlay'
 
-import type { ChatRuntimeSettings } from '../commands/chat-response-command'
-import { DEFAULT_CHAT_RUNTIME_SETTINGS } from '../commands/runtime-settings-command'
+import type { RuntimeSettings, RuntimeSettingsPatch } from '../commands/chat-response-command'
 import type { ChatContextPart } from '../context/chat-context-parts'
 import type { MentionItem } from '../mentions/mention-panel'
 import { searchPluginMentions } from '../mentions/plugin-mentions'
 import type { SkillMentionItem } from '../mentions/skill-mention-panel'
 import { useDraftClaudeAgentModelAliases, useProviderTargetClaudeAgentModelAliases } from '../runtime/claude-session-model-matrix-control'
+import {
+  mergeRuntimeSettings,
+  readDefaultRuntimeSettings,
+  resolveRuntimeCatalogItem,
+} from '../runtime/runtime-settings-presenter'
 import { RuntimeSettingsControl } from '../runtime/runtime-settings-control'
 import type { ChatComposerSlashCommand } from '../slash-commands/chat-slash-commands'
 import {
@@ -56,7 +61,7 @@ interface DraftClaudeAgentConfig {
   modelAliases: ClaudeAgentModelAliases
 }
 
-export type DraftChatRuntimeSettings = ChatRuntimeSettings & {
+export type DraftChatRuntimeSettings = RuntimeSettings & {
   claudeAgent?: DraftClaudeAgentConfig | null
 }
 
@@ -144,9 +149,13 @@ function DraftChatComposerContent({
   composerState,
 }: DraftChatComposerContentProps) {
   const { t } = useTranslation('new-chat')
+  const { runtimes } = useRuntimeCatalog()
   const { selection, effectiveAgent, effectiveProfile, effectiveModel } = composerState
-  const runtimeSettings = useNewChatStore(s => s.lastRuntimeSettings ?? DEFAULT_CHAT_RUNTIME_SETTINGS)
-  const setRuntimeSettings = useNewChatStore(s => s.setLastRuntimeSettings)
+  const runtimeCatalogItem = resolveRuntimeCatalogItem(runtimes, selection.runtimeKind)
+  const defaultRuntimeSettings = readDefaultRuntimeSettings(runtimeCatalogItem)
+  const storedRuntimeSettings = useNewChatStore(s => s.lastRuntimeSettingsByKind[selection.runtimeKind])
+  const patchRuntimeSettings = useNewChatStore(s => s.patchLastRuntimeSettings)
+  const runtimeSettings = mergeRuntimeSettings(defaultRuntimeSettings, storedRuntimeSettings ?? {})
   const claudeAgentByProfile = useNewChatStore(s => s.lastClaudeAgentByProfile)
   const setClaudeAgentForProfile = useNewChatStore(s => s.setLastClaudeAgentForProfile)
   const [sending, setSending] = useState(false)
@@ -221,11 +230,8 @@ function DraftChatComposerContent({
     openSettingsRouteSection(section)
   }
 
-  const updateRuntimeSettings = (patch: Partial<ChatRuntimeSettings>) => {
-    setRuntimeSettings({
-      ...runtimeSettings,
-      ...patch,
-    })
+  const updateRuntimeSettings = (patch: RuntimeSettingsPatch) => {
+    patchRuntimeSettings(selection.runtimeKind, patch)
   }
 
   const updateClaudeAgentAliases = (next: ClaudeAgentModelAliases) => {
@@ -303,10 +309,11 @@ function DraftChatComposerContent({
     <div className="flex w-full min-w-0 items-center justify-between gap-3 text-muted-foreground">
       <div className="shrink-0">
         <RuntimeSettingsControl
+          runtime={runtimeCatalogItem}
           settings={runtimeSettings}
           applied
           disabled={sending}
-          showInteractionLabel={false}
+          showLabels={false}
           onChange={updateRuntimeSettings}
         />
       </div>
@@ -496,6 +503,7 @@ function DraftChatComposerContent({
           onActionTargetElementChange: appshotRuntime.setActionTargetElement,
         }}
         runtimeSettings={{
+          runtimeKind: selection.runtimeKind,
           settings: runtimeSettings,
           disabled: sending,
           onChange: updateRuntimeSettings,

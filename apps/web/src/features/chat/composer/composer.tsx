@@ -5,6 +5,7 @@ import type { FileUIPart } from 'ai'
 import type { ChangeEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 
+import type { RuntimeKind } from '~/features/agent-runtime/types'
 import { useComposerDraftSync } from '~/hooks/use-composer-draft-sync'
 import { cn } from '~/lib/cn'
 import { isLocalMode } from '~/lib/electron'
@@ -19,6 +20,11 @@ import { MentionPanel } from '../mentions/mention-panel'
 import type { SkillMentionItem } from '../mentions/skill-mention-panel'
 import { SkillMentionPanel } from '../mentions/skill-mention-panel'
 import type { ChatComposerSlashCommand } from '../slash-commands/chat-slash-commands'
+import {
+  buildPlanModeTogglePatch,
+  isPlanRuntimeSettings,
+  supportsPlanModeToggle,
+} from '../runtime/runtime-settings-presenter'
 import {
   CHAT_SLASH_COMMAND_LISTBOX_ID,
   getActiveSlashCommand,
@@ -117,6 +123,7 @@ export interface ComposerExternalSignals {
 }
 
 export interface ComposerRuntimeSettingsController {
+  runtimeKind?: RuntimeKind | null
   settings: ChatRuntimeSettings
   disabled?: boolean
   onChange: (patch: ChatRuntimeSettingsPatch) => void
@@ -360,10 +367,10 @@ export function Composer({
   const textareaRowsClassName = textareaRows === undefined
     ? undefined
     : textareaRowsClasses[textareaRows] ?? textareaRowsClasses[3]
-  const runtimeInteractionMode = runtimeSettings?.settings.interactionMode
-  const isPlanMode = runtimeInteractionMode === 'plan'
+  const isPlanMode = isPlanRuntimeSettings(runtimeSettings?.settings ?? {})
   const runtimeSettingsDisabled = runtimeSettings?.disabled ?? false
   const onRuntimeSettingsChange = runtimeSettings?.onChange
+  const runtimeKind = runtimeSettings?.runtimeKind ?? null
 
   const handleEditorChange = useCallback((snapshot: PromptEditorSnapshot) => {
     const currentState = stateRef.current
@@ -585,15 +592,17 @@ export function Composer({
   )
 
   const toggleRuntimeInteractionMode = useCallback(() => {
-    if (!runtimeInteractionMode || runtimeSettingsDisabled || !onRuntimeSettingsChange) {
+    if (runtimeSettingsDisabled || !onRuntimeSettingsChange || !supportsPlanModeToggle(runtimeKind)) {
       return false
     }
 
-    onRuntimeSettingsChange({
-      interactionMode: runtimeInteractionMode === 'plan' ? 'default' : 'plan',
-    })
+    const patch = buildPlanModeTogglePatch(runtimeKind, runtimeSettings?.settings ?? {})
+    if (!patch) {
+      return false
+    }
+    onRuntimeSettingsChange(patch)
     return true
-  }, [onRuntimeSettingsChange, runtimeInteractionMode, runtimeSettingsDisabled])
+  }, [onRuntimeSettingsChange, runtimeKind, runtimeSettings?.settings, runtimeSettingsDisabled])
 
   const handlePaste = useCallback((event: ClipboardEvent) => {
     handleAttachmentPaste(event as unknown as React.ClipboardEvent<HTMLElement>)

@@ -1,23 +1,23 @@
-// React Query integration for Chat Runtime session settings.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { DEFAULT_CLAUDE_AGENT_ALIASES } from '~/features/agent-runtime/claude-agent-config'
+import type { RuntimeKind } from '~/features/agent-runtime/types'
 
-import type { ChatRuntimeSettings } from '../commands/chat-response-command'
+import type { RuntimeSettings, RuntimeSettingsPatch } from '../commands/chat-response-command'
 import type {
   ChatRuntimeSettingsResponse,
   SessionClaudeAgentConfig,
   SessionRuntimeSettingsPatch,
 } from '../commands/runtime-settings-command'
 import {
-  DEFAULT_CHAT_RUNTIME_SETTINGS,
   getSessionRuntimeSettings,
   runtimeSettingsQueryKey,
   updateSessionRuntimeSettings,
 } from '../commands/runtime-settings-command'
 
 export interface ChatRuntimeSettingsState {
-  settings: ChatRuntimeSettings
+  runtimeKind: RuntimeKind | null
+  settings: RuntimeSettings
   claudeAgent: SessionClaudeAgentConfig | null
   applied: boolean
   loaded: boolean
@@ -58,8 +58,9 @@ export function useRuntimeSettings(sessionId: string | null, active = true): Cha
         : previous?.claudeAgent ?? null
       queryClient.setQueryData<ChatRuntimeSettingsResponse>(queryKey, {
         sessionId: currentSessionId,
+        runtimeKind: previous?.runtimeKind ?? 'standard',
         runtimeSettings: {
-          ...(previous?.runtimeSettings ?? DEFAULT_CHAT_RUNTIME_SETTINGS),
+          ...(previous?.runtimeSettings ?? {}),
           ...runtimeSettingsPatch,
         },
         claudeAgent: optimisticClaudeAgent,
@@ -79,7 +80,8 @@ export function useRuntimeSettings(sessionId: string | null, active = true): Cha
   })
 
   return {
-    settings: query.data?.runtimeSettings ?? DEFAULT_CHAT_RUNTIME_SETTINGS,
+    runtimeKind: query.data?.runtimeKind ?? null,
+    settings: query.data?.runtimeSettings ?? {},
     claudeAgent: query.data?.claudeAgent ?? null,
     applied: query.data?.applied ?? false,
     loaded: Boolean(query.data),

@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 
 import type { ClaudeAgentModelAliases } from '~/features/agent-runtime/claude-agent-config'
 import type { RuntimeKind } from '~/features/agent-runtime/types'
-import type { ChatRuntimeSettings } from '~/features/chat/commands/chat-response-command'
+import type { RuntimeSettings, RuntimeSettingsPatch } from '~/features/chat/commands/chat-response-command'
 
 import { persistStorage } from './persist-storage'
 
@@ -23,7 +23,7 @@ interface NewChatState {
   /** map of profileId → draft Claude Agent model alias overrides */
   lastClaudeAgentByProfile: Record<string, NewChatClaudeAgentConfig>
   lastThinkingEffort: PersistedThinkingEffort
-  lastRuntimeSettings: ChatRuntimeSettings
+  lastRuntimeSettingsByKind: Partial<Record<RuntimeKind, RuntimeSettings>>
   setLastRuntimeKind: (kind: RuntimeKind | null) => void
   setLastAgentId: (id: string | null) => void
   setLastAgentProfileId: (id: string | null) => void
@@ -31,7 +31,7 @@ interface NewChatState {
   setLastModelForRuntime: (runtimeKind: RuntimeKind, modelId: string | null) => void
   setLastClaudeAgentForProfile: (profileId: string, config: NewChatClaudeAgentConfig | null) => void
   setLastThinkingEffort: (effort: PersistedThinkingEffort) => void
-  setLastRuntimeSettings: (settings: ChatRuntimeSettings) => void
+  patchLastRuntimeSettings: (runtimeKind: RuntimeKind, patch: RuntimeSettingsPatch) => void
   getLastModelForProfile: (profileId: string) => string | undefined
   reconcileProfiles: (profileIds: string[]) => void
 }
@@ -51,6 +51,15 @@ function areClaudeAgentConfigsEqual(
     && left.modelAliases.opus === right.modelAliases.opus
 }
 
+function areRuntimeSettingsEqual(left: RuntimeSettings, right: RuntimeSettings): boolean {
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) {
+    return false
+  }
+  return leftKeys.every(key => left[key] === right[key])
+}
+
 export const useNewChatStore = create<NewChatState>()(
   persist(
     (set, get) => ({
@@ -61,7 +70,7 @@ export const useNewChatStore = create<NewChatState>()(
       lastModelByRuntime: {},
       lastClaudeAgentByProfile: {},
       lastThinkingEffort: 'high',
-      lastRuntimeSettings: { accessMode: 'full-access', interactionMode: 'default' },
+      lastRuntimeSettingsByKind: {},
       setLastRuntimeKind: (kind) => {
         set((state) => {
           if (state.lastRuntimeKind === kind) {
@@ -145,15 +154,19 @@ export const useNewChatStore = create<NewChatState>()(
           return { lastThinkingEffort: effort }
         })
       },
-      setLastRuntimeSettings: (settings) => {
+      patchLastRuntimeSettings: (runtimeKind, patch) => {
         set((state) => {
-          if (
-            state.lastRuntimeSettings.accessMode === settings.accessMode
-            && state.lastRuntimeSettings.interactionMode === settings.interactionMode
-          ) {
+          const current = state.lastRuntimeSettingsByKind[runtimeKind] ?? {}
+          const next = { ...current, ...patch }
+          if (areRuntimeSettingsEqual(current, next)) {
             return state
           }
-          return { lastRuntimeSettings: settings }
+          return {
+            lastRuntimeSettingsByKind: {
+              ...state.lastRuntimeSettingsByKind,
+              [runtimeKind]: next,
+            },
+          }
         })
       },
       getLastModelForProfile: profileId => get().lastModelByProfile[profileId],
@@ -192,7 +205,27 @@ export const useNewChatStore = create<NewChatState>()(
     {
       name: 'cradle:new-chat:v1',
       storage: persistStorage,
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => {
+        const state = persisted as Record<string, unknown>
+        if (version < 2) {
+          const legacy = state.lastRuntimeSettings as RuntimeSettings | undefined
+          if (legacy && typeof legacy === 'object') {
+            return {
+              ...state,
+              lastRuntimeSettingsByKind: {
+                codex: legacy,
+                opencode: legacy,
+              },
+            }
+          }
+          return {
+            ...state,
+            lastRuntimeSettingsByKind: {},
+          }
+        }
+        return persisted as NewChatState
+      },
     },
   ),
 )

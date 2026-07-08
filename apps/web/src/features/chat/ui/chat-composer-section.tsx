@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { toastManager } from '~/components/ui/toast'
+import type { RuntimeKind } from '~/features/agent-runtime/types'
 import { chatSurfaceId } from '~/navigation/surface-identity'
 import { useBrowserPanelStore } from '~/store/browser-panel'
 import { useLayoutStore } from '~/store/layout'
@@ -34,6 +35,7 @@ import type { SkillMentionItem } from '../mentions/skill-mention-panel'
 import type { SendMessageOptions, SendMessageResult } from '../session/use-chat-session'
 import type { useSessionAwaitSummary } from '../session/use-session-await'
 import type { ChatComposerSlashCommand } from '../slash-commands/chat-slash-commands'
+import { buildExitPlanModePatch } from '../runtime/runtime-settings-presenter'
 import { ChatAwaitBanner } from './chat-await-banner'
 import { ChatQueueList } from './chat-queue-list'
 
@@ -72,6 +74,7 @@ function readPlanSlotContent(state: ChatRuntimePlanUiSlotState): string {
 
 export function ChatComposerSection({
   sessionId,
+  runtimeKind = null,
   awaitSummary,
   queueItems,
   onCancelQueueItem,
@@ -101,6 +104,7 @@ export function ChatComposerSection({
   suspendDraftPersistence,
 }: {
   sessionId: string | null
+  runtimeKind?: RuntimeKind | null
   awaitSummary: Awaited<ReturnType<typeof useSessionAwaitSummary>['data']>
   queueItems: ChatQueueItem[]
   onCancelQueueItem: (queueItemId: string) => void
@@ -236,10 +240,7 @@ export function ChatComposerSection({
       appshotRuntime.appendFileParts(item.files)
     }
     if (item.runtimeSettings) {
-      runtimeSettings?.onChange({
-        accessMode: item.runtimeSettings.accessMode,
-        interactionMode: item.runtimeSettings.interactionMode,
-      })
+      runtimeSettings?.onChange(item.runtimeSettings)
     }
   }, [appshotRuntime, runtimeSettings])
 
@@ -333,9 +334,10 @@ export function ChatComposerSection({
         if (handled !== undefined) {
           return handled
         }
-        runtimeSettings?.onChange({ interactionMode: 'default' })
+        const exitPlanPatch = buildExitPlanModePatch(runtimeKind)
+        runtimeSettings?.onChange(exitPlanPatch)
         return sendPlanFollowUp(CODEX_PLAN_IMPLEMENTATION_PROMPT_PREFIX, {
-          runtimeSettings: { interactionMode: 'default' },
+          runtimeSettings: exitPlanPatch,
         })
       },
       onMakeGoal: (state) => {
@@ -343,9 +345,10 @@ export function ChatComposerSection({
         if (handled !== undefined) {
           return handled
         }
-        runtimeSettings?.onChange({ interactionMode: 'default' })
+        const exitPlanPatch = buildExitPlanModePatch(runtimeKind)
+        runtimeSettings?.onChange(exitPlanPatch)
         return sendPlanFollowUp(CODEX_PLAN_MAKE_GOAL_PROMPT_PREFIX, {
-          runtimeSettings: { interactionMode: 'default' },
+          runtimeSettings: exitPlanPatch,
         })
       },
       onRefine: (state) => {
@@ -379,6 +382,7 @@ export function ChatComposerSection({
     openPlanRefineTab,
     planActions,
     planRefineEditorOpen,
+    runtimeKind,
     runtimeSettings,
     sessionId,
     setBrowserPanelOpen,
@@ -390,6 +394,7 @@ export function ChatComposerSection({
       <ChatAwaitBanner awaitSummary={awaitSummary} />
       <ChatQueueList
         items={queueItems}
+        runtimeKind={runtimeKind}
         onCancel={onCancelQueueItem}
         onReorder={onReorderQueueItems}
         onEdit={handleEditQueueItem}

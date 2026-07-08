@@ -49,6 +49,15 @@ export function listRuntimeSettingsDescriptorsForProviderKind(
       || left.runtimeKind.localeCompare(right.runtimeKind))
 }
 
+export function listRuntimeSettingsFieldsForRuntime(
+  runtime: RuntimeCatalogItem | null | undefined,
+): RuntimeSettingsFieldDescriptor[] {
+  if (!runtime?.settingsSchema) {
+    return []
+  }
+  return listRuntimeSettingsFields([runtime])
+}
+
 export function listRuntimeSettingsFields(
   runtimes: RuntimeCatalogItem[],
 ): RuntimeSettingsFieldDescriptor[] {

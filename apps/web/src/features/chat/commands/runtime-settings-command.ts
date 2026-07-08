@@ -4,8 +4,9 @@ import {
   patchChatSessionsBySessionIdRuntimeSettings,
 } from '~/api-gen/sdk.gen'
 import type { ClaudeAgentModelAliases } from '~/features/agent-runtime/claude-agent-config'
+import type { RuntimeKind } from '~/features/agent-runtime/types'
 
-import type { ChatRuntimeSettings, ChatRuntimeSettingsPatch } from './chat-response-command'
+import type { RuntimeSettings, RuntimeSettingsPatch } from './chat-response-command'
 
 export interface SessionClaudeAgentConfig {
   modelAliases: ClaudeAgentModelAliases
@@ -15,20 +16,16 @@ export interface SessionClaudeAgentConfigPatch {
   modelAliases?: Partial<ClaudeAgentModelAliases>
 }
 
-export type SessionRuntimeSettingsPatch = ChatRuntimeSettingsPatch & {
+export type SessionRuntimeSettingsPatch = RuntimeSettingsPatch & {
   claudeAgent?: SessionClaudeAgentConfigPatch | null
 }
 
 export interface ChatRuntimeSettingsResponse {
   sessionId: string
-  runtimeSettings: ChatRuntimeSettings
+  runtimeKind: RuntimeKind
+  runtimeSettings: RuntimeSettings
   claudeAgent: SessionClaudeAgentConfig | null
   applied: boolean
-}
-
-export const DEFAULT_CHAT_RUNTIME_SETTINGS: ChatRuntimeSettings = {
-  accessMode: 'full-access',
-  interactionMode: 'default',
 }
 
 export const runtimeSettingsQueryKey = (sessionId: string | null) => ['chat', 'runtime-settings', sessionId ?? 'no-session'] as const

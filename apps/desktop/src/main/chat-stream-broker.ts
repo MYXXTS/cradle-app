@@ -5,9 +5,8 @@ export const DESKTOP_CHAT_STREAM_CLOSED_CHANNEL = 'chat-stream:closed'
 export const DESKTOP_CHAT_STREAM_ERROR_CHANNEL = 'chat-stream:error'
 
 export type DesktopChatStreamMode = 'response' | 'session'
-type DesktopChatRuntimeAccessMode = 'approval-required' | 'full-access'
-type DesktopChatRuntimeInteractionMode = 'default' | 'plan'
 type DesktopChatThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh'
+type RuntimeSettingsValue = string | number | boolean
 
 export interface DesktopChatStartResponseRequest {
   sessionId: string
@@ -18,10 +17,8 @@ export interface DesktopChatStartResponseRequest {
     providerTargetId?: string
     modelId?: string | null
     thinkingEffort?: DesktopChatThinkingEffort
-    runtimeSettings?: {
-      accessMode?: DesktopChatRuntimeAccessMode
-      interactionMode?: DesktopChatRuntimeInteractionMode
-    }
+    /** Provider-native session settings (e.g. permissionMode for claude-agent). */
+    runtimeSettings?: Record<string, RuntimeSettingsValue>
   }
 }
 

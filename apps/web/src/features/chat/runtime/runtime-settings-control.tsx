@@ -1,12 +1,15 @@
-// Compact Composer control for Cradle-owned runtime access and interaction settings.
+// Schema-driven composer control for provider-native runtime settings.
 import {
   HammerLine as HammerIcon,
   LockLine as LockIcon,
   RouteLine as RouteIcon,
   SafeShieldLine as ShieldCheckIcon,
 } from '@mingcute/react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { RuntimeCatalogItem } from '~/features/agent-runtime/runtime-catalog'
+import type { RuntimeSettingsFieldDescriptor } from '~/features/agent-management/runtime-settings-schema'
 import { Button } from '~/components/ui/button'
 import {
   DropdownMenu,
@@ -20,39 +23,42 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
 import { cn } from '~/lib/cn'
 
-import type { ChatRuntimeAccessMode, ChatRuntimeInteractionMode, ChatRuntimeSettings } from '../commands/chat-response-command'
+import type { RuntimeSettings, RuntimeSettingsPatch } from '../commands/chat-response-command'
+import {
+  formatRuntimeSettingsSummary,
+  labelRuntimeSettingsValue,
+  readComposerRuntimeSettingsFields,
+  readRuntimeSettingsIconKey,
+} from './runtime-settings-presenter'
 
 interface RuntimeSettingsControlProps {
-  settings: ChatRuntimeSettings
+  runtime: RuntimeCatalogItem | null | undefined
+  settings: RuntimeSettings
   applied?: boolean
   disabled?: boolean
   showLabels?: boolean
-  showInteractionLabel?: boolean
   saving?: boolean
-  onChange: (patch: Partial<ChatRuntimeSettings>) => void
+  onChange: (patch: RuntimeSettingsPatch) => void
 }
 
 export function RuntimeSettingsControl({
+  runtime,
   settings,
   applied = true,
   disabled = false,
   showLabels = true,
-  showInteractionLabel = true,
   saving = false,
   onChange,
 }: RuntimeSettingsControlProps) {
   const { t } = useTranslation('chat')
-  const accessLabel = settings.accessMode === 'full-access'
-    ? t('runtimeSettings.access.fullAccess')
-    : t('runtimeSettings.access.approvalRequired')
-  const interactionLabel = settings.interactionMode === 'plan'
-    ? t('runtimeSettings.interaction.plan')
-    : t('runtimeSettings.interaction.default')
-  const summary = t('runtimeSettings.summary', {
-    access: accessLabel,
-    interaction: interactionLabel,
-  })
+  const fields = useMemo(() => readComposerRuntimeSettingsFields(runtime), [runtime])
+  const summary = formatRuntimeSettingsSummary(t, fields, settings)
   const appliedSummary = applied ? summary : t('runtimeSettings.summary.pendingActiveRun', { summary })
+  const iconKey = readRuntimeSettingsIconKey(settings, fields)
+
+  if (!runtime?.settingsSchema || fields.length === 0) {
+    return null
+  }
 
   return (
     <DropdownMenu>
@@ -73,60 +79,109 @@ export function RuntimeSettingsControl({
               )}
               aria-label={appliedSummary}
             >
-              {settings.accessMode === 'full-access'
-                ? <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
-                : <LockIcon className="size-3.5" aria-hidden="true" />}
+              <RuntimeSettingsIcon iconKey={iconKey} />
               {showLabels && (
-                <>
-                  <span className="hidden max-w-32 truncate sm:inline">
-                    {accessLabel}
-                  </span>
-                  {showInteractionLabel && (
-                    <>
-                      <span className="hidden text-muted-foreground/60 sm:inline" aria-hidden="true">/</span>
-                      <span className="hidden max-w-24 truncate sm:inline">
-                        {interactionLabel}
-                      </span>
-                    </>
-                  )}
-                </>
+                <span className="hidden max-w-40 truncate sm:inline">
+                  {summary}
+                </span>
               )}
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent>{appliedSummary}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>{t('runtimeSettings.access.label')}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={settings.accessMode}
-          onValueChange={value => onChange({ accessMode: value as ChatRuntimeAccessMode })}
-        >
-          <DropdownMenuRadioItem value="approval-required">
-            <LockIcon className="size-3.5" aria-hidden="true" />
-            <span>{t('runtimeSettings.access.approvalRequired')}</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="full-access">
-            <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
-            <span>{t('runtimeSettings.access.fullAccess')}</span>
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t('runtimeSettings.interaction.label')}</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={settings.interactionMode}
-          onValueChange={value => onChange({ interactionMode: value as ChatRuntimeInteractionMode })}
-        >
-          <DropdownMenuRadioItem value="default">
-            <HammerIcon className="size-3.5" aria-hidden="true" />
-            <span>{t('runtimeSettings.interaction.default')}</span>
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="plan">
-            <RouteIcon className="size-3.5" aria-hidden="true" />
-            <span>{t('runtimeSettings.interaction.plan')}</span>
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
+      <DropdownMenuContent align="start" className="w-60">
+        {fields.map((field, index) => (
+          <RuntimeSettingsFieldGroup
+            key={`${field.runtimeKind}:${field.key}`}
+            field={field}
+            settings={settings}
+            showSeparator={index > 0}
+            onChange={onChange}
+          />
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+function RuntimeSettingsFieldGroup({
+  field,
+  settings,
+  showSeparator,
+  onChange,
+}: {
+  field: RuntimeSettingsFieldDescriptor
+  settings: RuntimeSettings
+  showSeparator: boolean
+  onChange: (patch: RuntimeSettingsPatch) => void
+}) {
+  const { t } = useTranslation('chat')
+  const currentValue = settings[field.key]
+
+  if (!field.enumOptions?.length) {
+    return null
+  }
+
+  return (
+    <>
+      {showSeparator && <DropdownMenuSeparator />}
+      <DropdownMenuLabel>{field.label}</DropdownMenuLabel>
+      <DropdownMenuRadioGroup
+        value={currentValue === undefined ? '' : String(currentValue)}
+        onValueChange={(value) => {
+          const selected = field.enumOptions?.find(option => String(option.value) === value)
+          if (!selected) {
+            return
+          }
+          onChange({ [field.key]: selected.value })
+        }}
+      >
+        {field.enumOptions.map((option) => {
+          const label = labelRuntimeSettingsValue(t, field, option.value)
+          return (
+            <DropdownMenuRadioItem key={String(option.value)} value={String(option.value)}>
+              <RuntimeSettingsEnumIcon fieldKey={field.key} value={String(option.value)} />
+              <span>{label}</span>
+            </DropdownMenuRadioItem>
+          )
+        })}
+      </DropdownMenuRadioGroup>
+    </>
+  )
+}
+
+function RuntimeSettingsIcon({ iconKey }: { iconKey: 'plan' | 'approval' | 'full-access' }) {
+  if (iconKey === 'plan') {
+    return <RouteIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (iconKey === 'approval') {
+    return <LockIcon className="size-3.5" aria-hidden="true" />
+  }
+  return <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
+}
+
+function RuntimeSettingsEnumIcon({ fieldKey, value }: { fieldKey: string, value: string }) {
+  if (fieldKey === 'interactionMode' && value === 'plan') {
+    return <RouteIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (fieldKey === 'interactionMode' && value === 'default') {
+    return <HammerIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (fieldKey === 'accessMode' && value === 'approval-required') {
+    return <LockIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (fieldKey === 'accessMode' && value === 'full-access') {
+    return <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (fieldKey === 'permissionMode' && value === 'plan') {
+    return <RouteIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (fieldKey === 'permissionMode' && (value === 'default' || value === 'acceptEdits')) {
+    return <HammerIcon className="size-3.5" aria-hidden="true" />
+  }
+  if (fieldKey === 'permissionMode' && value === 'bypassPermissions') {
+    return <ShieldCheckIcon className="size-3.5" aria-hidden="true" />
+  }
+  return <HammerIcon className="size-3.5 opacity-0" aria-hidden="true" />
 }

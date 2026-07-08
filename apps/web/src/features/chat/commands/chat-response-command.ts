@@ -38,15 +38,14 @@ export interface ChatResponseRequestBody {
 
 export type ChatQueueMode = 'queue'
 export type ChatQueueItemStatus = 'pending' | 'running' | 'cancelled' | 'completed' | 'failed'
-export type ChatRuntimeAccessMode = 'approval-required' | 'full-access'
-export type ChatRuntimeInteractionMode = 'default' | 'plan'
+export type RuntimeSettingsValue = string | number | boolean
+export type RuntimeSettings = Record<string, RuntimeSettingsValue>
+export type RuntimeSettingsPatch = Partial<RuntimeSettings>
 
-export interface ChatRuntimeSettings {
-  accessMode: ChatRuntimeAccessMode
-  interactionMode: ChatRuntimeInteractionMode
-}
-
-export type ChatRuntimeSettingsPatch = Partial<ChatRuntimeSettings>
+/** @deprecated Use RuntimeSettings — provider-native session settings. */
+export type ChatRuntimeSettings = RuntimeSettings
+/** @deprecated Use RuntimeSettingsPatch */
+export type ChatRuntimeSettingsPatch = RuntimeSettingsPatch
 
 export interface ChatQueueItem {
   id: string
@@ -132,10 +131,10 @@ export interface ChatSteerBody {
 }
 
 const ChatThinkingEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
-const ChatRuntimeSettingsSchema = z.object({
-  accessMode: z.enum(['approval-required', 'full-access']).default('approval-required'),
-  interactionMode: z.enum(['default', 'plan']).default('default'),
-})
+const ChatRuntimeSettingsSchema = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean()]),
+).default({})
 const ChatQueueItemSchema = z.object({
   id: z.string(),
   sessionId: z.string(),

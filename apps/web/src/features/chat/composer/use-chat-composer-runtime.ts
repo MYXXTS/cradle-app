@@ -21,6 +21,7 @@ import {
   runtimeUiSlotStatesQueryKey,
 } from '../capabilities/chat-capabilities'
 import type { ChatContextPart } from '../context/chat-context-parts'
+import { readRunRuntimeSettingsPatch } from '../runtime/runtime-settings-presenter'
 import type { SendMessageOptions, SendMessageResult } from '../session/use-chat-session'
 import { useSessionBinding } from '../session/use-session-binding'
 import type {
@@ -73,7 +74,6 @@ interface UseChatComposerRuntimeOptions {
   isReady: boolean
   workspaceId?: string | null
   composerModel?: ModelDescriptor | null
-  runtimeSettings?: SendMessageOptions['runtimeSettings']
   sendOverridesRef?: React.MutableRefObject<ChatComposerSendOverrides>
   sendMessage: (
     text: string,
@@ -130,7 +130,6 @@ export function useChatComposerRuntime({
   isReady,
   workspaceId,
   composerModel,
-  runtimeSettings,
   sendOverridesRef,
   sendMessage,
   stop,
@@ -307,16 +306,16 @@ export function useChatComposerRuntime({
         text,
         {
           ...overrides,
-          runtimeSettings: options?.runtimeSettings
-            ? { ...runtimeSettings, ...options.runtimeSettings }
-            : runtimeSettings,
           continuationMode,
+          ...(options?.runtimeSettings
+            ? { runtimeSettings: readRunRuntimeSettingsPatch(options.runtimeSettings) }
+            : {}),
         },
         files,
         contextParts,
       )
     },
-    [chatPreferences?.continuationBehavior, isReady, runtimeSettings, runtimeSteerCapability, sendMessage, sendOverridesRef],
+    [chatPreferences?.continuationBehavior, isReady, runtimeSteerCapability, sendMessage, sendOverridesRef],
   )
 
   return {

@@ -11,11 +11,19 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '~/components/ui/button'
 import { cn } from '~/lib/cn'
+import type { RuntimeKind } from '~/features/agent-runtime/types'
+import { useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
 
 import type { ChatQueueItem } from '../commands/chat-response-command'
+import {
+  formatRuntimeSettingsSummary,
+  readComposerRuntimeSettingsFields,
+  resolveRuntimeCatalogItem,
+} from '../runtime/runtime-settings-presenter'
 
 interface ChatQueueListProps {
   items: ChatQueueItem[]
+  runtimeKind?: RuntimeKind | null
   onCancel: (queueItemId: string) => void
   onReorder: (queueItemIds: string[]) => void
   onEdit: (item: ChatQueueItem) => void
@@ -26,6 +34,7 @@ interface ChatQueueListProps {
 
 export function ChatQueueList({
   items,
+  runtimeKind = null,
   onCancel,
   onReorder,
   onEdit,
@@ -34,6 +43,9 @@ export function ChatQueueList({
   title,
 }: ChatQueueListProps) {
   const { t } = useTranslation('chat')
+  const { runtimes } = useRuntimeCatalog()
+  const runtimeCatalogItem = resolveRuntimeCatalogItem(runtimes, runtimeKind)
+  const runtimeSettingsFields = readComposerRuntimeSettingsFields(runtimeCatalogItem)
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
   // Running items are already promoted to the live turn — drop them from the
   // queue list so the user does not see a stale "running" pill while the
@@ -96,16 +108,11 @@ export function ChatQueueList({
               ? t('continuation.queue.attachmentLabel', { count: item.files.length })
               : t('continuation.queue.emptyLabel')
           )
-          const runtimeAccessLabel = item.runtimeSettings.accessMode === 'full-access'
-            ? t('runtimeSettings.access.fullAccess')
-            : t('runtimeSettings.access.approvalRequired')
-          const runtimeInteractionLabel = item.runtimeSettings.interactionMode === 'plan'
-            ? t('runtimeSettings.interaction.plan')
-            : t('runtimeSettings.interaction.default')
-          const runtimeSettingsLabel = t('runtimeSettings.summary.short', {
-            access: runtimeAccessLabel,
-            interaction: runtimeInteractionLabel,
-          })
+          const runtimeSettingsLabel = formatRuntimeSettingsSummary(
+            t,
+            runtimeSettingsFields,
+            item.runtimeSettings,
+          )
           return (
             <li
               key={item.id}

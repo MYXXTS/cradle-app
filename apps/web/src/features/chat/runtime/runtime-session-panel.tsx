@@ -11,10 +11,12 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import type { UIMessage } from 'ai'
 import { useSyncExternalStore } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '~/components/ui/button'
 import { Spinner } from '~/components/ui/spinner'
 import type { RuntimeKind } from '~/features/agent-runtime/types'
+import { useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
 import { cn } from '~/lib/cn'
 import { formatElapsedRangeMs, formatPercentFromRatio } from '~/lib/number-format'
 import { useBrowserPanelStore } from '~/store/browser-panel'
@@ -43,6 +45,11 @@ import type { RenderableToolPart, ToolState } from '../rendering/tool-ui-classif
 import { describeToolCall, formatToolName } from '../rendering/tool-ui-classifier'
 import { useSessionTodos } from '../session/use-session-todos'
 import { useRuntimeSessionStatus } from './use-runtime-session-status'
+import {
+  formatRuntimeSettingsSummary,
+  readComposerRuntimeSettingsFields,
+  resolveRuntimeCatalogItem,
+} from './runtime-settings-presenter'
 
 interface RuntimeSessionPanelProps {
   sessionId: string | null
@@ -79,6 +86,8 @@ export function RuntimeSessionPanel({
   providerTargetId,
   active = true,
 }: RuntimeSessionPanelProps) {
+  const { t } = useTranslation('chat')
+  const { runtimes } = useRuntimeCatalog()
   const activeSessionId = active ? sessionId : null
   const visibleStatus = useChatStore(
     activeSessionId ? chatSelectors.visibleStatus(activeSessionId) : () => 'idle' as const,
@@ -86,6 +95,14 @@ export function RuntimeSessionPanel({
   const { data: runtimeStatus } = useRuntimeSessionStatus(activeSessionId, active, {
     refetchInterval: false,
   })
+  const effectiveRuntimeKind = runtimeStatus?.runtimeKind ?? runtimeKind ?? null
+  const runtimeCatalogItem = resolveRuntimeCatalogItem(runtimes, effectiveRuntimeKind)
+  const runtimeSettingsFields = readComposerRuntimeSettingsFields(runtimeCatalogItem)
+  const runtimeSettingsSummary = formatRuntimeSettingsSummary(
+    t,
+    runtimeSettingsFields,
+    runtimeStatus?.runtimeSettings ?? {},
+  )
   const attentionSnapshot = useSyncExternalStore(
     active ? subscribeChatAttentionSnapshots : subscribeInactiveChatAttentionSnapshots,
     () => (active ? readChatAttentionSnapshot(sessionId) : null),
@@ -171,7 +188,7 @@ export function RuntimeSessionPanel({
           <Metric label="Runtime status" value={formatStatus(status)} tone={status} />
           <Metric label="UI status" value={formatStatus(visibleStatus)} tone={visibleStatus} />
           <Metric label="Runtime" value={runtimeStatus?.runtimeKind ?? runtimeKind ?? 'unknown'} />
-          <Metric label="Mode" value={formatRuntimeSettings(runtimeStatus?.runtimeSettings)} />
+          <Metric label="Mode" value={runtimeSettingsSummary} />
           <Metric
             label="Provider"
             value={runtimeStatus?.providerTargetId ?? providerTargetId ?? 'default'}
@@ -616,15 +633,6 @@ function formatStatus(status: RuntimeSessionStatusKind | 'error'): string {
     return 'Waiting for user input'
   }
   return status.charAt(0).toUpperCase() + status.slice(1)
-}
-
-function formatRuntimeSettings(
-  settings: { accessMode: string, interactionMode: string } | null | undefined,
-): string {
-  if (!settings) {
-    return 'full-access / default'
-  }
-  return `${settings.accessMode} / ${settings.interactionMode}`
 }
 
 function formatThreadId(threadId: string): string {

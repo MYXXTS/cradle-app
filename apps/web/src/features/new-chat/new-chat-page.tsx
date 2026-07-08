@@ -18,9 +18,16 @@ import { useRegisterLayoutSlots } from '~/components/layout/use-layout-slots'
 import { Button } from '~/components/ui/button'
 import { DitheredGradientDecoration } from '~/components/ui/canvas-art'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '~/components/ui/menu'
-import { runtimeComposerUsesCollapsedInput } from '~/features/agent-runtime/use-runtime-catalog'
+import { runtimeComposerUsesCollapsedInput, useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
 import type { DraftChatComposerSubmitOptions } from '~/features/chat/composer/draft-chat-composer'
 import { DraftChatComposerWithState } from '~/features/chat/composer/draft-chat-composer'
+import {
+  isPlanRuntimeSettings,
+  mergeRuntimeSettings,
+  readDefaultRuntimeSettings,
+  readRunRuntimeSettingsPatch,
+  resolveRuntimeCatalogItem,
+} from '~/features/chat/runtime/runtime-settings-presenter'
 import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
 import { startOptimisticChatResponse } from '~/features/chat/session/optimistic-chat-turn'
 import { useComposerState } from '~/features/composer-toolbar'
@@ -279,7 +286,7 @@ function useNewChatPageOwner(
           contextParts,
           modelId: options.modelId,
           thinkingEffort: options.thinkingEffort,
-          runtimeSettings: options.runtimeSettings,
+          runtimeSettings: readRunRuntimeSettingsPatch(options.runtimeSettings),
         },
         onAccepted: () => {
           void Promise.all([
@@ -627,7 +634,19 @@ export function NewChatEntryPoint({
   )
   const hasWorkspace = !!owner.selectedWorkspace
   const hasLocalWorkspace = !!owner.selectedWorkspaceLocalPath
-  const isPlanMode = useNewChatStore(s => s.lastRuntimeSettings.interactionMode === 'plan')
+  const composerState = useComposerState({
+    context: 'new-chat',
+    workspaceId: owner.selectedWorkspace?.id ?? null,
+    enableAgents: true,
+  })
+  const { runtimes } = useRuntimeCatalog()
+  const runtimeKind = composerState.selection.runtimeKind
+  const storedRuntimeSettings = useNewChatStore(s => s.lastRuntimeSettingsByKind[runtimeKind])
+  const isPlanMode = useMemo(() => {
+    const runtime = resolveRuntimeCatalogItem(runtimes, runtimeKind)
+    const defaults = readDefaultRuntimeSettings(runtime)
+    return isPlanRuntimeSettings(mergeRuntimeSettings(defaults, storedRuntimeSettings ?? {}))
+  }, [runtimes, runtimeKind, storedRuntimeSettings])
 
   return (
     <div

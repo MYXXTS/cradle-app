@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 
 import { getSessionsByIdOptions } from '~/api-gen/@tanstack/react-query.gen'
 import { getWorkspacesByWorkspaceIdGitMergeBase } from '~/api-gen/sdk.gen'
+import { useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
 import { useRegisterLayoutSlots } from '~/components/layout/use-layout-slots'
 import { Button } from '~/components/ui/button'
 import { toastManager } from '~/components/ui/toast'
@@ -45,6 +46,7 @@ import type { MessageBubbleEditAction } from './rendering/message-bubble'
 import { clearCodexThreadGoal, setCodexThreadGoal } from './runtime/codex-app-server-bridge'
 import { RuntimeDiagnosticsPopover } from './runtime/runtime-diagnostics-popover'
 import { RuntimeSettingsControl } from './runtime/runtime-settings-control'
+import { resolveRuntimeCatalogItem } from './runtime/runtime-settings-presenter'
 import { useRuntimeSettings } from './runtime/use-runtime-settings'
 import { readUserMessageDraft } from './session/read-user-message-draft'
 import { useChatSession } from './session/use-chat-session'
@@ -126,6 +128,11 @@ export function ChatView({
   const [pendingRollbackMessageId, setPendingRollbackMessageId] = useState<string | null>(null)
   const pendingRollbackMessageIdRef = useRef<string | null>(null)
   const runtimeSettings = useRuntimeSettings(sessionId, chatActive)
+  const { runtimes } = useRuntimeCatalog()
+  const runtimeCatalogItem = useMemo(
+    () => resolveRuntimeCatalogItem(runtimes, runtimeSettings.runtimeKind ?? _runtimeKind),
+    [runtimes, runtimeSettings.runtimeKind, _runtimeKind],
+  )
   const composerRuntime = useChatComposerRuntime({
     active: chatActive,
     sessionId,
@@ -133,7 +140,6 @@ export function ChatView({
     isReady,
     workspaceId,
     composerModel,
-    runtimeSettings: runtimeSettings.loaded ? runtimeSettings.settings : undefined,
     sendOverridesRef,
     sendMessage,
     stop,
@@ -627,6 +633,7 @@ export function ChatView({
     return (
       <div className="flex min-w-0 items-center gap-1">
         <RuntimeSettingsControl
+          runtime={runtimeCatalogItem}
           settings={runtimeSettings.settings}
           applied={runtimeSettings.applied}
           disabled={!isReady || !runtimeSettings.loaded || runtimeSettings.loading}
@@ -642,6 +649,7 @@ export function ChatView({
     composerToolbar,
     hideRuntimeToolbar,
     isReady,
+    runtimeCatalogItem,
     runtimeSettings.applied,
     runtimeSettings.loaded,
     runtimeSettings.loading,
@@ -764,6 +772,7 @@ export function ChatView({
         composerStack={(
           <ChatComposerSection
             sessionId={sessionId}
+            runtimeKind={runtimeSettings.runtimeKind ?? _runtimeKind}
             awaitSummary={awaitSummary}
             queueItems={queueItems}
             onCancelQueueItem={queueItemId => void cancelQueueItem(queueItemId)}
@@ -779,6 +788,7 @@ export function ChatView({
             searchSkills={searchSkills}
             toolbar={runtimeSettingsToolbar}
             runtimeSettings={{
+              runtimeKind: runtimeSettings.runtimeKind ?? _runtimeKind,
               settings: runtimeSettings.settings,
               disabled: !isReady || !runtimeSettings.loaded || runtimeSettings.loading,
               onChange: updateRuntimeSettings,

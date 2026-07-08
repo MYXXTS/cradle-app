@@ -95,8 +95,7 @@ interface WindowTitleBarOverlayInput {
 }
 
 type ChatThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh'
-type ChatRuntimeAccessMode = 'approval-required' | 'full-access'
-type ChatRuntimeInteractionMode = 'default' | 'plan'
+type RuntimeSettingsValue = string | number | boolean
 
 // ── Desktop Chat Stream Bridge ────────────────────────────────────────────────
 
@@ -109,10 +108,8 @@ export interface DesktopChatStartResponseRequest {
     providerTargetId?: string
     modelId?: string | null
     thinkingEffort?: ChatThinkingEffort
-    runtimeSettings?: {
-      accessMode?: ChatRuntimeAccessMode
-      interactionMode?: ChatRuntimeInteractionMode
-    }
+    /** Provider-native session settings (e.g. permissionMode for claude-agent). */
+    runtimeSettings?: Record<string, RuntimeSettingsValue>
   }
 }
 
