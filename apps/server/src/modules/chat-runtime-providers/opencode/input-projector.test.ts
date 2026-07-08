@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { projectOpencodePromptParts, projectOpencodeQuickQuestionParts, readOpencodeSlashCommandInvocation } from './input-projector'
+import {
+  projectOpencodePromptParts,
+  projectOpencodeQuickQuestionParts,
+  projectOpencodeReasoningVariant,
+  readOpencodeSlashCommandInvocation,
+} from './input-projector'
 
 describe('projectOpencodePromptParts', () => {
   it('preserves AI SDK file parts as OpenCode file parts', () => {
@@ -55,6 +60,17 @@ describe('projectOpencodeQuickQuestionParts', () => {
     expect(parts[0].text).toContain('user: Use opencode for this session.')
     expect(parts[0].text).toContain('assistant: Understood.')
     expect(parts[0].text).toContain('<question>\nWhat did we decide?\n</question>')
+  })
+})
+
+describe('projectOpencodeReasoningVariant', () => {
+  it('projects Cradle thinking effort values to opencode prompt variants', () => {
+    expect(projectOpencodeReasoningVariant('low')).toBe('low')
+    expect(projectOpencodeReasoningVariant('medium')).toBe('medium')
+    expect(projectOpencodeReasoningVariant('high')).toBe('high')
+    expect(projectOpencodeReasoningVariant('xhigh')).toBe('xhigh')
+    expect(projectOpencodeReasoningVariant(null)).toBeUndefined()
+    expect(projectOpencodeReasoningVariant(undefined)).toBeUndefined()
   })
 })
 

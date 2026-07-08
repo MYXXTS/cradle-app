@@ -17,6 +17,7 @@ import type { UIMessage, UIMessageChunk } from 'ai'
 import type {
   CancelTurnInput,
   ChatRuntime,
+  ChatThinkingEffort,
   ExecuteShellCommandInput,
   ExecuteShellCommandResult,
   ForkRuntimeSessionInput,
@@ -44,6 +45,7 @@ import type {
   RuntimeLiveResourceLease,
   RuntimeModelCatalog,
   RuntimePresentationCapabilities,
+  RuntimeProviderTargetProfile,
   RuntimeSession,
   RuntimeUiSlotState,
   RuntimeUserInputQuestion,
@@ -57,6 +59,7 @@ import type {
 import { ProviderErrors, ProviderRuntimeError } from '../../chat-runtime/runtime-provider-types'
 import type { RuntimeKind } from '../../provider-contracts/types'
 import { providerChunk } from '../kit/chunk-mapper'
+import { extractProviderInputText } from '../kit/input-projector'
 import { requestProviderToolApproval } from '../kit/permission-bridge'
 import { readProviderStateSnapshot } from '../kit/state-snapshot'
 import { resolveOpencodeConfig } from './config'
@@ -67,8 +70,11 @@ import {
   readOpencodeTerminalAssistantForTurn,
 } from './event-stream'
 import {
+  type OpencodePromptAsyncBody,
+  type OpencodePromptBody,
   projectOpencodePromptParts,
   projectOpencodeQuickQuestionParts,
+  projectOpencodeReasoningVariant,
   readOpencodeSlashCommandInvocation,
 } from './input-projector'
 import {
@@ -116,6 +122,8 @@ interface OpencodePermissionApprovalRecord {
 }
 
 type OpencodePermissionAskedProperties = Extract<OpencodeEvent, { type: 'permission.asked' }>['properties']
+
+const OPENCODE_SESSION_TITLE_MAX_LENGTH = 60
 
 export function createOpencodeProvider(ctx: ProviderContext): ChatRuntime {
   return new OpencodeProvider(ctx)
@@ -800,7 +808,7 @@ export class OpencodeProvider implements ChatRuntime {
       )
     }
 
-    const title = sessionResult.data.title.trim()
+    const title = normalizeOpencodeSessionTitle(sessionResult.data.title)
     if (!title) {
       return null
     }
@@ -956,6 +964,30 @@ export class OpencodeProvider implements ChatRuntime {
     let asyncPromptSessionBecameIdle = false
     let eventStreamRecoveryStarted = false
     let retriedWithFreshSession = false
+    const promptText = extractProviderInputText(input.message).trim()
+    const shouldGenerateTitle = shouldGenerateOpencodeSessionTitle({
+      history: input.history,
+      originalMessages: input.originalMessages,
+      promptText,
+      reportSessionTitle: input.reportSessionTitle,
+    })
+    let titleGenerationScheduled = false
+    const scheduleTitleGeneration = (): void => {
+      if (!shouldGenerateTitle || titleGenerationScheduled) {
+        return
+      }
+      titleGenerationScheduled = true
+      this.generateOpencodeSessionTitleInBackground({
+        runtimeSession: input.runtimeSession,
+        profile: input.profile,
+        promptText,
+        modelId: input.modelId ?? resolved.modelId,
+        workspaceId: input.workspaceId,
+        workspacePath: input.workspacePath,
+        agentId: input.agentId,
+        reportSessionTitle: input.reportSessionTitle,
+      })
+    }
 
     const submitAsyncPromptTurn = async (): Promise<void> => {
       asyncPromptDispatchStarted = true
@@ -975,6 +1007,7 @@ export class OpencodeProvider implements ChatRuntime {
         model: resolved.model,
         agent: readOpencodeTurnAgent(input),
         useAsyncPrompt: true,
+        thinkingEffort: input.providerOptions?.thinkingEffort ?? null,
         systemPrompt: input.systemPrompt,
         message: input.message,
       })
@@ -1017,6 +1050,7 @@ export class OpencodeProvider implements ChatRuntime {
       }
       this._lastUsage = projector.usage
       chunks.push(projector.finish(data.info))
+      scheduleTitleGeneration()
       chunks.close()
     }
 
@@ -1071,6 +1105,7 @@ export class OpencodeProvider implements ChatRuntime {
           sessionId: opencodeSessionId,
           workspacePath: input.workspacePath,
           baselineMessageIds: asyncPromptBaselineMessageIds,
+          onCompleted: scheduleTitleGeneration,
         })
         if (recovered) {
           eventStreamRecoveryStarted = true
@@ -1089,6 +1124,7 @@ export class OpencodeProvider implements ChatRuntime {
         sessionId: opencodeSessionId,
         workspacePath: input.workspacePath,
         baselineMessageIds: asyncPromptBaselineMessageIds,
+        onCompleted: scheduleTitleGeneration,
       })
       if (recovered) {
         return
@@ -1190,6 +1226,7 @@ export class OpencodeProvider implements ChatRuntime {
                 sessionId: opencodeSessionId,
                 workspacePath: input.workspacePath,
                 assistant: terminalAssistant,
+                onCompleted: scheduleTitleGeneration,
               })
               return
             }
@@ -1455,6 +1492,7 @@ export class OpencodeProvider implements ChatRuntime {
     sessionId: string
     workspacePath?: string
     assistant: OpencodeAssistantMessage
+    onCompleted?: () => void
   }): Promise<void> {
     if (input.assistant.error) {
       input.chunks.fail(new ProviderRuntimeError(
@@ -1503,6 +1541,7 @@ export class OpencodeProvider implements ChatRuntime {
 
     this._lastUsage = input.projector.usage
     input.chunks.push(input.projector.finish(input.assistant))
+    input.onCompleted?.()
     input.chunks.close()
   }
 
@@ -1513,6 +1552,7 @@ export class OpencodeProvider implements ChatRuntime {
     sessionId: string
     workspacePath?: string
     baselineMessageIds: ReadonlySet<string>
+    onCompleted?: () => void
   }): Promise<boolean> {
     if (input.chunks.done) {
       return true
@@ -1545,8 +1585,45 @@ export class OpencodeProvider implements ChatRuntime {
       sessionId: input.sessionId,
       workspacePath: input.workspacePath,
       assistant: terminalAssistant,
+      onCompleted: input.onCompleted,
     })
     return true
+  }
+
+  private generateOpencodeSessionTitleInBackground(input: {
+    runtimeSession: RuntimeSession
+    profile: RuntimeProviderTargetProfile | null
+    promptText: string
+    modelId: string | null
+    workspaceId?: string | null
+    workspacePath?: string
+    agentId?: string | null
+    reportSessionTitle?: (title: string) => void
+  }): void {
+    setTimeout(() => {
+      void (async () => {
+        try {
+          if (!input.workspacePath) {
+            return
+          }
+          const title = await this.generateSessionTitle({
+            runtimeSession: input.runtimeSession,
+            profile: input.profile,
+            promptText: input.promptText,
+            modelId: input.modelId,
+            workspaceId: input.workspaceId,
+            workspacePath: input.workspacePath,
+            agentId: input.agentId,
+          })
+          if (title) {
+            input.reportSessionTitle?.(title)
+          }
+        }
+        catch {
+          // Title generation is opportunistic and must not affect the active turn.
+        }
+      })()
+    }, 0)
   }
 
   private async readAsyncPromptBaselineMessageIds(input: {
@@ -1827,6 +1904,7 @@ async function submitOpencodeTurn(
     model: { providerID: string, modelID: string } | null
     agent: string
     useAsyncPrompt: boolean
+    thinkingEffort?: ChatThinkingEffort | null
     systemPrompt?: string
     message: StreamTurnInput['message']
   },
@@ -1834,6 +1912,14 @@ async function submitOpencodeTurn(
   operation: 'session.command' | 'session.prompt' | 'session.promptAsync'
   result: OpencodeTurnResult
 }> {
+  const variant = projectOpencodeReasoningVariant(input.thinkingEffort)
+  const buildBody = (): OpencodePromptBody & OpencodePromptAsyncBody => ({
+    ...(input.model ? { model: input.model } : {}),
+    agent: input.agent,
+    ...(variant ? { variant } : {}),
+    ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
+    parts: projectOpencodePromptParts(input.message),
+  })
   const invocation = readOpencodeSlashCommandInvocation(input.message)
   if (invocation) {
     const commandList = await resource.client.command.list({
@@ -1845,12 +1931,7 @@ async function submitOpencodeTurn(
         result: normalizeOpencodeTurnResult(await resource.client.session.prompt({
           path: { id: input.sessionId },
           query: { directory: input.workspacePath },
-          body: {
-            ...(input.model ? { model: input.model } : {}),
-            agent: input.agent,
-            ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
-            parts: projectOpencodePromptParts(input.message),
-          },
+          body: buildBody(),
         })),
       }
     }
@@ -1877,12 +1958,7 @@ async function submitOpencodeTurn(
     const result = await resource.client.session.promptAsync({
       path: { id: input.sessionId },
       query: { directory: input.workspacePath },
-      body: {
-        ...(input.model ? { model: input.model } : {}),
-        agent: input.agent,
-        ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
-        parts: projectOpencodePromptParts(input.message),
-      },
+      body: buildBody(),
     })
     return {
       operation: 'session.promptAsync',
@@ -1898,12 +1974,7 @@ async function submitOpencodeTurn(
     result: normalizeOpencodeTurnResult(await resource.client.session.prompt({
       path: { id: input.sessionId },
       query: { directory: input.workspacePath },
-      body: {
-        ...(input.model ? { model: input.model } : {}),
-        agent: input.agent,
-        ...(input.systemPrompt ? { system: input.systemPrompt } : {}),
-        parts: projectOpencodePromptParts(input.message),
-      },
+      body: buildBody(),
     })),
   }
 }
@@ -1923,6 +1994,34 @@ function normalizeOpencodeTurnResult(result: {
 
 function readOpencodeTurnAgent(input: StreamTurnInput): string {
   return input.providerOptions?.runtimeSettings?.interactionMode === 'plan' ? 'plan' : 'build'
+}
+
+function shouldGenerateOpencodeSessionTitle(input: {
+  history?: StreamTurnInput['history']
+  originalMessages?: StreamTurnInput['originalMessages']
+  promptText: string
+  reportSessionTitle?: (title: string) => void
+}): boolean {
+  return Boolean(input.reportSessionTitle)
+    && (input.originalMessages ? input.originalMessages.length <= 1 : !input.history || input.history.length === 0)
+    && input.promptText.length > 0
+}
+
+function normalizeOpencodeSessionTitle(title: string | null | undefined): string | null {
+  const normalized = title
+    ?.replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^title\s*:\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/[.!?。！？]+$/g, '')
+    .trim()
+  if (!normalized) {
+    return null
+  }
+  if (normalized.length <= OPENCODE_SESSION_TITLE_MAX_LENGTH) {
+    return normalized
+  }
+  return normalized.slice(0, OPENCODE_SESSION_TITLE_MAX_LENGTH).trim().replace(/[.!?。！？]+$/g, '') || null
 }
 
 function isOpencodeSessionStatusEvent(

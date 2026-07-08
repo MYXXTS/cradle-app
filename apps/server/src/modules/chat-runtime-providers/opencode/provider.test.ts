@@ -4,6 +4,7 @@ import type {
   Part as OpencodePart,
 } from '@opencode-ai/sdk'
 import type { Event as OpencodeRootEvent } from '@opencode-ai/sdk/v2'
+import type { UIMessageChunk } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 
 import type {
@@ -18,6 +19,14 @@ import type { OpencodeRuntimeResource } from './runtime-context'
 
 type OpencodeAssistantError = NonNullable<OpencodeAssistantMessage['error']>
 type OpencodeEvent = OpencodeLegacyEvent | OpencodeRootEvent
+
+async function drainStream(stream: AsyncGenerator<UIMessageChunk>): Promise<UIMessageChunk[]> {
+  const chunks: UIMessageChunk[] = []
+  for await (const chunk of stream) {
+    chunks.push(chunk)
+  }
+  return chunks
+}
 
 class AsyncEventStream<T> implements AsyncIterable<T> {
   private readonly backlog: T[] = []
@@ -166,7 +175,7 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
     fileStatusData: [],
     appAgentsData: [],
   }
-  const promptAsync = vi.fn(async (_options: { body: { messageID?: string, agent?: string } }) => ({
+  const promptAsync = vi.fn(async (_options: { body: { messageID?: string, agent?: string, variant?: string } }) => ({
     data: undefined,
     error: undefined,
   }))
@@ -206,6 +215,18 @@ function createFakeResource(events: AsyncEventStream<OpencodeEvent>) {
     status: vi.fn(async () => ({ data: state.sessionStatusData, error: undefined })),
     todo: vi.fn(async () => ({ data: state.sessionTodoData, error: undefined })),
     diff: vi.fn(async () => ({ data: state.sessionDiffData, error: undefined })),
+    summarize: vi.fn(async () => ({ data: true, error: undefined })),
+    update: vi.fn(async (options?: { body?: { title?: string } }) => {
+      if (
+        state.sessionGetData
+        && typeof state.sessionGetData === 'object'
+        && 'title' in state.sessionGetData
+        && typeof options?.body?.title === 'string'
+      ) {
+        state.sessionGetData = { ...state.sessionGetData, title: options.body.title }
+      }
+      return { data: state.sessionGetData, error: undefined }
+    }),
   }
   const resource = {
     client: {
@@ -949,6 +970,120 @@ describe('opencodeProvider streamTurn', () => {
     await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
   })
 
+  it('generates and reports an OpenCode session title after the first successful turn', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    fake.state.sessionGetData = {
+      id: 'ses_1',
+      projectID: 'project-1',
+      directory: '/tmp/workspace',
+      title: 'Title: Implement auth flow.',
+      version: '1.17.11',
+      time: { created: 1, updated: 2 },
+    }
+    const reportSessionTitle = vi.fn()
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-title',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Implement auth flow' }],
+      },
+      modelId: 'openai/gpt-5',
+      workspacePath: '/tmp/workspace',
+      reportSessionTitle,
+    })
+    const drained = drainStream(stream)
+
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const assistant = assistantMessage({
+      id: 'msg_assistant',
+      parentID: 'msg_user',
+      time: { created: 1 },
+    })
+    events.push({ type: 'message.updated', properties: { info: assistant } })
+    events.push({ type: 'message.part.updated', properties: { part: textPart() } })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 2 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    await drained
+    await vi.waitFor(() => expect(reportSessionTitle).toHaveBeenCalledWith('Implement auth flow'))
+    expect(fake.session.summarize).toHaveBeenCalledWith({
+      path: { id: 'ses_1' },
+      query: { directory: '/tmp/workspace' },
+      body: { providerID: 'openai', modelID: 'gpt-5' },
+    })
+    expect(fake.session.get).toHaveBeenCalledWith({
+      path: { id: 'ses_1' },
+      query: { directory: '/tmp/workspace' },
+    })
+    expect(fake.session.update).toHaveBeenCalledWith({
+      path: { id: 'ses_1' },
+      query: { directory: '/tmp/workspace' },
+      body: { title: 'Implement auth flow' },
+    })
+  })
+
+  it('does not regenerate the OpenCode session title on later turns', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const reportSessionTitle = vi.fn()
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-title-later-turn',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-2',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Continue implementation' }],
+      },
+      history: [{
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Implement auth flow' }],
+      }],
+      modelId: 'openai/gpt-5',
+      workspacePath: '/tmp/workspace',
+      reportSessionTitle,
+    })
+    const drained = drainStream(stream)
+
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const assistant = assistantMessage({
+      id: 'msg_assistant',
+      parentID: 'msg_user',
+      time: { created: 1 },
+    })
+    events.push({ type: 'message.updated', properties: { info: assistant } })
+    events.push({ type: 'message.part.updated', properties: { part: textPart() } })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 2 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    await drained
+    expect(fake.session.summarize).not.toHaveBeenCalled()
+    expect(reportSessionTitle).not.toHaveBeenCalled()
+  })
+
   it('passes the plan agent for plan-mode turns', async () => {
     const events = new AsyncEventStream<OpencodeEvent>()
     const fake = createFakeResource(events)
@@ -1002,6 +1137,95 @@ describe('opencodeProvider streamTurn', () => {
     await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'text-end' } })
     await expect(stream.next()).resolves.toMatchObject({ done: false, value: { type: 'finish' } })
     await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('forwards thinkingEffort as the opencode prompt variant', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-effort',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Think hard' }],
+      },
+      workspacePath: '/tmp/workspace',
+      providerOptions: {
+        thinkingEffort: 'high',
+      },
+    })
+
+    const chunksPromise = drainStream(stream)
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const promptBody = fake.promptAsync.mock.calls[0]![0].body
+    expect(promptBody.variant).toBe('high')
+    const assistant = assistantMessage({
+      id: 'msg_assistant',
+      parentID: 'msg_user',
+      time: { created: 1 },
+    })
+    events.push({ type: 'message.updated', properties: { info: assistant } })
+    events.push({ type: 'message.part.updated', properties: { part: textPart() } })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 2 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    const chunks = await chunksPromise
+    expect(chunks.some(chunk => chunk.type === 'text-delta' && chunk.delta === 'Done.')).toBe(true)
+    expect(chunks[chunks.length - 1]).toMatchObject({ type: 'finish' })
+  })
+
+  it('omits the variant field when thinkingEffort is not set', async () => {
+    const events = new AsyncEventStream<OpencodeEvent>()
+    const fake = createFakeResource(events)
+    const provider = new OpencodeProvider({ readSecret: () => 'secret' })
+    const stream = provider.streamTurn({
+      runId: 'run-no-effort',
+      runtimeSession: createRuntimeSession(fake.resource),
+      profile: null,
+      message: {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ type: 'text', text: 'Just do it' }],
+      },
+      workspacePath: '/tmp/workspace',
+    })
+
+    const chunksPromise = drainStream(stream)
+    await vi.waitFor(() => expect(fake.promptAsync).toHaveBeenCalledTimes(1))
+    const promptBody = fake.promptAsync.mock.calls[0]![0].body
+    expect(promptBody).not.toHaveProperty('variant')
+    const assistant = assistantMessage({
+      id: 'msg_assistant',
+      parentID: 'msg_user',
+      time: { created: 1 },
+    })
+    events.push({ type: 'message.updated', properties: { info: assistant } })
+    events.push({ type: 'message.part.updated', properties: { part: textPart() } })
+    events.push({
+      type: 'message.updated',
+      properties: {
+        info: {
+          ...assistant,
+          time: { created: 1, completed: 2 },
+          finish: 'stop',
+        },
+      },
+    })
+
+    const chunks = await chunksPromise
+    expect(chunks.some(chunk => chunk.type === 'text-delta' && chunk.delta === 'Done.')).toBe(true)
+    expect(chunks[chunks.length - 1]).toMatchObject({ type: 'finish' })
   })
 
   it('fails fast when the event stream subscription fails before async prompt recovery is ready', async () => {

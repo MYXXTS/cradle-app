@@ -182,6 +182,9 @@ function projectOpenCodeModel(
       ...(model.modalities?.input ? { inputModalities: model.modalities.input } : {}),
       ...(model.modalities?.output ? { outputModalities: model.modalities.output } : {}),
       reasoning: model.reasoning,
+      ...(model.reasoning
+        ? { reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] as const }
+        : {}),
       toolCall: model.tool_call,
       temperature: model.temperature,
       ...(model.cost

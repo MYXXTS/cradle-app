@@ -4,10 +4,10 @@
  * Position: opencode provider package boundary from Cradle message input to opencode session.prompt body.
  */
 
-import type { FilePartInput, TextPartInput } from '@opencode-ai/sdk'
+import type { FilePartInput, SessionPromptAsyncData, SessionPromptData, TextPartInput } from '@opencode-ai/sdk'
 import type { UIMessage } from 'ai'
 
-import type { StreamTurnInput } from '../../chat-runtime/runtime-provider-types'
+import type { ChatThinkingEffort, StreamTurnInput } from '../../chat-runtime/runtime-provider-types'
 import {
   extractProviderInputText,
   projectProviderInputParts,
@@ -101,4 +101,28 @@ function projectOpenCodeFilePart(part: Extract<ReturnType<typeof projectProvider
     ...(part.filename ? { filename: part.filename } : {}),
     url: part.url,
   }
+}
+
+/**
+ * opencode accepts reasoning effort as a per-turn `variant` field on the prompt
+ * body (message-scoped, one-shot). The `@opencode-ai/sdk` v1 types predate this
+ * field, so we extend the generated body types with the optional `variant`.
+ */
+export type OpencodeReasoningVariant = 'low' | 'medium' | 'high' | 'xhigh'
+
+type OpencodePromptBodyBase = Omit<NonNullable<SessionPromptData['body']>, 'parts'> & {
+  variant?: OpencodeReasoningVariant
+}
+export type OpencodePromptBody = OpencodePromptBodyBase & { parts: OpencodePromptPartInput[] }
+type OpencodePromptAsyncBodyBase = Omit<NonNullable<SessionPromptAsyncData['body']>, 'parts'> & {
+  variant?: OpencodeReasoningVariant
+}
+export type OpencodePromptAsyncBody = OpencodePromptAsyncBodyBase & { parts: OpencodePromptPartInput[] }
+
+export function projectOpencodeReasoningVariant(
+  effort: ChatThinkingEffort | null | undefined,
+): OpencodeReasoningVariant | undefined {
+  return effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh'
+    ? effort
+    : undefined
 }

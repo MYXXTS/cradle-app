@@ -6,6 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { AppError } from '../../../errors/app-error'
 import { currentUnixSeconds } from '../../../helpers/time'
 import { db } from '../../../infra'
+import { runtimeOwnsProviderTarget } from '../../provider-contracts/runtime-compatibility'
 import {
   cancelQueuedSessionItem,
   commitSessionEvents,
@@ -41,6 +42,20 @@ import {
 export interface SessionQueueApiDeps {
   finalizeInterruptedPersistedStreamingSessionIfIdle: (sessionId: string) => Promise<void>
   scheduleSessionQueueDrain: (sessionId: string) => void
+}
+
+function readPersistedQueueProviderTargetId(input: {
+  providerTargetId: string | null | undefined
+  runtimeKind: string | null | undefined
+}): string | null {
+  const providerTargetId = input.providerTargetId?.trim() || null
+  if (
+    providerTargetId
+    && runtimeOwnsProviderTarget(input.runtimeKind ?? 'standard', providerTargetId)
+  ) {
+    return null
+  }
+  return providerTargetId
 }
 
 export function listSessionQueueItems(sessionId: string): ChatSessionQueueItemDto[] {
@@ -96,6 +111,10 @@ export async function enqueueSessionQueueItem(
     baseRuntimeSettings,
     normalizeRuntimeSettingsPatch(input.runtimeSettings),
   )
+  const providerTargetId = readPersistedQueueProviderTargetId({
+    providerTargetId: input.providerTargetId,
+    runtimeKind: context.session.runtimeKind,
+  })
   const row = {
     id: randomUUID(),
     sessionId: input.sessionId,
@@ -104,7 +123,7 @@ export async function enqueueSessionQueueItem(
     text,
     filesJson: serializeQueueFiles(files),
     contextPartsJson: serializeQueueContextParts(contextParts),
-    providerTargetId: input.providerTargetId?.trim() || null,
+    providerTargetId,
     modelId: input.modelId?.trim() || null,
     thinkingEffort: readPersistedThinkingEffort(input.thinkingEffort),
     permissionMode: null,
@@ -270,6 +289,10 @@ export async function updateSessionQueueItem(
     baseRuntimeSettings,
     normalizeRuntimeSettingsPatch(input.runtimeSettings),
   )
+  const providerTargetId = readPersistedQueueProviderTargetId({
+    providerTargetId: input.providerTargetId,
+    runtimeKind: session.runtimeKind,
+  })
   const now = currentUnixSeconds()
   await commitSessionEvents(input.sessionId, [
     {
@@ -280,7 +303,7 @@ export async function updateSessionQueueItem(
         text,
         filesJson: serializeQueueFiles(files),
         contextPartsJson: serializeQueueContextParts(contextParts),
-        providerTargetId: input.providerTargetId?.trim() || null,
+        providerTargetId,
         modelId: input.modelId?.trim() || null,
         thinkingEffort: readPersistedThinkingEffort(input.thinkingEffort),
         runtimeAccessMode: runtimeSettings.accessMode,
