@@ -33,7 +33,10 @@ function model(overrides: Partial<ModelDescriptor> & { id: string }): ModelDescr
 
 describe('readComposerThinkingEffort', () => {
   it('normalizes only supported effort values', () => {
+    expect(readComposerThinkingEffort('none')).toBe('none')
+    expect(readComposerThinkingEffort('minimal')).toBe('minimal')
     expect(readComposerThinkingEffort('xhigh')).toBe('xhigh')
+    expect(readComposerThinkingEffort('max')).toBe('max')
     expect(readComposerThinkingEffort('ultra')).toBeNull()
     expect(readComposerThinkingEffort(undefined)).toBeNull()
   })

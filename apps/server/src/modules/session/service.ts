@@ -14,8 +14,8 @@ import { parseJsonObjectOrEmpty } from '../../helpers/json-record'
 import { db } from '../../infra'
 import { commitSessionEventsWithProjection } from '../chat-runtime/es/commands'
 import type {
-  RuntimeSettingsPatch,
   ChatThinkingEffort,
+  RuntimeSettingsValue,
 } from '../chat-runtime/runtime-provider-types'
 import type { SessionClaudeAgentConfigPatchInput } from '../chat-runtime/runtime-settings'
 import {
@@ -56,7 +56,7 @@ export type SessionView = Session & {
   isolationBoundaryRequired: boolean
 }
 
-type SessionRuntimeSettingsCreatePatch = RuntimeSettingsPatch & {
+type SessionRuntimeSettingsCreatePatch = Record<string, RuntimeSettingsValue | SessionClaudeAgentConfigPatchInput | null | undefined> & {
   claudeAgent?: SessionClaudeAgentConfigPatchInput | null
 }
 
@@ -69,7 +69,7 @@ const SessionCreateInputSchema = z.object({
   sideContextSource: z.enum(['provider-native', 'cradle-context']).nullable().optional(),
   providerTargetId: z.string().optional(),
   modelId: z.string().nullable().optional(),
-  thinkingEffort: z.enum(['low', 'medium', 'high', 'xhigh']).nullable().optional(),
+  thinkingEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullable().optional(),
   runtimeKind: z.string().trim().min(1).optional(),
   runtimeSettings: z.unknown().optional(),
   agentId: z.string().nullable().optional(),
@@ -139,10 +139,13 @@ export function readSessionThinkingEffortPreference(
 ): ChatThinkingEffort | null {
   const config = parseTrustedConfigJson(configJson)
   switch (config.requestedThinkingEffort) {
+    case 'none':
+    case 'minimal':
     case 'low':
     case 'medium':
     case 'high':
     case 'xhigh':
+    case 'max':
       return config.requestedThinkingEffort
     default:
       return null
