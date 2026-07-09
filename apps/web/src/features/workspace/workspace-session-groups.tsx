@@ -5,7 +5,6 @@ import {
   More2Line as MoreHorizontalIcon,
   PencilLine as PencilIcon,
   PlusLine as PlusIcon,
-  UpSmallLine as ChevronUpIcon,
 } from '@mingcute/react'
 import type { TFunction } from 'i18next'
 import { memo, useCallback, useMemo } from 'react'
@@ -109,8 +108,8 @@ export const WorkspaceSessionGroupSection = memo(({
           data-testid={`session-group-toggle-${group.id}`}
         >
           {expanded
-            ? <ChevronUpIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            : <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+            ? <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            : <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground -rotate-90 transition-transform" aria-hidden="true" />}
           <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/80" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-sidebar-foreground/90">
             {group.title}

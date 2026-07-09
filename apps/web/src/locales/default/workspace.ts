@@ -257,6 +257,25 @@ export default {
   'workspace.dialog.newFolderTitle': 'New folder',
   'workspace.dialog.rename': 'Rename',
   'workspace.dialog.renameTitle': 'Rename workspace',
+  'workspace.dialog.addWorkspaceTitle': 'Add workspace',
+  'workspace.dialog.addWorkspaceLocalHost': 'This Mac',
+  'workspace.dialog.addWorkspaceNoRemoteHosts': 'No remote hosts configured.',
+  'workspace.dialog.addWorkspaceLocalTitle': 'Choose a local project folder',
+  'workspace.dialog.addWorkspaceLocalDescription':
+    'Local workspaces use this machine as host and keep your files where they are.',
+  'workspace.dialog.addWorkspaceChooseLocal': 'Choose folder',
+  'workspace.dialog.selectedWorkspace': 'Selected workspace',
+  'workspace.dialog.loadingFiles': 'Loading files…',
+  'workspace.dialog.remoteBrowseTitle': 'Browse remote folder',
+  'workspace.dialog.remoteBrowseDescription':
+    'Pick a directory on {{hostName}}. Cradle will register it there if needed, then add it here.',
+  'workspace.dialog.remoteBrowseHint':
+    'Browse {{hostName}}’s filesystem to add any folder — not only workspaces already listed below.',
+  'workspace.dialog.remoteBrowseAction': 'Browse folder',
+  'workspace.dialog.remoteExistingLabel': 'Already on remote',
+  'workspace.dialog.remoteMountExisting': 'Add to this Mac',
+  'workspace.dialog.remoteNoExistingWorkspaces':
+    'No workspaces on this host yet. Browse a folder to create one remotely and add it here.',
   'workspace.toast.createFailed': 'Workspace item could not be created',
   'workspace.toast.multiFolderCreateFailed': 'Multi-folder workspace could not be created',
   'workspace.toast.multiFolderCreated': 'Multi-folder workspace created',
@@ -266,4 +285,6 @@ export default {
   'workspace.toast.openDefaultFailed': 'Workspace could not be opened',
   'workspace.toast.openInFinderFailed': 'Workspace could not be opened in Finder',
   'workspace.toast.renameFailed': 'Workspace could not be renamed',
+  'workspace.toast.remoteWorkspaceCreated': 'Remote workspace added',
+  'workspace.toast.remoteWorkspaceCreateFailed': 'Remote workspace could not be added',
 } as const

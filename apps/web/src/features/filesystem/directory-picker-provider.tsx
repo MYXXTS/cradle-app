@@ -7,6 +7,11 @@ import { isElectron, nativeIpc } from '~/lib/electron'
 const DirectoryPickerOptionsSchema = z.object({
   title: z.string().default('Select Directory'),
   description: z.string().optional(),
+  /**
+   * Browse a connected remote Cradle Server filesystem instead of this machine.
+   * Always uses the in-app directory dialog (native OS pickers only see local disks).
+   */
+  hostId: z.string().min(1).optional(),
 }).default({ title: 'Select Directory' })
 
 type DirectoryPickerOptions = z.input<typeof DirectoryPickerOptionsSchema>
@@ -33,8 +38,8 @@ export function DirectoryPickerProvider({ children }: { children: React.ReactNod
 
   const selectDirectory = async (rawOptions?: DirectoryPickerOptions) => {
     const options = DirectoryPickerOptionsSchema.parse(rawOptions)
-    // In Electron, use the native OS dialog
-    if (isElectron && nativeIpc) {
+    // Native OS dialog only sees local disks — remote hosts always use the in-app browser.
+    if (!options.hostId && isElectron && nativeIpc) {
       const result = await nativeIpc.native.showOpenDialog({
         title: options.title,
         properties: ['openDirectory'],
@@ -42,7 +47,6 @@ export function DirectoryPickerProvider({ children }: { children: React.ReactNod
       return result.canceled ? null : (result.filePaths[0] ?? null)
     }
 
-    // In browser, fall back to the custom dialog
     return new Promise<string | null>((resolve) => {
       resolverRef.current = resolve
       setDialogProps(options)
@@ -70,7 +74,9 @@ export function DirectoryPickerProvider({ children }: { children: React.ReactNod
         open={open}
         onOpenChange={handleOpenChange}
         onSelect={handleSelect}
-        {...dialogProps}
+        title={dialogProps.title}
+        description={dialogProps.description}
+        hostId={dialogProps.hostId}
       />
     </DirectoryPickerContext>
   )

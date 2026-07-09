@@ -9,7 +9,7 @@ import {
   MonitorLine as MonitorIcon,
   RightSmallLine as ChevronRightIcon,
 } from '@mingcute/react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
@@ -25,6 +25,7 @@ import {
 } from '~/components/ui/dialog'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { Spinner } from '~/components/ui/spinner'
+import { fetchRemoteUpstreamJson } from '~/features/remote-hosts/upstream-fetch'
 import { cn } from '~/lib/cn'
 
 const LAST_PATH_KEY = 'directory-browser-last-path'
@@ -59,6 +60,41 @@ interface DirectoryBrowserDialogProps {
   onSelect: (path: string) => void
   title?: string
   description?: string
+  /**
+   * When set, browse the connected remote Cradle Server filesystem via
+   * `/remote-hosts/:hostId/upstream/filesystem/*` instead of the local server.
+   */
+  hostId?: string | null
+}
+
+function lastPathStorageKey(hostId: string | null | undefined): string {
+  return hostId ? `${LAST_PATH_KEY}:remote:${hostId}` : LAST_PATH_KEY
+}
+
+async function browseFilesystem(
+  hostId: string | null | undefined,
+  path: string | undefined,
+): Promise<FilesystemBrowseResult> {
+  if (hostId) {
+    const query = path ? `?path=${encodeURIComponent(path)}` : ''
+    const data = await fetchRemoteUpstreamJson<unknown>(hostId, `/filesystem/browse${query}`)
+    return FilesystemBrowseResultSchema.parse(data)
+  }
+  const result = await getFilesystemBrowse({
+    query: path ? { path } : {},
+  })
+  return FilesystemBrowseResultSchema.parse(result.data)
+}
+
+async function listFilesystemFavorites(
+  hostId: string | null | undefined,
+): Promise<FilesystemFavoriteEntry[]> {
+  if (hostId) {
+    const data = await fetchRemoteUpstreamJson<unknown>(hostId, '/filesystem/favorites')
+    return FilesystemFavoriteEntryListSchema.parse(data)
+  }
+  const result = await getFilesystemFavorites()
+  return FilesystemFavoriteEntryListSchema.parse(result.data)
 }
 
 export function DirectoryBrowserDialog({
@@ -67,49 +103,64 @@ export function DirectoryBrowserDialog({
   onSelect,
   title,
   description,
+  hostId = null,
 }: DirectoryBrowserDialogProps) {
   const { t } = useTranslation('filesystem')
   const resolvedTitle = title ?? t('directory.title')
+  const pathKey = lastPathStorageKey(hostId)
   const [currentPath, setCurrentPath] = useState<string | undefined>(() => {
-    return localStorage.getItem(LAST_PATH_KEY) ?? undefined
+    return localStorage.getItem(pathKey) ?? undefined
   })
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null)
-  const [lastResolvedPath, setLastResolvedPath] = useState<string>(localStorage.getItem(LAST_PATH_KEY) ?? '')
+  const hostKey = hostId ?? 'local'
+  const lastHostKeyRef = useRef(hostKey)
+
+  // Only re-seed the path when the dialog opens for a different host, or first open.
+  // Avoid resetting on every open — that forces a cold fetch and blanks the list.
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    if (lastHostKeyRef.current !== hostKey) {
+      lastHostKeyRef.current = hostKey
+      const stored = localStorage.getItem(pathKey) ?? undefined
+      setCurrentPath(stored)
+    }
+    setSelectedEntry(null)
+  }, [hostKey, open, pathKey])
 
   const { data: favoritesData } = useQuery<FilesystemFavoriteEntry[]>({
-    queryKey: ['filesystem-favorites'],
-    queryFn: async () => {
-      const result = await getFilesystemFavorites()
-      return FilesystemFavoriteEntryListSchema.parse(result.data)
-    },
+    queryKey: ['filesystem-favorites', hostKey],
+    queryFn: () => listFilesystemFavorites(hostId),
     enabled: open,
     staleTime: 60_000,
   })
 
-  const { data, isLoading, error } = useQuery<FilesystemBrowseResult>({
-    queryKey: ['filesystem-browse', currentPath],
-    queryFn: async () => {
-      const result = await getFilesystemBrowse({
-        query: currentPath ? { path: currentPath } : {},
-      })
-      return FilesystemBrowseResultSchema.parse(result.data)
-    },
+  const {
+    data,
+    isPending,
+    isFetching,
+    isError,
+    error,
+  } = useQuery<FilesystemBrowseResult>({
+    queryKey: ['filesystem-browse', hostKey, currentPath ?? ''],
+    queryFn: () => browseFilesystem(hostId, currentPath),
     enabled: open,
-    staleTime: 10_000,
+    staleTime: 30_000,
+    // Keep the previous directory visible while the next one loads — critical for
+    // remote/relay latency so navigation doesn't flash a full-page spinner.
+    placeholderData: keepPreviousData,
   })
 
   const currentDirectory = data?.current ?? null
-
-  useEffect(() => {
-    if (currentDirectory) {
-      setLastResolvedPath(currentDirectory)
-    }
-  }, [currentDirectory])
+  const showInitialSpinner = isPending && !data
+  const directories = data?.entries.filter(entry => entry.type === 'directory') ?? []
+  const files = data?.entries.filter(entry => entry.type === 'file') ?? []
 
   const navigateTo = (path: string) => {
     setCurrentPath(path)
     setSelectedEntry(null)
-    localStorage.setItem(LAST_PATH_KEY, path)
+    localStorage.setItem(pathKey, path)
   }
 
   const handleConfirm = () => {
@@ -119,13 +170,6 @@ export function DirectoryBrowserDialog({
       onOpenChange(false)
     }
   }
-
-  const handleDoubleClick = (path: string) => {
-    navigateTo(path)
-  }
-
-  const directories = data?.entries.filter(e => e.type === 'directory') ?? []
-  const files = data?.entries.filter(e => e.type === 'file') ?? []
 
   const handleListingKeyDown = (event: React.KeyboardEvent) => {
     if (event.target !== event.currentTarget) {
@@ -185,9 +229,7 @@ export function DirectoryBrowserDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl h-140 flex flex-col gap-0 p-0 overflow-hidden" data-testid="directory-browser-dialog">
-        {/* Split pane */}
         <div className="flex flex-1 min-h-0">
-          {/* Sidebar */}
           <nav className="w-44 shrink-0 border-r py-3 px-2 flex flex-col gap-0.5">
             <DialogTitle className="px-2 pb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
               {resolvedTitle}
@@ -197,30 +239,29 @@ export function DirectoryBrowserDialog({
                 key={fav.path}
                 icon={<FavoriteIcon name={fav.icon} />}
                 label={fav.name}
-                active={data?.current === fav.path}
+                active={currentDirectory === fav.path}
                 onClick={() => navigateTo(fav.path)}
               />
             ))}
           </nav>
 
-          {/* Main panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-            {/* Editable breadcrumb / path bar */}
             <PathBar
-              currentPath={currentDirectory ?? lastResolvedPath}
+              hostId={hostId}
+              currentPath={currentDirectory ?? currentPath ?? ''}
+              fetching={isFetching && !showInitialSpinner}
               onNavigate={navigateTo}
               onGoUp={data?.parent ? () => navigateTo(data.parent!) : undefined}
             />
 
-            {/* Listing */}
             <ScrollArea className="flex-1 min-h-0">
-              {isLoading && (
+              {showInitialSpinner && (
                 <div className="flex items-center justify-center h-full min-h-40">
                   <Spinner className="size-4 !text-muted-foreground" />
                 </div>
               )}
 
-              {error && (
+              {isError && !data && (
                 <div className="flex flex-col items-center justify-center h-full min-h-40 gap-1 px-6">
                   <p className="text-xs font-medium text-destructive">{t('directory.error')}</p>
                   <p className="text-[11px] text-muted-foreground text-center">
@@ -229,16 +270,20 @@ export function DirectoryBrowserDialog({
                 </div>
               )}
 
-              {!isLoading && !error && directories.length === 0 && files.length === 0 && (
+              {!showInitialSpinner && data && directories.length === 0 && files.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full min-h-40 gap-1">
                   <p className="text-xs text-muted-foreground">{t('directory.empty')}</p>
                 </div>
               )}
 
-              {!isLoading && !error && (directories.length > 0 || files.length > 0) && (
+              {!showInitialSpinner && data && (directories.length > 0 || files.length > 0) && (
                 <section
-                  className="py-0.5 outline-none"
+                  className={cn(
+                    'py-0.5 outline-none',
+                    isFetching && 'opacity-60',
+                  )}
                   tabIndex={0}
+                  aria-busy={isFetching}
                   aria-label={t('directory.listing')}
                   onKeyDown={handleListingKeyDown}
                   data-testid="directory-browser-listing"
@@ -250,7 +295,7 @@ export function DirectoryBrowserDialog({
                       path={entry.path}
                       isSelected={selectedEntry === entry.path}
                       onSelect={() => setSelectedEntry(entry.path)}
-                      onDoubleClick={() => handleDoubleClick(entry.path)}
+                      onOpen={() => navigateTo(entry.path)}
                       onKeyDown={event => handleDirectoryKeyDown(entry.path, event)}
                     />
                   ))}
@@ -263,16 +308,13 @@ export function DirectoryBrowserDialog({
           </div>
         </div>
 
-        {/* Footer — just buttons */}
         <DialogFooter variant="bare" className="px-3 py-2 border-t gap-2 justify-between">
-
           <div>
             {description && (
               <DialogDescription className="px-2 text-[11px] leading-snug text-muted-foreground">
                 {description}
               </DialogDescription>
             )}
-
           </div>
           <div className="flex gap-2">
             <Button
@@ -287,7 +329,7 @@ export function DirectoryBrowserDialog({
               size="sm"
               className="text-xs"
               onClick={handleConfirm}
-              disabled={!data?.current && !selectedEntry}
+              disabled={!currentDirectory && !selectedEntry}
               data-testid="directory-browser-confirm"
             >
               {t('action.select')}
@@ -299,42 +341,48 @@ export function DirectoryBrowserDialog({
   )
 }
 
-// ── Path bar (breadcrumb + editable) ──────────────────────────────────────────
-
 function PathBar({
+  hostId,
   currentPath,
+  fetching,
   onNavigate,
   onGoUp,
 }: {
+  hostId: string | null | undefined
   currentPath: string
+  fetching: boolean
   onNavigate: (path: string) => void
   onGoUp?: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
+  const [debouncedEditValue, setDebouncedEditValue] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedSuggestion, setSelectedSuggestion] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Determine the parent dir to browse for suggestions
-  const lastSlash = editValue.lastIndexOf('/')
-  const parentDir = lastSlash >= 0 ? editValue.slice(0, lastSlash) || '/' : undefined
-  const prefix = lastSlash >= 0 ? editValue.slice(lastSlash + 1).toLowerCase() : ''
+  useEffect(() => {
+    if (!editing) {
+      return
+    }
+    const timer = window.setTimeout(setDebouncedEditValue, 120, editValue)
+    return () => window.clearTimeout(timer)
+  }, [editValue, editing])
+
+  const lastSlash = debouncedEditValue.lastIndexOf('/')
+  const parentDir = lastSlash >= 0 ? debouncedEditValue.slice(0, lastSlash) || '/' : undefined
+  const prefix = lastSlash >= 0 ? debouncedEditValue.slice(lastSlash + 1).toLowerCase() : ''
 
   const { data: suggestionsData } = useQuery<FilesystemBrowseResult>({
-    queryKey: ['filesystem-browse', parentDir],
-    queryFn: async () => {
-      const result = await getFilesystemBrowse({
-        query: parentDir ? { path: parentDir } : {},
-      })
-      return FilesystemBrowseResultSchema.parse(result.data)
-    },
+    queryKey: ['filesystem-browse', hostId ?? 'local', parentDir ?? ''],
+    queryFn: () => browseFilesystem(hostId, parentDir),
     enabled: editing && !!parentDir,
-    staleTime: 10_000,
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
   })
 
   const suggestions = (suggestionsData?.entries ?? [])
-    .filter(e => e.type === 'directory' && e.name.toLowerCase().startsWith(prefix))
+    .filter(entry => entry.type === 'directory' && entry.name.toLowerCase().startsWith(prefix))
     .slice(0, 8)
 
   const segments = currentPath.split('/').filter(Boolean)
@@ -351,6 +399,7 @@ function PathBar({
 
   const startEditing = () => {
     setEditValue(currentPath)
+    setDebouncedEditValue(currentPath)
     setEditing(true)
     setShowSuggestions(true)
     setSelectedSuggestion(-1)
@@ -377,8 +426,8 @@ function PathBar({
     setEditing(false)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
       if (selectedSuggestion >= 0 && suggestions[selectedSuggestion]) {
         applySuggestion(suggestions[selectedSuggestion].path)
       }
@@ -386,19 +435,19 @@ function PathBar({
         commitEdit()
       }
     }
-    else if (e.key === 'Escape') {
+    else if (event.key === 'Escape') {
       cancelEdit()
     }
-    else if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSelectedSuggestion(i => Math.min(i + 1, suggestions.length - 1))
+    else if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setSelectedSuggestion(index => Math.min(index + 1, suggestions.length - 1))
     }
-    else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSelectedSuggestion(i => Math.max(i - 1, -1))
+    else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setSelectedSuggestion(index => Math.max(index - 1, -1))
     }
-    else if (e.key === 'Tab' && suggestions.length > 0) {
-      e.preventDefault()
+    else if (event.key === 'Tab' && suggestions.length > 0) {
+      event.preventDefault()
       const idx = selectedSuggestion >= 0 ? selectedSuggestion : 0
       if (suggestions[idx]) {
         setEditValue(`${suggestions[idx].path}/`)
@@ -415,15 +464,15 @@ function PathBar({
             ref={inputRef}
             value={editValue}
             aria-label="Directory path"
-            onChange={(e) => {
-              setEditValue(e.target.value)
+            onChange={(event) => {
+              setEditValue(event.target.value)
               setShowSuggestions(true)
               setSelectedSuggestion(-1)
             }}
             onKeyDown={handleKeyDown}
             onBlur={() => {
-              // Delay to allow clicking suggestions
-              setTimeout(() => {
+              // Delay so suggestion mousedown can commit before blur closes.
+              window.setTimeout(() => {
                 setEditing(false)
                 setShowSuggestions(false)
               }, 150)
@@ -434,22 +483,22 @@ function PathBar({
         </div>
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute left-0 right-0 top-8 z-50 border-b bg-popover shadow-md max-h-48 overflow-y-auto">
-            {suggestions.map((s, i) => (
+            {suggestions.map((suggestion, index) => (
               <button
-                key={s.path}
+                key={suggestion.path}
                 type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  applySuggestion(s.path)
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  applySuggestion(suggestion.path)
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+                  'flex w-full items-center gap-2 px-3 py-1.5 text-xs',
                   'hover:bg-accent',
-                  i === selectedSuggestion && 'bg-accent',
+                  index === selectedSuggestion && 'bg-accent',
                 )}
               >
                 <FolderIcon className="size-3 !text-muted-foreground shrink-0" />
-                <span className="truncate font-mono">{s.path}</span>
+                <span className="truncate font-mono">{suggestion.path}</span>
               </button>
             ))}
           </div>
@@ -468,7 +517,7 @@ function PathBar({
         <button
           type="button"
           onClick={onGoUp}
-          className="shrink-0 p-0.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          className="shrink-0 p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
         >
           <ArrowUpIcon className="size-3" />
         </button>
@@ -476,35 +525,36 @@ function PathBar({
       <button
         type="button"
         onClick={() => onNavigate('/')}
-        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors font-mono"
+        className="shrink-0 text-muted-foreground hover:text-foreground font-mono"
       >
         /
       </button>
-      {segments.map((seg, i) => {
-        const segPath = `/${segments.slice(0, i + 1).join('/')}`
-        const isLast = i === segments.length - 1
+      {segments.map((seg, index) => {
+        const segPath = `/${segments.slice(0, index + 1).join('/')}`
+        const isLast = index === segments.length - 1
         return (
           <span key={segPath} className="flex items-center gap-1 shrink-0">
             <ChevronRightIcon className="size-2.5 !text-muted-foreground/40" />
             {isLast
               ? <span className="font-medium text-foreground">{seg}</span>
               : (
-                <button
-                  type="button"
-                  onClick={() => onNavigate(segPath)}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {seg}
-                </button>
-              )}
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(segPath)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    {seg}
+                  </button>
+                )}
           </span>
         )
       })}
+      {fetching && (
+        <Spinner className="ml-auto size-3 shrink-0 !text-muted-foreground/70" />
+      )}
     </div>
   )
 }
-
-// ── Favorite icon mapping ─────────────────────────────────────────────────────
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   'home': <HomeIcon className="size-3.5" />,
@@ -517,8 +567,6 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 function FavoriteIcon({ name }: { name: string }) {
   return <>{ICON_MAP[name] ?? <FolderIcon className="size-3.5" />}</>
 }
-
-// ── Sidebar item ──────────────────────────────────────────────────────────────
 
 function SidebarItem({
   icon,
@@ -536,7 +584,7 @@ function SidebarItem({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors',
+        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs',
         'hover:bg-accent',
         active && 'bg-accent font-medium',
       )}
@@ -547,34 +595,32 @@ function SidebarItem({
   )
 }
 
-// ── Directory row ─────────────────────────────────────────────────────────────
-
 function DirectoryRow({
   name,
   path,
   isSelected,
   onSelect,
-  onDoubleClick,
+  onOpen,
   onKeyDown,
 }: {
   name: string
   path: string
   isSelected: boolean
   onSelect: () => void
-  onDoubleClick: () => void
+  onOpen: () => void
   onKeyDown: (event: React.KeyboardEvent) => void
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
-      onDoubleClick={onDoubleClick}
+      onDoubleClick={onOpen}
       onKeyDown={onKeyDown}
       aria-pressed={isSelected}
       data-testid={`directory-entry-${name}`}
       data-path={path}
       className={cn(
-        'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors',
+        'flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-xs',
         'hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none',
         isSelected && 'bg-accent',
       )}
@@ -602,8 +648,6 @@ export function selectDirectoryByOffset(
 
   return directories[nextIndex]?.path ?? null
 }
-
-// ── File row (disabled) ───────────────────────────────────────────────────────
 
 function FileRow({ name }: { name: string }) {
   return (

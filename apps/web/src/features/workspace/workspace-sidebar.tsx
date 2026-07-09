@@ -116,6 +116,7 @@ import { SettingsGroup, SettingsPage } from '~/features/settings/settings-contai
 import { SettingsRow } from '~/features/settings/settings-row'
 import { useFeatureFlag } from '~/features/settings/use-app-preferences'
 import { MigrateWorkspaceDialog } from '~/features/workspace/migrate-workspace-dialog'
+import { ensureRemoteWorkspaceForPath } from '~/features/workspace/remote-workspace-import'
 import type { Workspace } from '~/features/workspace/types'
 import { getLocalWorkspacePath, getWorkspaceLocationLabel } from '~/features/workspace/types'
 import { useNow } from '~/hooks/use-now'
@@ -1301,7 +1302,10 @@ function RemoteWorkspaceBrowser({
   onCreate: (input: CreateWorkspaceInput) => Promise<void>
 }) {
   const { t } = useTranslation(['workspace', 'settings'])
+  const { selectDirectory } = useDirectoryPicker()
+  const queryClient = useQueryClient()
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+  const [importingPath, setImportingPath] = useState(false)
 
   const workspacesQuery = useQuery({
     queryKey: remoteHostWorkspacesQueryKey(host.id),
@@ -1333,7 +1337,9 @@ function RemoteWorkspaceBrowser({
     retry: false,
   })
 
-  const handleCreate = async () => {
+  const busy = creating || importingPath
+
+  const handleMountExisting = async () => {
     if (!selectedWorkspace) {
       return
     }
@@ -1350,8 +1356,57 @@ function RemoteWorkspaceBrowser({
     })
   }
 
+  const handleBrowseAndImport = async () => {
+    setImportingPath(true)
+    try {
+      const path = await selectDirectory({
+        hostId: host.id,
+        title: t('workspace.dialog.remoteBrowseTitle'),
+        description: t('workspace.dialog.remoteBrowseDescription', { hostName: host.displayName }),
+      })
+      if (!path) {
+        return
+      }
+      const input = await ensureRemoteWorkspaceForPath(host.id, path)
+      await onCreate(input)
+      void queryClient.invalidateQueries({ queryKey: remoteHostWorkspacesQueryKey(host.id) })
+    }
+    catch (error) {
+      toastManager.add({
+        type: 'error',
+        title: t('workspace.toast.remoteWorkspaceCreateFailed'),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+    finally {
+      setImportingPath(false)
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/60 px-3 py-2.5">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-[12px] font-medium text-foreground/90">
+            {t('workspace.dialog.remoteBrowseTitle')}
+          </p>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {t('workspace.dialog.remoteBrowseHint', { hostName: host.displayName })}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy || host.connectionState !== 'connected'}
+          onClick={() => void handleBrowseAndImport()}
+        >
+          {importingPath
+            ? <LoadingLine className="animate-spin" />
+            : <FolderPlusIcon className="size-3.5" />}
+          {t('workspace.dialog.remoteBrowseAction')}
+        </Button>
+      </div>
+
       {workspacesQuery.isLoading
         ? (
             <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground">
@@ -1368,12 +1423,15 @@ function RemoteWorkspaceBrowser({
           : workspaces.length === 0
             ? (
                 <p className="rounded-md border border-dashed border-border/70 px-2.5 py-3 text-center text-[11px] text-muted-foreground">
-                  {t('settings:remoteHosts.detail.noWorkspaces')}
+                  {t('workspace.dialog.remoteNoExistingWorkspaces')}
                 </p>
               )
             : (
                 <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                   <div className="min-h-0 overflow-y-auto rounded-md border border-border/60">
+                    <p className="sticky top-0 border-b border-border/50 bg-muted/30 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                      {t('workspace.dialog.remoteExistingLabel')}
+                    </p>
                     {workspaces.map(workspace => (
                       <RemoteWorkspaceCard
                         key={workspace.id}
@@ -1389,7 +1447,7 @@ function RemoteWorkspaceBrowser({
                       <div className="space-y-2 rounded-lg border border-border/70 bg-card/60 p-3">
                         <div className="min-w-0">
                           <p className="text-[11px] font-medium uppercase text-muted-foreground/70">
-                            {t('workspace.dialog.selectedWorkspace', { defaultValue: 'Selected workspace' })}
+                            {t('workspace.dialog.selectedWorkspace')}
                           </p>
                           <p className="truncate font-mono text-[11.5px] text-foreground/80" title={selectedWorkspace.locator.path}>
                             {selectedWorkspace.locator.path}
@@ -1403,11 +1461,11 @@ function RemoteWorkspaceBrowser({
                         <Button
                           type="button"
                           size="sm"
-                          disabled={creating}
-                          onClick={() => void handleCreate()}
+                          disabled={busy}
+                          onClick={() => void handleMountExisting()}
                         >
-                          {creating && <LoadingLine className="animate-spin" />}
-                          {t('workspace.dialog.create')}
+                          {creating && !importingPath && <LoadingLine className="animate-spin" />}
+                          {t('workspace.dialog.remoteMountExisting')}
                         </Button>
                       </div>
                     )}
@@ -1416,7 +1474,7 @@ function RemoteWorkspaceBrowser({
                       ? (
                           <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground">
                             <LoadingLine className="size-3 animate-spin" />
-                            {t('workspace.dialog.loadingFiles', { defaultValue: 'Loading files...' })}
+                            {t('workspace.dialog.loadingFiles')}
                           </div>
                         )
                       : filesQuery.isError
@@ -2965,7 +3023,7 @@ const WorkspaceGroup = memo(
           </>
         )}
       >
-        <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-col">
           {groupedSessions.map(({ group, sessions: groupSessions }) => (
             <WorkspaceSessionGroupSection
               key={group.id}
@@ -3659,13 +3717,13 @@ export const WorkspaceSidebar = memo(({ collapsed = false }: { collapsed?: boole
       setAddWorkspaceDialogOpen(false)
       toastManager.add({
         type: 'success',
-        title: t('workspace.toast.remoteWorkspaceCreated', { defaultValue: 'Workspace added' }),
+        title: t('workspace.toast.remoteWorkspaceCreated'),
       })
     }
     catch (error) {
       toastManager.add({
         type: 'error',
-        title: t('workspace.toast.remoteWorkspaceCreateFailed', { defaultValue: 'Workspace could not be added' }),
+        title: t('workspace.toast.remoteWorkspaceCreateFailed'),
         description: formatToastError(error),
       })
     }
