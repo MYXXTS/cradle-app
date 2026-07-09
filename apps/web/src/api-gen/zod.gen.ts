@@ -1807,6 +1807,13 @@ export const zPostPluginsSourcesBody = z.object({
     addedReason: z.string().nullish()
 });
 
+export const zPostPluginsSourcesPreviewBody = z.object({
+    kind: z.enum(['git', 'npm']),
+    location: z.string().min(1),
+    ref: z.string().nullish(),
+    subPath: z.string().nullish()
+});
+
 export const zDeletePluginsSourcesByIdPath = z.object({
     id: z.string().min(1)
 });

@@ -5539,6 +5539,13 @@ export type GetSessionsResponses = {
      */
     200: Array<{
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -5617,6 +5624,13 @@ export type PostSessionsResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -5685,6 +5699,13 @@ export type GetSessionsByIdResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -5740,6 +5761,13 @@ export type PatchSessionsByIdResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -5790,6 +5818,13 @@ export type PostSessionsByIdArchiveResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -5838,6 +5873,13 @@ export type PostSessionsByIdReadResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -5886,6 +5928,13 @@ export type PostSessionsByIdUnreadResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -7377,6 +7426,13 @@ export type GetIssuesByIdSessionsResponses = {
      */
     200: Array<{
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
@@ -8092,6 +8148,88 @@ export type GetSearchChronicleResponses = {
 
 export type GetSearchChronicleResponse = GetSearchChronicleResponses[keyof GetSearchChronicleResponses];
 
+export type GetPluginsMarketplaceData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/plugins/marketplace';
+};
+
+export type GetPluginsMarketplaceResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        plugins: Array<{
+            id: string;
+            displayName: string;
+            description: string;
+            icon: string | null;
+            category: 'automation' | 'mcp' | 'integration' | 'skill' | 'dev';
+            tags: Array<string>;
+            author: {
+                name: string;
+                url: string | null;
+            };
+            homepage: string | null;
+            bundled: boolean;
+            source: {
+                kind: 'git' | 'npm';
+                location: string;
+                ref: string | null;
+                subPath: string | null;
+            } | null;
+            featured: boolean;
+            version: string | null;
+        }>;
+        stale: boolean;
+        fetchedAt: number | null;
+    };
+};
+
+export type GetPluginsMarketplaceResponse = GetPluginsMarketplaceResponses[keyof GetPluginsMarketplaceResponses];
+
+export type PostPluginsMarketplaceRefreshData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/plugins/marketplace/refresh';
+};
+
+export type PostPluginsMarketplaceRefreshResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        plugins: Array<{
+            id: string;
+            displayName: string;
+            description: string;
+            icon: string | null;
+            category: 'automation' | 'mcp' | 'integration' | 'skill' | 'dev';
+            tags: Array<string>;
+            author: {
+                name: string;
+                url: string | null;
+            };
+            homepage: string | null;
+            bundled: boolean;
+            source: {
+                kind: 'git' | 'npm';
+                location: string;
+                ref: string | null;
+                subPath: string | null;
+            } | null;
+            featured: boolean;
+            version: string | null;
+        }>;
+        stale: boolean;
+        fetchedAt: number | null;
+    };
+};
+
+export type PostPluginsMarketplaceRefreshResponse = PostPluginsMarketplaceRefreshResponses[keyof PostPluginsMarketplaceRefreshResponses];
+
 export type GetPluginsData = {
     body?: never;
     path?: never;
@@ -8541,6 +8679,56 @@ export type PostPluginsSourcesResponses = {
 };
 
 export type PostPluginsSourcesResponse = PostPluginsSourcesResponses[keyof PostPluginsSourcesResponses];
+
+export type PostPluginsSourcesPreviewData = {
+    body: {
+        kind: 'git' | 'npm';
+        location: string;
+        ref?: string | null;
+        subPath?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/plugins/sources/preview';
+};
+
+export type PostPluginsSourcesPreviewResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        source: {
+            kind: 'git' | 'npm';
+            location: string;
+            ref: string | null;
+            subPath: string | null;
+        };
+        plugins: Array<{
+            name: string;
+            version: string;
+            displayName: string;
+            description: string | null;
+            iconAvailable: boolean;
+            trusted: boolean;
+            trustReason: string | null;
+            declaredPermissions: Array<{
+                id: string;
+                owner: string;
+                localId: string;
+                label: string | null;
+                description: string | null;
+                required: boolean;
+            }>;
+            warnings: Array<string>;
+            hasWeb: boolean;
+            hasServer: boolean;
+            hasDesktop: boolean;
+        }>;
+        warnings: Array<string>;
+    };
+};
+
+export type PostPluginsSourcesPreviewResponse = PostPluginsSourcesPreviewResponses[keyof PostPluginsSourcesPreviewResponses];
 
 export type DeletePluginsSourcesByIdData = {
     body?: never;
@@ -17036,6 +17224,13 @@ export type PostChatSessionsBySessionIdTitleRegenerateResponses = {
      */
     200: {
         id: string;
+        execution: {
+            kind: string;
+        } | {
+            kind: string;
+            hostId: string;
+            remoteSessionId: string;
+        };
         parentSessionId: string | null;
         sideContextSource: 'provider-native' | 'cradle-context' | null;
         workspaceId: string | null;
