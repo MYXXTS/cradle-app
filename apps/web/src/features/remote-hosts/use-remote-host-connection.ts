@@ -11,11 +11,11 @@ import type { GetRemoteHostsResponse } from '~/api-gen/types.gen'
 export type RemoteHostRecord = GetRemoteHostsResponse[number]
 export type RemoteHostConnectionState = RemoteHostRecord['connectionState']
 
-export type RemoteHostConnectionGate =
-  | { kind: 'local' }
-  | { kind: 'unknown-host', hostId: string }
-  | { kind: 'disconnected', hostId: string, host: RemoteHostRecord }
-  | { kind: 'connected', hostId: string, host: RemoteHostRecord }
+export type RemoteHostConnectionGate
+  = | { kind: 'local' }
+    | { kind: 'unknown-host', hostId: string }
+    | { kind: 'disconnected', hostId: string, host: RemoteHostRecord }
+    | { kind: 'connected', hostId: string, host: RemoteHostRecord }
 
 export function resolveRemoteHostConnectionGate(input: {
   hostId: string | null | undefined

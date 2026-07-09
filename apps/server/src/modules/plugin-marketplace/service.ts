@@ -1,4 +1,5 @@
-import { fetchMarketplace, type MarketplaceEntry } from './catalog'
+import type { MarketplaceEntry } from './catalog'
+import { fetchMarketplace } from './catalog'
 
 export interface MarketplaceListResult {
   plugins: MarketplaceEntry[]

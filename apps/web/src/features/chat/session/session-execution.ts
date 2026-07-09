@@ -1,8 +1,8 @@
 import type { GetSessionsByIdResponse } from '~/api-gen/types.gen'
 
-export type SessionExecution =
-  | { kind: 'local' }
-  | { kind: 'remote-host', hostId: string, remoteSessionId: string }
+export type SessionExecution
+  = | { kind: 'local' }
+    | { kind: 'remote-host', hostId: string, remoteSessionId: string }
 
 type SessionWithExecution = {
   // Accept API payloads and loosely typed list rows; validate at runtime.

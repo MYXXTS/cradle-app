@@ -1,7 +1,6 @@
 import { Elysia, t } from 'elysia'
 
 import { pluginMarketplaceRoutes } from '../plugin-marketplace'
-
 import { PluginsModel } from './model'
 import * as Plugins from './service'
 

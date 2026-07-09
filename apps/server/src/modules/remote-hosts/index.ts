@@ -122,7 +122,7 @@ export const remoteHosts = new Elysia({
       summary: 'Transparent upstream proxy to the connected remote Cradle Server',
     },
     params: t.Object({
-      hostId: t.String({ minLength: 1 }),
+      'hostId': t.String({ minLength: 1 }),
       '*': t.Optional(t.String()),
     }, { additionalProperties: false }),
   })

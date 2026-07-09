@@ -67,10 +67,6 @@ import type {
   GetRemoteHostsResponse,
   PostWorkspacesMultiFolderData,
 } from '~/api-gen/types.gen'
-import {
-  fetchRemoteUpstreamJson,
-  remoteHostUpstreamQueryKey,
-} from '~/features/remote-hosts/upstream-fetch'
 import type { RuntimeIconDescriptor } from '~/components/common/provider-icons'
 import { RuntimeIcon } from '~/components/common/provider-icons'
 import { Button } from '~/components/ui/button'
@@ -111,6 +107,10 @@ import { prefetchChatSession } from '~/features/chat/session/chat-session-prefet
 import { useDirectoryPicker } from '~/features/filesystem/directory-picker-provider'
 import { KanbanSidebar } from '~/features/kanban/kanban-sidebar'
 import { PluginsSidebar } from '~/features/plugins/plugins-sidebar'
+import {
+  fetchRemoteUpstreamJson,
+  remoteHostUpstreamQueryKey,
+} from '~/features/remote-hosts/upstream-fetch'
 import { useGlobalSearchStore } from '~/features/search/global-search-store'
 import { SettingsGroup, SettingsPage } from '~/features/settings/settings-container'
 import { SettingsRow } from '~/features/settings/settings-row'

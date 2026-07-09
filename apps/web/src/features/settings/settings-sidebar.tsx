@@ -26,8 +26,8 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '~/components/ui/button'
-import { openPluginCenter } from '~/navigation/navigation-commands'
 import { cn } from '~/lib/cn'
+import { openPluginCenter } from '~/navigation/navigation-commands'
 
 type SettingsKey = keyof typeof import('~/locales/default').default.settings
 
@@ -37,8 +37,10 @@ interface SettingsNavItem {
   icon: typeof PaletteIcon
   /** i18n keys for internal options that should be searchable */
   searchKeys?: SettingsKey[]
-  /** Optional override: if set, clicking this item opens a different surface
-   * (e.g. the Plugin Center) instead of switching the settings overlay section. */
+  /**
+   * Optional override: if set, clicking this item opens a different surface
+   * (e.g. the Plugin Center) instead of switching the settings overlay section.
+   */
   onActivate?: () => void
 }
 

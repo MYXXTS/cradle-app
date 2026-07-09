@@ -16,8 +16,8 @@ import type {
 } from '@cradle/plugin-sdk'
 
 import { AppError } from '../../errors/app-error'
-import { disablePlugin, discoverAndActivateSource, enablePlugin, removeDiscoveredSource } from '../../plugins/loader'
 import { discoverPluginPackages } from '../../plugins/discovery'
+import { disablePlugin, discoverAndActivateSource, enablePlugin, removeDiscoveredSource } from '../../plugins/loader'
 import { classifyPluginSource, createPluginDescriptor, getPluginDescriptorByRouteSegment, listPluginDescriptors } from '../../plugins/runtime-registry'
 import { resolvePluginSourceDirectory } from '../../plugins/source-installer'
 import type { AddPluginSourceInput } from '../../plugins/source-registry'

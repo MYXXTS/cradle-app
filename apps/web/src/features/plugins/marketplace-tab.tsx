@@ -26,7 +26,8 @@ import { toastManager } from '~/components/ui/toast'
 import { cn } from '~/lib/cn'
 import { getServerUrl } from '~/lib/electron'
 
-import { InstallWizard, type WizardSource } from './install-wizard'
+import type { WizardSource } from './install-wizard'
+import { InstallWizard } from './install-wizard'
 
 type MarketplaceEntry = GetPluginsMarketplaceResponse['plugins'][number]
 type InstalledPlugin = GetPluginsResponse[number]
@@ -323,8 +324,7 @@ function isInstallableInstalled(entry: MarketplaceEntry, sources: PluginSourceEn
   }
   return sources.some(source =>
     source.location === entry.source!.location
-    && (source.subPath ?? null) === (entry.source!.subPath ?? null),
-  )
+    && (source.subPath ?? null) === (entry.source!.subPath ?? null))
 }
 
 interface MarketplaceCardProps {
@@ -361,7 +361,9 @@ function MarketplaceCard({ entry, featured, installedPlugins, sources, enabling,
           </div>
           {entry.author && (
             <p className="mt-0.5 text-[10.5px] text-muted-foreground/70">
-              {t('plugins.marketplace.author')}: {entry.author.name}
+              {t('plugins.marketplace.author')}
+:
+{entry.author.name}
             </p>
           )}
         </div>

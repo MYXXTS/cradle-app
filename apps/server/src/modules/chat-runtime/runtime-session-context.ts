@@ -20,8 +20,8 @@ import {
   resolveProviderRuntimeSession,
 } from '../provider-runtime/service'
 import { getProviderTarget, resolveProviderTargetForRuntime } from '../provider-targets/service'
-import * as SessionService from '../session/service'
 import { getRemoteSessionLink } from '../session/remote-projection'
+import * as SessionService from '../session/service'
 import * as Workspace from '../workspace/service'
 import { assertIsolationExecutionReady, resolveSessionExecutionRoot } from '../worktree/service'
 import { getRuntimeRegistry } from './chat-runtime-provider-registry'

@@ -37,15 +37,15 @@ import {
   resolveProviderTarget,
 } from '../provider-targets/service'
 import * as Workspace from '../workspace/service'
+import { isLocalWorkspaceLocator } from '../workspace/workspace-locator'
 import { attachSessionToWorktree, readSessionIsolation } from '../worktree/service'
+import type { SessionExecutionTarget } from './remote-projection'
 import {
   createRemoteProjectedSession,
   isRemoteProjectedSession,
   readSessionExecutionTarget,
   removeRemoteProjectedSession,
-  type SessionExecutionTarget,
 } from './remote-projection'
-import { isLocalWorkspaceLocator } from '../workspace/workspace-locator'
 
 export type { SessionExecutionTarget }
 

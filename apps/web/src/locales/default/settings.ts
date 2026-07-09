@@ -827,7 +827,7 @@ export default {
   'plugins.add.example.cradle': 'cradle://plugins/install?repository=owner/repo',
   'plugins.add.undo': 'Undo, remove this source',
   'plugins.add.undoConfirm': 'This will remove {{count}} plugins from {{source}}.',
-  'plugins.add.error.repoNotFound': "Couldn't find that repository",
+  'plugins.add.error.repoNotFound': 'Couldn\'t find that repository',
   'plugins.add.error.network': 'Network problem, check your connection and retry',
   'plugins.add.error.noPlugins': 'No Cradle plugins in this source',
   'plugins.add.back': 'Back',

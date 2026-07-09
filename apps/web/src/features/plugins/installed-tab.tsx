@@ -360,7 +360,10 @@ function InstalledCard({ plugin, sources, toggling, onToggle, onUninstall }: Ins
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate text-[13px] font-medium text-foreground">{plugin.displayName || plugin.name}</span>
-            <span className="shrink-0 rounded-md bg-fill px-1.5 py-px font-mono text-[10.5px] text-muted-foreground">v{plugin.version}</span>
+            <span className="shrink-0 rounded-md bg-fill px-1.5 py-px font-mono text-[10.5px] text-muted-foreground">
+v
+{plugin.version}
+            </span>
           </div>
           <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
             {plugin.description || t('plugins.noDescription')}

@@ -183,7 +183,7 @@ async function projectOpenAICompatibleModelListAuthHeaders(
     throw new Error('ChatGPT auth requires an access token')
   }
   return {
-    Authorization: `Bearer ${credential.accessToken}`,
+    'Authorization': `Bearer ${credential.accessToken}`,
     'ChatGPT-Account-ID': credential.chatgptAccountId,
   }
 }

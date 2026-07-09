@@ -12,13 +12,13 @@
  * No `ref`/`subPath`/`label` fields are exposed in paste mode.
  */
 import {
+  ArrowLeftLine as ArrowLeftIcon,
   CheckLine as CheckIcon,
   Refresh2Line as RefreshIcon,
-  ArrowLeftLine as ArrowLeftIcon,
 } from '@mingcute/react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
 import type { TFunction } from 'i18next'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -36,7 +36,6 @@ import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Spinner } from '~/components/ui/spinner'
 import { toastManager } from '~/components/ui/toast'
-import { cn } from '~/lib/cn'
 import { getServerUrl } from '~/lib/electron'
 
 import { looksLikeLocalPath, parsePluginSourceInput } from './plugin-source-parser'
@@ -111,7 +110,7 @@ function mapPluginError(error: unknown, t: TFunction<'settings'>): string {
   if (status === 404 || lower.includes('not found')) {
     return t('plugins.add.error.repoNotFound')
   }
-  if (lower.includes('no plugins') || lower.includes('no cradle') || lower.includes("didn't find") || lower.includes('did not find')) {
+  if (lower.includes('no plugins') || lower.includes('no cradle') || lower.includes('didn\'t find') || lower.includes('did not find')) {
     return t('plugins.add.error.noPlugins')
   }
   if ((status && status >= 500) || lower.includes('network') || lower.includes('failed to fetch') || lower.includes('fetch failed') || lower.includes('econnrefused') || lower.includes('enotfound')) {
@@ -525,7 +524,9 @@ function ReviewStep({
         >
           {t('plugins.preview.select-all')}
           {' '}
-          ({t('plugins.preview.selected-n', { count: selected.size })})
+          (
+{t('plugins.preview.selected-n', { count: selected.size })}
+)
         </button>
       </div>
 
@@ -543,7 +544,10 @@ function ReviewStep({
       {preview.warnings.length > 0 && (
         <ul className="flex flex-col gap-1">
           {preview.warnings.map((warning, index) => (
-            <li key={index} className="text-[11px] text-muted-foreground/80">· {warning}</li>
+            <li key={index} className="text-[11px] text-muted-foreground/80">
+·
+{warning}
+            </li>
           ))}
         </ul>
       )}
@@ -578,7 +582,10 @@ function PreviewPluginRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-[12.5px] font-medium text-foreground">{plugin.displayName}</span>
-          <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">v{plugin.version}</span>
+          <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+v
+{plugin.version}
+          </span>
         </div>
         {plugin.description && (
           <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">{plugin.description}</p>
@@ -586,11 +593,20 @@ function PreviewPluginRow({
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {plugin.trusted
             ? (
-                <span className="text-[10.5px] text-muted-foreground">✓ {t('plugins.preview.trusted')}</span>
+                <span className="text-[10.5px] text-muted-foreground">
+✓
+{t('plugins.preview.trusted')}
+                </span>
               )
             : (
                 <span className="text-[10.5px] text-amber-600 dark:text-amber-300" title={plugin.trustReason ?? undefined}>
-                  ⚠ {t('plugins.preview.untrusted')} · {t('plugins.preview.untrustedHint')}
+                  ⚠
+{' '}
+{t('plugins.preview.untrusted')}
+{' '}
+·
+{' '}
+{t('plugins.preview.untrustedHint')}
                 </span>
               )}
           {plugin.declaredPermissions.length > 0 && (
@@ -680,7 +696,10 @@ function InstalledPluginRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-[12.5px] font-medium text-foreground">{plugin.displayName}</span>
-          <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">v{plugin.version}</span>
+          <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+v
+{plugin.version}
+          </span>
         </div>
         {untrustedExternal && !enabled && (
           <p className="mt-0.5 text-[10.5px] text-amber-600 dark:text-amber-300">{t('plugins.needsTrust')}</p>

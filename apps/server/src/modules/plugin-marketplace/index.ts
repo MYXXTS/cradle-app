@@ -14,7 +14,7 @@ export const pluginMarketplaceRoutes = new Elysia({
 })
   .get('/marketplace', () => Marketplace.listMarketplace(), {
     detail: {
-      summary: 'List marketplace plugin catalog',
+      'summary': 'List marketplace plugin catalog',
       'x-cradle-cli': {
         command: ['plugin', 'marketplace', 'list'],
       },
@@ -23,7 +23,7 @@ export const pluginMarketplaceRoutes = new Elysia({
   })
   .post('/marketplace/refresh', () => Marketplace.refreshMarketplace(), {
     detail: {
-      summary: 'Force-refresh marketplace catalog',
+      'summary': 'Force-refresh marketplace catalog',
       'x-cradle-cli': {
         command: ['plugin', 'marketplace', 'refresh'],
       },

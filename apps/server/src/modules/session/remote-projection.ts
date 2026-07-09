@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
+import type { RuntimeKind } from '../provider-contracts/types'
 import {
   ensureRemoteHostConnected,
   proxyRemoteHostUpstreamRequest,
@@ -14,7 +15,6 @@ import {
   upstreamFetchByBaseUrl,
   upstreamJsonByBaseUrl,
 } from '../remote-hosts/upstream'
-import type { RuntimeKind } from '../provider-contracts/types'
 import * as Workspace from '../workspace/service'
 import {
   isLocalWorkspaceLocator,
@@ -29,9 +29,9 @@ export interface RemoteSessionLinkView {
   updatedAt: number
 }
 
-export type SessionExecutionTarget =
-  | { kind: 'local' }
-  | { kind: 'remote-host', hostId: string, remoteSessionId: string }
+export type SessionExecutionTarget
+  = | { kind: 'local' }
+    | { kind: 'remote-host', hostId: string, remoteSessionId: string }
 
 export function getRemoteSessionLink(localSessionId: string): RemoteSessionLinkView | null {
   const row = db()

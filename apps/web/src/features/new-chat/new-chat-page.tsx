@@ -19,6 +19,7 @@ import { Button } from '~/components/ui/button'
 import { DitheredGradientDecoration } from '~/components/ui/canvas-art'
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from '~/components/ui/menu'
 import { runtimeComposerUsesCollapsedInput, useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
+import { describeChatExecutionError } from '~/features/chat/commands/chat-execution-errors'
 import type { DraftChatComposerSubmitOptions } from '~/features/chat/composer/draft-chat-composer'
 import { DraftChatComposerWithState } from '~/features/chat/composer/draft-chat-composer'
 import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
@@ -36,7 +37,6 @@ import { IssueIsolationStartDialog } from '~/features/new-chat/issue-isolation-s
 import {
   useIssueIsolationContext,
 } from '~/features/session/use-session-isolation'
-import { describeChatExecutionError } from '~/features/chat/commands/chat-execution-errors'
 import { getLocalWorkspacePath, isLocalWorkspace } from '~/features/workspace/types'
 import { sessionsQueryKey, updateSessionInSessionLists, useWorkspaceSessions } from '~/features/workspace/use-session'
 import { useAddWorkspace, useWorkspaces, WORKSPACES_QUERY_KEY } from '~/features/workspace/use-workspace'

@@ -788,42 +788,42 @@ export function ChatView({
                 )
               : null}
             <ChatComposerSection
-            sessionId={sessionId}
-            runtimeKind={runtimeSettings.runtimeKind ?? _runtimeKind}
-            awaitSummary={awaitSummary}
-            queueItems={queueItems}
-            onCancelQueueItem={queueItemId => void cancelQueueItem(queueItemId)}
-            onReorderQueueItems={queueItemIds => void reorderQueueItems(queueItemIds)}
-            onUpdateQueueItem={(queueItemId, body) => updateQueueItem(queueItemId, body)}
-            onSlashCommandAction={handleSlashCommandAction}
-            composerRuntime={preparedComposerRuntime}
-            appshotRuntime={appshotRuntime}
-            placeholder={placeholder}
-            availableFiles={availableFiles}
-            searchFiles={searchFiles}
-            searchPlugins={searchPlugins}
-            searchSkills={searchSkills}
-            toolbar={runtimeSettingsToolbar}
-            runtimeSettings={{
+              sessionId={sessionId}
+              runtimeKind={runtimeSettings.runtimeKind ?? _runtimeKind}
+              awaitSummary={awaitSummary}
+              queueItems={queueItems}
+              onCancelQueueItem={queueItemId => void cancelQueueItem(queueItemId)}
+              onReorderQueueItems={queueItemIds => void reorderQueueItems(queueItemIds)}
+              onUpdateQueueItem={(queueItemId, body) => updateQueueItem(queueItemId, body)}
+              onSlashCommandAction={handleSlashCommandAction}
+              composerRuntime={preparedComposerRuntime}
+              appshotRuntime={appshotRuntime}
+              placeholder={placeholder}
+              availableFiles={availableFiles}
+              searchFiles={searchFiles}
+              searchPlugins={searchPlugins}
+              searchSkills={searchSkills}
+              toolbar={runtimeSettingsToolbar}
+              runtimeSettings={{
               runtimeKind: runtimeSettings.runtimeKind ?? _runtimeKind,
               settings: runtimeSettings.settings,
               disabled: !isReady || !runtimeSettings.loaded || runtimeSettings.loading || remoteConnectionBlocked,
               onChange: updateRuntimeSettings,
             }}
-            contextBar={effectiveComposerContextBar}
-            droppedPath={droppedPath}
-            goalActions={goalActions}
-            quickQuestionSlot={quickQuestionSlot}
-            reviewSlot={reviewSlot}
-            usageSlot={usageSlot}
-            onQuickQuestion={
+              contextBar={effectiveComposerContextBar}
+              droppedPath={droppedPath}
+              goalActions={goalActions}
+              quickQuestionSlot={quickQuestionSlot}
+              reviewSlot={reviewSlot}
+              usageSlot={usageSlot}
+              onQuickQuestion={
               sessionId && hasQuickQuestionSlot ? quickQuestion.openQuickQuestion : undefined
             }
-            onComposerFocusChange={scrollRuntime.handleComposerFocusChange}
-            rollbackDraftSignal={rollbackDraftSignal}
-            clearDraftSignal={clearComposerDraftSignal}
-            suspendDraftPersistence={Boolean(pendingRollbackMessageId)}
-          />
+              onComposerFocusChange={scrollRuntime.handleComposerFocusChange}
+              rollbackDraftSignal={rollbackDraftSignal}
+              clearDraftSignal={clearComposerDraftSignal}
+              suspendDraftPersistence={Boolean(pendingRollbackMessageId)}
+            />
           </>
         )}
       />

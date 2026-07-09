@@ -10,8 +10,8 @@ import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
-import { assertRunnableSession } from '../src/modules/chat-runtime/runtime-session-context'
 import { db, shutdownInfra } from '../src/infra'
+import { assertRunnableSession } from '../src/modules/chat-runtime/runtime-session-context'
 import { getRemoteSessionLink } from '../src/modules/session/remote-projection'
 
 type ElysiaApp = Awaited<ReturnType<typeof createServerApp>>

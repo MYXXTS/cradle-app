@@ -40,10 +40,6 @@ import type {
   PostRemoteHostsData,
 } from '~/api-gen/types.gen'
 import {
-  fetchRemoteUpstreamJson,
-  remoteHostUpstreamQueryKey,
-} from '~/features/remote-hosts/upstream-fetch'
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -76,6 +72,10 @@ import { Switch } from '~/components/ui/switch'
 import { toastManager } from '~/components/ui/toast'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
+import {
+  fetchRemoteUpstreamJson,
+  remoteHostUpstreamQueryKey,
+} from '~/features/remote-hosts/upstream-fetch'
 import { cn } from '~/lib/cn'
 
 import { HostEnrollmentsSection } from './host-enrollments-section'

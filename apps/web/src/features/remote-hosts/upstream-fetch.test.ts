@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('~/api-gen/client.gen', () => ({
-  client: {
-    request: vi.fn(),
-  },
-}))
-
 import { client } from '~/api-gen/client.gen'
 
 import {
   fetchRemoteUpstreamJson,
   remoteHostUpstreamQueryKey,
 } from './upstream-fetch'
+
+vi.mock('~/api-gen/client.gen', () => ({
+  client: {
+    request: vi.fn(),
+  },
+}))
 
 describe('fetchRemoteUpstreamJson', () => {
   it('calls api-gen client with concrete upstream path and query', async () => {
