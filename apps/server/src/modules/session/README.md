@@ -23,7 +23,11 @@ Creating a projection:
 
 Deleting a local projection (`DELETE /sessions/:id`) **cascades** to `DELETE` the remote session upstream first. If upstream delete fails, the local projection and link remain and the API returns an error — no silent orphan cleanup.
 
-Linked chat traffic is forwarded through `/remote-hosts/:hostId/upstream/*` with `remoteSessionId` substituted in session-scoped paths. See `session/remote-projection.ts` and Chat Runtime `linked-session-proxy.ts`.
+Linked chat traffic for **all** `/chat/sessions/:sessionId/*` paths is intercepted by
+`linkedChatSessionProxyPlugin` (mounted in `app.ts`) and forwarded through
+`/remote-hosts/:hostId/upstream/*` with `remoteSessionId` substituted. Non-session chat
+routes (composer drafts, global catalogs) stay local. See `session/remote-projection.ts`
+and Chat Runtime `http/linked-session-proxy.ts`.
 
 Provider targets for remote projections are owned by the remote server; local create omits `providerTargetId` unless a future UI explicitly supplies a remote target id (plan 034).
 Provider-backed session creation resolves a stable agent persona and stores `agentId`, so CLI calls carrying the session context can be attributed to an Agent identity.

@@ -5,7 +5,6 @@ import { getMessageGroups, listCompletedRuns } from '../history-api'
 import { ChatRuntimeModel } from '../model'
 import { getRunSnapshot, getRunSnapshots } from '../run-snapshot'
 import { listChatSessionTraceDtos, readChatRunTraceDto } from '../stream-trace'
-import { chatSessionUpstreamPath, proxyLinkedChatSessionIfNeeded } from './linked-session-proxy'
 
 export const chatRuntimeHistoryRoutes = new Elysia({
   detail: { tags: ['chat-runtime'] },
@@ -13,16 +12,7 @@ export const chatRuntimeHistoryRoutes = new Elysia({
   // GET /chat/sessions/:sessionId/messages -> historical message snapshot rows
   .get(
     '/sessions/:sessionId/messages',
-    async ({ params, request }): Promise<Response> => {
-      const url = new URL(request.url)
-      const proxied = await proxyLinkedChatSessionIfNeeded({
-        localSessionId: params.sessionId,
-        upstreamPathWithQuery: chatSessionUpstreamPath(params.sessionId, '/messages', url.search),
-        request,
-      })
-      if (proxied) {
-        return proxied
-      }
+    async ({ params }): Promise<Response> => {
       return Response.json(await getMessageGroups(params.sessionId))
     },
     {

@@ -92,9 +92,10 @@ The workspace module still exposes local `/workspaces/:id/files...` routes for
 registered remote locators; those call the upstream-backed helpers in
 `service.ts` rather than duplicating proxy routes here.
 
-Linked chat sessions (plan 033) also forward session-scoped `/chat/...` and
-`DELETE /sessions/:id` calls through this gateway after rewriting local session
-ids to `remoteSessionId`. See `session/remote-projection.ts` and
+Linked chat sessions (plan 033+) forward **all** `/chat/sessions/:localSessionId/*`
+requests through this gateway after rewriting to `remoteSessionId`, via the global
+`linkedChatSessionProxyPlugin` in `app.ts`. Session delete cascades through
+`DELETE /sessions/:id` upstream. See `session/remote-projection.ts` and
 `session/README.md`.
 
 ## Ownership Boundary

@@ -111,27 +111,25 @@ async function startFakeRemoteCradleServer(): Promise<FakeRemoteCradleServer> {
       writeJson(response, { ok: true })
       return
     }
-    const chatResponseMatch = url.pathname.match(/^\/chat\/sessions\/([^/]+)\/response$/)
-    if (chatResponseMatch && request.method === 'POST') {
-      response.writeHead(200, {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache',
-      })
-      response.end('data: [DONE]\n\n')
-      return
-    }
-    const chatMessagesMatch = url.pathname.match(/^\/chat\/sessions\/([^/]+)\/messages$/)
-    if (chatMessagesMatch && request.method === 'GET') {
-      writeJson(response, { groups: [] })
-      return
-    }
-    const chatStreamMatch = url.pathname.match(/^\/chat\/sessions\/([^/]+)\/stream$/)
-    if (chatStreamMatch && request.method === 'GET') {
-      response.writeHead(200, {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache',
-      })
-      response.end('data: [DONE]\n\n')
+    const chatSessionMatch = url.pathname.match(/^\/chat\/sessions\/([^/]+)(?:\/.*)?$/)
+    if (chatSessionMatch) {
+      if (request.method === 'GET' && url.pathname.endsWith('/stream')) {
+        response.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+        })
+        response.end('data: [DONE]\n\n')
+        return
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/response')) {
+        response.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+        })
+        response.end('data: [DONE]\n\n')
+        return
+      }
+      writeJson(response, { ok: true, path: url.pathname })
       return
     }
 
@@ -340,6 +338,53 @@ describe('remote session projection', () => {
       }))
       expect(responseRes.status).toBe(200)
       expect(fakeRemote.state.forwardedPaths).toContain('POST /chat/sessions/remote-session-1/response')
+    }
+    finally {
+      rmSync(dataDir, { recursive: true, force: true })
+      restoreEnv('CRADLE_DATA_DIR', previousDataDir)
+    }
+  })
+
+  it('transparently proxies queue, cancel, and runtime-settings for linked sessions', async () => {
+    const dataDir = makeTempDir('cradle-remote-session-passthrough-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    let app: ElysiaApp | undefined
+
+    try {
+      fakeRemote = await startFakeRemoteCradleServer()
+      app = await createAppWithDataDir(dataDir)
+      await createDirectUrlHost(app, 'remote-host-passthrough', fakeRemote.baseUrl)
+      await connectHost(app, 'remote-host-passthrough')
+      const workspaceId = await createRemoteMountedWorkspace(app, 'remote-host-passthrough')
+
+      const createRes = await app.handle(new Request('http://localhost/sessions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'Remote chat', workspaceId }),
+      }))
+      const session = await createRes.json() as { id: string }
+
+      fakeRemote.state.forwardedPaths = []
+
+      const queueRes = await app.handle(new Request(`http://localhost/chat/sessions/${session.id}/queue`))
+      expect(queueRes.status).toBe(200)
+      expect(fakeRemote.state.forwardedPaths).toContain('GET /chat/sessions/remote-session-1/queue')
+
+      const cancelRes = await app.handle(new Request(`http://localhost/chat/sessions/${session.id}/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      }))
+      expect(cancelRes.status).toBe(200)
+      expect(fakeRemote.state.forwardedPaths).toContain('POST /chat/sessions/remote-session-1/cancel')
+
+      const settingsRes = await app.handle(new Request(`http://localhost/chat/sessions/${session.id}/runtime-settings`))
+      expect(settingsRes.status).toBe(200)
+      expect(fakeRemote.state.forwardedPaths).toContain('GET /chat/sessions/remote-session-1/runtime-settings')
+
+      const threadsRes = await app.handle(new Request(`http://localhost/chat/sessions/${session.id}/provider-threads`))
+      expect(threadsRes.status).toBe(200)
+      expect(fakeRemote.state.forwardedPaths).toContain('GET /chat/sessions/remote-session-1/provider-threads')
     }
     finally {
       rmSync(dataDir, { recursive: true, force: true })
