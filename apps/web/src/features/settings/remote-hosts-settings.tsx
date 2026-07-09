@@ -40,6 +40,10 @@ import type {
   PostRemoteHostsData,
 } from '~/api-gen/types.gen'
 import {
+  fetchRemoteUpstreamJson,
+  remoteHostUpstreamQueryKey,
+} from '~/features/remote-hosts/upstream-fetch'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -124,21 +128,14 @@ interface RemoteWorkspaceFileContent {
   content: string | null
 }
 
-async function fetchRemoteUpstreamJson<T>(hostId: string, path: string): Promise<T> {
-  const response = await fetch(`/remote-hosts/${encodeURIComponent(hostId)}/upstream${path}`)
-  if (!response.ok) {
-    throw new Error(`Upstream request failed with HTTP ${response.status}`)
-  }
-  return await response.json() as T
-}
-
 function remoteHostWorkspacesQueryKey(hostId: string) {
-  return ['remote-host-upstream', hostId, 'workspaces'] as const
+  return remoteHostUpstreamQueryKey(hostId, 'workspaces')
 }
 
 function remoteHostFilesQueryKey(hostId: string, workspaceId: string, suffix: string, path = '') {
-  return ['remote-host-upstream', hostId, workspaceId, suffix, path] as const
+  return remoteHostUpstreamQueryKey(hostId, workspaceId, suffix, path)
 }
+
 type SettingsKey = keyof typeof import('~/locales/default').default.settings
 type HostSaveBody = PostRemoteHostsData['body']
 

@@ -415,6 +415,14 @@ const AgentSessionSchema = z
 const IssueLinkedSessionSchema = z
   .object({
     id: z.string(),
+    execution: z.union([
+      z.object({ kind: z.string() }),
+      z.object({
+        kind: z.string(),
+        hostId: z.string(),
+        remoteSessionId: z.string(),
+      }),
+    ]),
     parentSessionId: z.string().nullable(),
     sideContextSource: z.enum(['provider-native', 'cradle-context']).nullable(),
     workspaceId: z.string().nullable(),

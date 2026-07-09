@@ -5,6 +5,7 @@ import type { ModelDescriptor } from '~/features/agent-runtime/types'
 import type { ProviderModelOption } from '../types'
 import {
   readComposerThinkingEffort,
+  resolveComposerCatalogSource,
   resolveComposerModelId,
   resolveComposerProfileId,
   resolvePreferredThinkingEffort,
@@ -30,6 +31,14 @@ function model(overrides: Partial<ModelDescriptor> & { id: string }): ModelDescr
     capabilities: overrides.capabilities ?? {},
   }
 }
+
+describe('resolveComposerCatalogSource', () => {
+  it('uses the remote catalog when a remote host id is present', () => {
+    expect(resolveComposerCatalogSource(null)).toBe('local')
+    expect(resolveComposerCatalogSource(undefined)).toBe('local')
+    expect(resolveComposerCatalogSource('host-1')).toBe('remote-host')
+  })
+})
 
 describe('readComposerThinkingEffort', () => {
   it('normalizes only supported effort values', () => {

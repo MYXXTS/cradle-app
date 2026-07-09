@@ -26,6 +26,7 @@ import {
   PlusLine as PlusIcon,
   Refresh1Line as RefreshCwIcon,
   SearchLine as SearchIcon,
+  ServerLine as ServerIcon,
   Settings2Line as SettingsIcon,
   TransferVerticalLine as ArrowUpDownIcon,
   UpSmallLine as ChevronUpIcon,
@@ -66,6 +67,10 @@ import type {
   GetRemoteHostsResponse,
   PostWorkspacesMultiFolderData,
 } from '~/api-gen/types.gen'
+import {
+  fetchRemoteUpstreamJson,
+  remoteHostUpstreamQueryKey,
+} from '~/features/remote-hosts/upstream-fetch'
 import type { RuntimeIconDescriptor } from '~/components/common/provider-icons'
 import { RuntimeIcon } from '~/components/common/provider-icons'
 import { Button } from '~/components/ui/button'
@@ -1237,20 +1242,12 @@ interface RemoteWorkspaceFileEntry {
   path: string
 }
 
-async function fetchRemoteUpstreamJson<T>(hostId: string, path: string): Promise<T> {
-  const response = await fetch(`/remote-hosts/${encodeURIComponent(hostId)}/upstream${path}`)
-  if (!response.ok) {
-    throw new Error(`Upstream request failed with HTTP ${response.status}`)
-  }
-  return await response.json() as T
-}
-
 function remoteHostWorkspacesQueryKey(hostId: string) {
-  return ['remote-host-upstream', hostId, 'workspaces'] as const
+  return remoteHostUpstreamQueryKey(hostId, 'workspaces')
 }
 
 function remoteHostFilesQueryKey(hostId: string, workspaceId: string) {
-  return ['remote-host-upstream', hostId, workspaceId, 'files'] as const
+  return remoteHostUpstreamQueryKey(hostId, workspaceId, 'files')
 }
 
 function RemoteWorkspaceFileRow({ entry }: { entry: RemoteWorkspaceFileEntry }) {
@@ -1952,7 +1949,19 @@ const SessionItem = memo(
                     <WorktreeIcon className="size-3.5" aria-hidden="true" />
                   </span>
                 )
-                : null}
+                : session.execution.kind === 'remote-host'
+                  ? (
+                    <span
+                      className="pointer-events-none absolute inset-0 grid place-items-center text-muted-foreground/70 opacity-100 group-hover:opacity-0 group-focus-within/menu:opacity-0"
+                      title={t('session.aria.remote', { hostName: session.execution.hostId })}
+                      aria-label={t('session.aria.remote', { hostName: session.execution.hostId })}
+                      role="img"
+                      data-testid={`session-remote-indicator-${session.id}`}
+                    >
+                      <ServerIcon className="size-3.5" aria-hidden="true" />
+                    </span>
+                  )
+                  : null}
               <button
                 type="button"
                 className="absolute inset-0 grid place-items-center rounded-md text-muted-foreground/50 opacity-0 hover:bg-accent/80 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"

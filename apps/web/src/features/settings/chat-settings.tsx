@@ -30,6 +30,8 @@ import type { ThinkingOption } from '~/features/composer-toolbar/provider-model-
 import { ProviderModelPicker } from '~/features/composer-toolbar/provider-model-picker'
 import { cn } from '~/lib/cn'
 
+import { readSessionExecution } from '~/features/chat/session/session-execution'
+
 import type { WorkspaceSession } from '../workspace/use-session'
 import { sessionsQueryKey, useAllSessions } from '../workspace/use-session'
 import { SettingsGroup, SettingsPage } from './settings-container'
@@ -94,6 +96,7 @@ function normalizeArchivedSession(session: {
   isIsolated?: boolean | unknown
   worktreeId?: string | unknown | null
   worktreeBranch?: string | unknown | null
+  execution?: unknown
 }): WorkspaceSession {
   const latestUserMessageAt = typeof session.latestUserMessageAt === 'number' ? session.latestUserMessageAt : null
   const latestAssistantMessageAt = typeof session.latestAssistantMessageAt === 'number' ? session.latestAssistantMessageAt : null
@@ -121,6 +124,7 @@ function normalizeArchivedSession(session: {
     isIsolated: session.isIsolated === true,
     worktreeId: typeof session.worktreeId === 'string' ? session.worktreeId : null,
     worktreeBranch: typeof session.worktreeBranch === 'string' ? session.worktreeBranch : null,
+    execution: readSessionExecution(session),
   }
 }
 
