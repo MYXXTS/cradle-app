@@ -21,6 +21,7 @@ import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, Me
 import { runtimeComposerUsesCollapsedInput, useRuntimeCatalog } from '~/features/agent-runtime/use-runtime-catalog'
 import type { DraftChatComposerSubmitOptions } from '~/features/chat/composer/draft-chat-composer'
 import { DraftChatComposerWithState } from '~/features/chat/composer/draft-chat-composer'
+import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
 import {
   isPlanRuntimeSettings,
   mergeRuntimeSettings,
@@ -28,7 +29,6 @@ import {
   readRunRuntimeSettingsPatch,
   resolveRuntimeCatalogItem,
 } from '~/features/chat/runtime/runtime-settings-presenter'
-import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
 import { startOptimisticChatResponse } from '~/features/chat/session/optimistic-chat-turn'
 import { useComposerState } from '~/features/composer-toolbar'
 import type { IssueIsolationStartChoice } from '~/features/new-chat/issue-isolation-start-dialog'

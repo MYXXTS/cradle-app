@@ -8,8 +8,8 @@ import {
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 
 import { applyPlanImplementationApprovalResponse } from '../interaction/plan-implementation-message'
-import { normalizeQueueItemRuntimeSettingsJson } from '../queue/session-queue'
 import { compactStoredMessageSnapshot } from '../message-snapshot-compaction'
+import { normalizeQueueItemRuntimeSettingsJson } from '../queue/session-queue'
 import type { ChatMessageStatus } from '../run/stream-chunks'
 import { parseStoredMessageSnapshot } from '../stream/projection'
 import { extractMessageText, normalizeMessageSnapshot } from '../ui-message'

@@ -10,7 +10,6 @@ import { and, desc, eq, or, sql } from 'drizzle-orm'
 
 import { currentUnixSeconds } from '../../../helpers/time'
 import { db } from '../../../infra'
-import { getDefaultRuntimeSettings } from '../runtime-settings'
 import { parseStoredMessageSnapshot } from '../ui-message'
 import {
   appendDecidedSessionEvents,
