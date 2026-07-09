@@ -2842,148 +2842,85 @@ export type PostRemoteHostsByHostIdRelayClaimResponses = {
 
 export type PostRemoteHostsByHostIdRelayClaimResponse = PostRemoteHostsByHostIdRelayClaimResponses[keyof PostRemoteHostsByHostIdRelayClaimResponses];
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesData = {
+export type AllRemoteHostsByHostIdUpstreamData = {
     body?: never;
     path: {
         hostId: string;
+        '*': string;
     };
     query?: never;
-    url: '/remote-hosts/{hostId}/cradle-server/workspaces';
+    url: '/remote-hosts/{hostId}/upstream/*';
 };
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        workspaces: Array<{
-            id: string;
-            name: string;
-            locator: {
-                hostId: string;
-                path: string;
-                kind?: 'project' | 'managed-worktree';
-                sourceWorkspaceId?: string | null;
-            };
-            gitIdentity: {
-                originUrl?: string | null;
-                repoRoot?: string | null;
-                headSha?: string | null;
-                branch?: string | null;
-            };
-            identifier: string;
-            pinned: number;
-            createdAt: number;
-            updatedAt: number;
-        }>;
-    };
-};
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesResponse = GetRemoteHostsByHostIdCradleServerWorkspacesResponses[keyof GetRemoteHostsByHostIdCradleServerWorkspacesResponses];
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesData = {
+export type AllRemoteHostsByHostIdUpstream2Data = {
     body?: never;
     path: {
         hostId: string;
-        remoteWorkspaceId: string;
+        '*': string;
     };
     query?: never;
-    url: '/remote-hosts/{hostId}/cradle-server/workspaces/{remoteWorkspaceId}/files';
+    url: '/remote-hosts/{hostId}/upstream/*';
 };
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        files: Array<{
-            type: 'file' | 'directory';
-            name: string;
-            path: string;
-        }>;
-    };
-};
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponse = GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponses[keyof GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponses];
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenData = {
+export type AllRemoteHostsByHostIdUpstream3Data = {
     body?: never;
     path: {
         hostId: string;
-        remoteWorkspaceId: string;
+        '*': string;
     };
-    query?: {
-        path?: string;
-    };
-    url: '/remote-hosts/{hostId}/cradle-server/workspaces/{remoteWorkspaceId}/files/children';
+    query?: never;
+    url: '/remote-hosts/{hostId}/upstream/*';
 };
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        files: Array<{
-            type: 'file' | 'directory';
-            name: string;
-            path: string;
-        }>;
-    };
-};
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenResponse = GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenResponses[keyof GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenResponses];
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentData = {
+export type AllRemoteHostsByHostIdUpstream4Data = {
     body?: never;
     path: {
         hostId: string;
-        remoteWorkspaceId: string;
+        '*': string;
     };
-    query: {
-        path: string;
-    };
-    url: '/remote-hosts/{hostId}/cradle-server/workspaces/{remoteWorkspaceId}/files/content';
+    query?: never;
+    url: '/remote-hosts/{hostId}/upstream/*';
 };
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        content: string | null;
-    };
-};
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentResponse = GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentResponses[keyof GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentResponses];
-
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoData = {
+export type AllRemoteHostsByHostIdUpstream5Data = {
     body?: never;
     path: {
         hostId: string;
-        remoteWorkspaceId: string;
+        '*': string;
     };
-    query: {
-        path: string;
-    };
-    url: '/remote-hosts/{hostId}/cradle-server/workspaces/{remoteWorkspaceId}/files/info';
+    query?: never;
+    url: '/remote-hosts/{hostId}/upstream/*';
 };
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        name: string;
-        path: string;
-        size: number;
-        modifiedAt: number;
-        mimeType: string;
-        extension: string;
-        previewKind: 'text' | 'markdown' | 'image' | 'pdf' | 'office' | 'unsupported';
-    } | null;
+export type AllRemoteHostsByHostIdUpstream6Data = {
+    body?: never;
+    path: {
+        hostId: string;
+        '*': string;
+    };
+    query?: never;
+    url: '/remote-hosts/{hostId}/upstream/*';
 };
 
-export type GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoResponse = GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoResponses[keyof GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoResponses];
+export type AllRemoteHostsByHostIdUpstream7Data = {
+    body?: never;
+    path: {
+        hostId: string;
+        '*': string;
+    };
+    query?: never;
+    url: '/remote-hosts/{hostId}/upstream/*';
+};
+
+export type AllRemoteHostsByHostIdUpstream8Data = {
+    body?: never;
+    path: {
+        hostId: string;
+        '*': string;
+    };
+    query?: never;
+    url: '/remote-hosts/{hostId}/upstream/*';
+};
 
 export type GetExternalIssueSourcesData = {
     body?: never;

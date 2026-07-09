@@ -634,40 +634,44 @@ export const zPostRemoteHostsByHostIdRelayClaimPath = z.object({
     hostId: z.string().min(1)
 });
 
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesPath = z.object({
-    hostId: z.string().min(1)
-});
-
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesPath = z.object({
+export const zAllRemoteHostsByHostIdUpstreamPath = z.object({
     hostId: z.string().min(1),
-    remoteWorkspaceId: z.string().min(1)
+    '*': z.string()
 });
 
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenPath = z.object({
+export const zAllRemoteHostsByHostIdUpstream2Path = z.object({
     hostId: z.string().min(1),
-    remoteWorkspaceId: z.string().min(1)
+    '*': z.string()
 });
 
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenQuery = z.object({
-    path: z.string().optional()
-});
-
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentPath = z.object({
+export const zAllRemoteHostsByHostIdUpstream3Path = z.object({
     hostId: z.string().min(1),
-    remoteWorkspaceId: z.string().min(1)
+    '*': z.string()
 });
 
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentQuery = z.object({
-    path: z.string().min(1).regex(/.*\S.*/)
-});
-
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoPath = z.object({
+export const zAllRemoteHostsByHostIdUpstream4Path = z.object({
     hostId: z.string().min(1),
-    remoteWorkspaceId: z.string().min(1)
+    '*': z.string()
 });
 
-export const zGetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoQuery = z.object({
-    path: z.string().min(1).regex(/.*\S.*/)
+export const zAllRemoteHostsByHostIdUpstream5Path = z.object({
+    hostId: z.string().min(1),
+    '*': z.string()
+});
+
+export const zAllRemoteHostsByHostIdUpstream6Path = z.object({
+    hostId: z.string().min(1),
+    '*': z.string()
+});
+
+export const zAllRemoteHostsByHostIdUpstream7Path = z.object({
+    hostId: z.string().min(1),
+    '*': z.string()
+});
+
+export const zAllRemoteHostsByHostIdUpstream8Path = z.object({
+    hostId: z.string().min(1),
+    '*': z.string()
 });
 
 export const zGetExternalIssueSourcesBindingsQuery = z.object({

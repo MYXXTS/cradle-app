@@ -55,8 +55,6 @@ import {
   postSessionsByIdUnread,
 } from '~/api-gen'
 import {
-  getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesOptions,
-  getRemoteHostsByHostIdCradleServerWorkspacesOptions,
   getRemoteHostsOptions,
   getSessionsByIdQueryKey,
   patchWorkspacesByWorkspaceIdMutation,
@@ -65,8 +63,6 @@ import {
   postWorkspacesMultiFolderMutation,
 } from '~/api-gen/@tanstack/react-query.gen'
 import type {
-  GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponse,
-  GetRemoteHostsByHostIdCradleServerWorkspacesResponse,
   GetRemoteHostsResponse,
   PostWorkspacesMultiFolderData,
 } from '~/api-gen/types.gen'
@@ -1213,8 +1209,49 @@ function WorkspaceRecognitionDialog({
 }
 
 type RemoteHost = GetRemoteHostsResponse[number]
-type RemoteWorkspace = GetRemoteHostsByHostIdCradleServerWorkspacesResponse['workspaces'][number]
-type RemoteWorkspaceFileEntry = GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponse['files'][number]
+
+interface RemoteWorkspace {
+  id: string
+  name: string
+  locator: {
+    hostId: string
+    path: string
+    kind?: 'project' | 'managed-worktree'
+    sourceWorkspaceId?: string | null
+  }
+  gitIdentity: {
+    originUrl?: string | null
+    repoRoot?: string | null
+    headSha?: string | null
+    branch?: string | null
+  }
+  identifier: string
+  pinned: number
+  createdAt: number
+  updatedAt: number
+}
+
+interface RemoteWorkspaceFileEntry {
+  type: 'file' | 'directory'
+  name: string
+  path: string
+}
+
+async function fetchRemoteUpstreamJson<T>(hostId: string, path: string): Promise<T> {
+  const response = await fetch(`/remote-hosts/${encodeURIComponent(hostId)}/upstream${path}`)
+  if (!response.ok) {
+    throw new Error(`Upstream request failed with HTTP ${response.status}`)
+  }
+  return await response.json() as T
+}
+
+function remoteHostWorkspacesQueryKey(hostId: string) {
+  return ['remote-host-upstream', hostId, 'workspaces'] as const
+}
+
+function remoteHostFilesQueryKey(hostId: string, workspaceId: string) {
+  return ['remote-host-upstream', hostId, workspaceId, 'files'] as const
+}
 
 function RemoteWorkspaceFileRow({ entry }: { entry: RemoteWorkspaceFileEntry }) {
   return (
@@ -1270,10 +1307,11 @@ function RemoteWorkspaceBrowser({
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
 
   const workspacesQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesOptions({ path: { hostId: host.id } }),
+    queryKey: remoteHostWorkspacesQueryKey(host.id),
+    queryFn: () => fetchRemoteUpstreamJson<RemoteWorkspace[]>(host.id, '/workspaces'),
     retry: false,
   })
-  const workspaces = workspacesQuery.data?.workspaces ?? []
+  const workspaces = workspacesQuery.data ?? []
   const selectedWorkspace = useMemo(() => {
     return workspaces.find(workspace => workspace.id === selectedWorkspaceId) ?? workspaces[0] ?? null
   }, [selectedWorkspaceId, workspaces])
@@ -1289,12 +1327,11 @@ function RemoteWorkspaceBrowser({
   }, [selectedWorkspaceId, workspaces])
 
   const filesQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesOptions({
-      path: {
-        hostId: host.id,
-        remoteWorkspaceId: selectedWorkspace?.id ?? '',
-      },
-    }),
+    queryKey: remoteHostFilesQueryKey(host.id, selectedWorkspace?.id ?? ''),
+    queryFn: () => fetchRemoteUpstreamJson<RemoteWorkspaceFileEntry[]>(
+      host.id,
+      `/workspaces/${encodeURIComponent(selectedWorkspace?.id ?? '')}/files`,
+    ),
     enabled: !!selectedWorkspace,
     retry: false,
   })
@@ -1391,10 +1428,10 @@ function RemoteWorkspaceBrowser({
                               {filesQuery.error instanceof Error ? filesQuery.error.message : String(filesQuery.error)}
                             </p>
                           )
-                        : filesQuery.data && filesQuery.data.files.length > 0
+                        : filesQuery.data && filesQuery.data.length > 0
                           ? (
                               <div className="max-h-56 overflow-y-auto rounded-md border border-border/60">
-                                {filesQuery.data.files.map(entry => (
+                                {filesQuery.data.map(entry => (
                                   <RemoteWorkspaceFileRow key={entry.path} entry={entry} />
                                 ))}
                               </div>

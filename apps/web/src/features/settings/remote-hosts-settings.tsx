@@ -22,12 +22,6 @@ import {
   getRelayServersOptions,
   getRemoteHostsByHostIdCradleServerHealthOptions,
   getRemoteHostsByHostIdCradleServerHealthQueryKey,
-  getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenOptions,
-  getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentOptions,
-  getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoOptions,
-  getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesOptions,
-  getRemoteHostsByHostIdCradleServerWorkspacesOptions,
-  getRemoteHostsByHostIdCradleServerWorkspacesQueryKey,
   getRemoteHostsOptions,
   getRemoteHostsQueryKey,
 } from '~/api-gen/@tanstack/react-query.gen'
@@ -42,8 +36,6 @@ import {
 } from '~/api-gen/sdk.gen'
 import type {
   GetRelayServersResponse,
-  GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponse,
-  GetRemoteHostsByHostIdCradleServerWorkspacesResponse,
   GetRemoteHostsResponse,
   PostRemoteHostsData,
 } from '~/api-gen/types.gen'
@@ -90,8 +82,63 @@ type Host = GetRemoteHostsResponse[number]
 type ConnectionState = Host['connectionState']
 type HostTransport = 'ssh' | 'direct-url' | 'relay'
 type RelayServer = GetRelayServersResponse[number]
-type RemoteWorkspace = GetRemoteHostsByHostIdCradleServerWorkspacesResponse['workspaces'][number]
-type WorkspaceFileEntry = GetRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesResponse['files'][number]
+
+interface RemoteWorkspace {
+  id: string
+  name: string
+  locator: {
+    hostId: string
+    path: string
+    kind?: 'project' | 'managed-worktree'
+    sourceWorkspaceId?: string | null
+  }
+  gitIdentity: {
+    originUrl?: string | null
+    repoRoot?: string | null
+    headSha?: string | null
+    branch?: string | null
+  }
+  identifier: string
+  pinned: number
+  createdAt: number
+  updatedAt: number
+}
+
+interface WorkspaceFileEntry {
+  type: 'file' | 'directory'
+  name: string
+  path: string
+}
+
+interface RemoteWorkspaceFileInfo {
+  name: string
+  path: string
+  size: number
+  modifiedAt: number
+  mimeType: string
+  extension: string
+  previewKind: 'text' | 'markdown' | 'image' | 'pdf' | 'office' | 'unsupported'
+}
+
+interface RemoteWorkspaceFileContent {
+  content: string | null
+}
+
+async function fetchRemoteUpstreamJson<T>(hostId: string, path: string): Promise<T> {
+  const response = await fetch(`/remote-hosts/${encodeURIComponent(hostId)}/upstream${path}`)
+  if (!response.ok) {
+    throw new Error(`Upstream request failed with HTTP ${response.status}`)
+  }
+  return await response.json() as T
+}
+
+function remoteHostWorkspacesQueryKey(hostId: string) {
+  return ['remote-host-upstream', hostId, 'workspaces'] as const
+}
+
+function remoteHostFilesQueryKey(hostId: string, workspaceId: string, suffix: string, path = '') {
+  return ['remote-host-upstream', hostId, workspaceId, suffix, path] as const
+}
 type SettingsKey = keyof typeof import('~/locales/default').default.settings
 type HostSaveBody = PostRemoteHostsData['body']
 
@@ -478,18 +525,20 @@ function FilePreview({ hostId, workspaceId, entry }: { hostId: string, workspace
   const { t } = useTranslation('settings')
   const path = entry.path
   const infoQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesInfoOptions({
-      path: { hostId, remoteWorkspaceId: workspaceId },
-      query: { path },
-    }),
+    queryKey: remoteHostFilesQueryKey(hostId, workspaceId, 'info', path),
+    queryFn: () => fetchRemoteUpstreamJson<RemoteWorkspaceFileInfo | null>(
+      hostId,
+      `/workspaces/${encodeURIComponent(workspaceId)}/files/info?path=${encodeURIComponent(path)}`,
+    ),
     enabled: entry.type === 'file',
     retry: false,
   })
   const contentQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesContentOptions({
-      path: { hostId, remoteWorkspaceId: workspaceId },
-      query: { path },
-    }),
+    queryKey: remoteHostFilesQueryKey(hostId, workspaceId, 'content', path),
+    queryFn: () => fetchRemoteUpstreamJson<RemoteWorkspaceFileContent>(
+      hostId,
+      `/workspaces/${encodeURIComponent(workspaceId)}/files/content?path=${encodeURIComponent(path)}`,
+    ),
     enabled: entry.type === 'file',
     retry: false,
   })
@@ -546,7 +595,6 @@ function WorkspaceFiles({ hostId, workspace }: { hostId: string, workspace: Remo
   const { t } = useTranslation('settings')
   const [currentPath, setCurrentPath] = useState('')
   const [selectedFile, setSelectedFile] = useState<WorkspaceFileEntry | null>(null)
-  const pathOptions = { path: { hostId, remoteWorkspaceId: workspace.id } }
 
   useEffect(() => {
     setCurrentPath('')
@@ -554,21 +602,26 @@ function WorkspaceFiles({ hostId, workspace }: { hostId: string, workspace: Remo
   }, [workspace.id])
 
   const rootQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesOptions(pathOptions),
+    queryKey: remoteHostFilesQueryKey(hostId, workspace.id, 'root'),
+    queryFn: () => fetchRemoteUpstreamJson<WorkspaceFileEntry[]>(
+      hostId,
+      `/workspaces/${encodeURIComponent(workspace.id)}/files`,
+    ),
     enabled: currentPath.length === 0,
     retry: false,
   })
   const childrenQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesByRemoteWorkspaceIdFilesChildrenOptions({
-      ...pathOptions,
-      query: { path: currentPath },
-    }),
+    queryKey: remoteHostFilesQueryKey(hostId, workspace.id, 'children', currentPath),
+    queryFn: () => fetchRemoteUpstreamJson<WorkspaceFileEntry[]>(
+      hostId,
+      `/workspaces/${encodeURIComponent(workspace.id)}/files/children?path=${encodeURIComponent(currentPath)}`,
+    ),
     enabled: currentPath.length > 0,
     retry: false,
   })
 
   const activeQuery = currentPath.length === 0 ? rootQuery : childrenQuery
-  const files = activeQuery.data?.files ?? []
+  const files = activeQuery.data ?? []
   const directories = files.filter(file => file.type === 'directory')
   const regularFiles = files.filter(file => file.type === 'file')
 
@@ -654,11 +707,12 @@ function WorkspaceList({ host }: { host: Host }) {
   const { t } = useTranslation('settings')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
   const workspacesQuery = useQuery({
-    ...getRemoteHostsByHostIdCradleServerWorkspacesOptions({ path: { hostId: host.id } }),
+    queryKey: remoteHostWorkspacesQueryKey(host.id),
+    queryFn: () => fetchRemoteUpstreamJson<RemoteWorkspace[]>(host.id, '/workspaces'),
     enabled: host.connectionState === 'connected',
     retry: false,
   })
-  const workspaces = workspacesQuery.data?.workspaces ?? []
+  const workspaces = workspacesQuery.data ?? []
   const selectedWorkspace = useMemo(() => {
     return workspaces.find(workspace => workspace.id === selectedWorkspaceId) ?? workspaces[0] ?? null
   }, [selectedWorkspaceId, workspaces])
@@ -724,7 +778,7 @@ function HostDetail({ host }: { host: Host }) {
 
   const refreshAll = () => {
     void queryClient.invalidateQueries({ queryKey: getRemoteHostsByHostIdCradleServerHealthQueryKey({ path: { hostId: host.id } }) })
-    void queryClient.invalidateQueries({ queryKey: getRemoteHostsByHostIdCradleServerWorkspacesQueryKey({ path: { hostId: host.id } }) })
+    void queryClient.invalidateQueries({ queryKey: remoteHostWorkspacesQueryKey(host.id) })
   }
 
   if (!connected) {

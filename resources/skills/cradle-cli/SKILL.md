@@ -245,7 +245,7 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `provider` | 1 | Inspect provider model availability. | `cradle man provider` |
 | `relay-server` | 4 | Generated Cradle CLI module. | `cradle man relay-server` |
 | `relay-transport` | 5 | Generated Cradle CLI module. | `cradle man relay-transport` |
-| `remote-host` | 9 | Generated Cradle CLI module. | `cradle man remote-host` |
+| `remote-host` | 8 | Generated Cradle CLI module. | `cradle man remote-host` |
 | `search` | 2 | Search Cradle data. | `cradle man search` |
 | `secret` | 2 | Manage secret metadata. | `cradle man secret` |
 | `session` | 22 | Manage chat sessions and session links. | `cradle man session` |
