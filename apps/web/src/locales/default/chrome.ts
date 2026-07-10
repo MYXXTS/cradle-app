@@ -27,6 +27,7 @@ export default {
   'update.tooltip.title': 'Cradle updates',
   'footer.action.askJarvis': 'Ask Jarvis',
   'rightAside.tab.files': 'Files',
+  'rightAside.tab.work': 'Work',
   'rightAside.tab.changes': 'Changes',
   'rightAside.tab.git': 'Git',
   'rightAside.tab.issue': 'Issue',

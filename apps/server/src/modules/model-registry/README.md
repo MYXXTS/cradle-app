@@ -22,3 +22,6 @@ This module owns **Enrichment** (layer 2):
   on server boot), `resolveModelEnrichment`, `enrichModelsWithRegistryData`,
   `enrichModelsFromRegistryMappings`, `getCachedModelsDevCost` (DB-backed, not mem-only),
   fuzzy-enabled `lookupContextWindow` and `lookupModel`.
+  - Projects `reasoning` + `reasoning_options` into `capabilities.reasoning` /
+    `reasoningEfforts` (`effort.values` only; empty/toggle/budget-only → `[]`).
+  - Upstream inventory `reasoningEfforts` win over registry projection on merge.

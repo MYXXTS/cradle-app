@@ -81,4 +81,21 @@ describe('projectProviderModelCapabilities', () => {
       reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     })
   })
+
+  it('does not invent Claude efforts when registry declared an empty list', () => {
+    expect(projectProviderModelCapabilities({
+      id: 'claude-sonnet-4-20250514',
+      label: 'Claude Sonnet 4',
+      providerKind: 'anthropic',
+      capabilities: {
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+    }).capabilities).toEqual({
+      inputModalities: ['text', 'image'],
+      outputModalities: ['text'],
+      reasoning: true,
+      reasoningEfforts: [],
+    })
+  })
 })

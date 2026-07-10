@@ -24,6 +24,14 @@ function workspaceTab(workspaceId: string) {
   }
 }
 
+function workTab(workId: string) {
+  return {
+    type: 'work',
+    label: `Work ${workId}`,
+    params: { workId },
+  }
+}
+
 describe('deriveActiveLayoutContract', () => {
   it('derives chat chrome synchronously from cached session workspace metadata', () => {
     const contract = deriveActiveLayoutContract({
@@ -142,5 +150,29 @@ describe('deriveActiveLayoutContract', () => {
     expect(contract.hasAside).toBe(true)
     expect(contract.hasBrowserPanel).toBe(true)
     expect(contract.hasPanel).toBe(true)
+  })
+
+  it('projects Work layout slots through the primary Session', () => {
+    const contract = deriveActiveLayoutContract({
+      activeTab: workTab('work-1'),
+      slots: {
+        asideSessionId: 'session-1',
+        asideWorkspaceId: 'workspace-1',
+        hasBrowserPanel: true,
+        hasPanel: true,
+        panel: 'Work terminal',
+      },
+      sessionLayout: undefined,
+      ...explicitInputs,
+    })
+
+    expect(contract).toEqual({
+      asideSessionId: 'session-1',
+      asideWorkspaceId: 'workspace-1',
+      hasAside: true,
+      hasBrowserPanel: true,
+      hasPanel: true,
+      panel: 'Work terminal',
+    })
   })
 })

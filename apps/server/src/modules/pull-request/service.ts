@@ -1,10 +1,11 @@
 import { sessions } from '@cradle/db'
 import { eq } from 'drizzle-orm'
+import type { Static } from 'elysia'
 import { simpleGit } from 'simple-git'
 
-import { db } from '../../infra'
 import { AppError } from '../../errors/app-error'
 import { parseJsonObjectOrEmpty } from '../../helpers/json-record'
+import { db } from '../../infra'
 import {
   createPullRequest as createGitHubPullRequest,
   fetchPullRequest,
@@ -12,16 +13,22 @@ import {
   GitHubApiError,
   hasGitHubToken,
   markPullRequestReady as markGitHubPullRequestReady,
+  updatePullRequest as updateGitHubPullRequest,
 } from '../../lib/github-api'
 import * as Worktree from '../worktree/service'
-
 import { parseGitHubOwnerRepo } from './github-remote'
+import type { pullRequestViewSchema } from './model'
 import { withCradlePullRequestFooter } from './pr-body'
 
-import type { pullRequestViewSchema } from './model'
-import type { Static } from 'elysia'
-
 export type SessionPullRequestView = Static<typeof pullRequestViewSchema>
+export interface PullRequestReadiness {
+  isolated: boolean
+  clean: boolean
+  branch: string | null
+  baseRef: string | null
+  commitsAhead: number
+  changedFiles: number
+}
 export { parseGitHubOwnerRepo } from './github-remote'
 export { withCradlePullRequestFooter } from './pr-body'
 
@@ -275,6 +282,40 @@ export async function getPullRequest(sessionId: string): Promise<SessionPullRequ
   }
 }
 
+export async function inspectPullRequestReadiness(sessionId: string): Promise<PullRequestReadiness> {
+  const session = requireSession(sessionId)
+  const execution = Worktree.resolveSessionExecutionRoot(session)
+  if (!execution.isIsolated || !execution.rootPath || !execution.branch || !execution.worktreeId) {
+    return {
+      isolated: false,
+      clean: false,
+      branch: execution.branch,
+      baseRef: null,
+      commitsAhead: 0,
+      changedFiles: 0,
+    }
+  }
+
+  Worktree.assertIsolationExecutionReady(session)
+  const worktree = Worktree.getWorktree(execution.worktreeId)
+  const git = simpleGit(execution.rootPath)
+  const status = await git.status()
+  const baseRef = worktree?.baseRef ?? null
+  const countOutput = baseRef
+    ? await git.raw(['rev-list', '--count', `${baseRef}..HEAD`])
+    : '0'
+  const commitsAhead = Number.parseInt(countOutput.trim(), 10)
+
+  return {
+    isolated: true,
+    clean: status.files.length === 0,
+    branch: execution.branch,
+    baseRef,
+    commitsAhead: Number.isFinite(commitsAhead) ? commitsAhead : 0,
+    changedFiles: status.files.length,
+  }
+}
+
 export async function createDraftPullRequest(input: {
   sessionId: string
   title: string
@@ -367,6 +408,80 @@ export async function createDraftPullRequest(input: {
   }
 
   return persistPullRequest(input.sessionId, stored)
+}
+
+export async function updatePullRequest(input: {
+  sessionId: string
+  title: string
+  body: string
+}): Promise<SessionPullRequestView> {
+  if (!hasGitHubToken()) {
+    throw new AppError({
+      code: 'github_auth_required',
+      status: 401,
+      message: 'GitHub authentication required. Set GH_TOKEN / GITHUB_TOKEN or run `gh auth login`.',
+    })
+  }
+
+  const session = requireSession(input.sessionId)
+  const stored = readStoredPullRequest(session.configJson)
+  if (!stored) {
+    throw new AppError({
+      code: 'pull_request_not_bound',
+      status: 404,
+      message: 'No pull request is bound to this session.',
+    })
+  }
+  if (stored.state !== 'open' || stored.merged) {
+    throw new AppError({
+      code: 'pull_request_closed',
+      status: 409,
+      message: 'The bound pull request is closed or merged.',
+      details: { pullRequest: stored },
+    })
+  }
+
+  const execution = Worktree.resolveSessionExecutionRoot(session)
+  if (!execution.isIsolated || !execution.branch || !execution.rootPath) {
+    throw new AppError({
+      code: 'session_not_isolated',
+      status: 409,
+      message: 'Update a pull request only from an isolated session worktree.',
+    })
+  }
+  Worktree.assertIsolationExecutionReady(session)
+  const remote = await resolveGitHubRemote(execution.rootPath)
+  await ensureBranchPushed({
+    rootPath: execution.rootPath,
+    branch: execution.branch,
+    remoteName: remote.remoteName,
+  })
+
+  let updated: Awaited<ReturnType<typeof updateGitHubPullRequest>>
+  try {
+    updated = await updateGitHubPullRequest({
+      owner: stored.owner,
+      repo: stored.repo,
+      pullRequestNumber: stored.number,
+      title: input.title.trim(),
+      body: withCradlePullRequestFooter(input.body),
+    })
+  }
+  catch (error) {
+    mapGitHubError(error, 'Failed to update GitHub pull request.')
+  }
+
+  return persistPullRequest(input.sessionId, {
+    ...stored,
+    title: updated.title,
+    isDraft: updated.draft,
+    state: updated.state,
+    headRef: updated.head.ref,
+    baseRef: updated.base.ref,
+    headSha: updated.head.sha,
+    url: updated.html_url,
+    updatedAt: nowSeconds(),
+  })
 }
 
 export async function markPullRequestReady(sessionId: string): Promise<SessionPullRequestView> {

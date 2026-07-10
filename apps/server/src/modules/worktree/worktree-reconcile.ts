@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 
 import type { Worktree } from '@cradle/db'
 import { worktrees } from '@cradle/db'
@@ -38,7 +38,15 @@ export async function reconcileWorktreeRecord(worktree: Worktree): Promise<Workt
   try {
     const repoRoot = await resolveGitRepoRoot(workspacePath)
     const entries = await listGitWorktrees(repoRoot)
-    const match = entries.find(entry => entry.path === worktree.path)
+    const expectedPath = realpathSync.native(worktree.path)
+    const match = entries.find((entry) => {
+      try {
+        return realpathSync.native(entry.path) === expectedPath
+      }
+      catch {
+        return false
+      }
+    })
     if (!match) {
       return 'missing'
     }

@@ -222,6 +222,14 @@ export interface CreatePullRequestInput {
   draft?: boolean
 }
 
+export interface UpdatePullRequestInput {
+  owner: string
+  repo: string
+  pullRequestNumber: number
+  title: string
+  body: string
+}
+
 export interface CreatedGitHubPullRequest {
   number: number
   title: string
@@ -453,6 +461,18 @@ export function createPullRequest(input: CreatePullRequestInput): Promise<Create
       base: input.base,
       body: input.body ?? '',
       draft: input.draft ?? true,
+    },
+    CreatedGitHubPullRequestSchema,
+  )
+}
+
+export function updatePullRequest(input: UpdatePullRequestInput): Promise<CreatedGitHubPullRequest> {
+  return githubMutate(
+    'PATCH',
+    `/repos/${input.owner}/${input.repo}/pulls/${input.pullRequestNumber}`,
+    {
+      title: input.title,
+      body: input.body,
     },
     CreatedGitHubPullRequestSchema,
   )

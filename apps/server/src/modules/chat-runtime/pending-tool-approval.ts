@@ -18,6 +18,15 @@ interface PendingToolApprovalState {
 
 const pendingToolApprovalById = new Map<string, PendingToolApprovalState>()
 
+export function hasPendingRuntimeToolApproval(sessionId: string): boolean {
+  for (const pending of pendingToolApprovalById.values()) {
+    if (pending.request.sessionId === sessionId) {
+      return true
+    }
+  }
+  return false
+}
+
 export async function requestRuntimeToolApproval(
   input: RuntimeToolApprovalRequest,
 ): Promise<RuntimeToolApprovalResolution> {

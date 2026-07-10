@@ -50,6 +50,7 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 033  | Remote session projection + link; block local runtime    | P1       | L      | 032        | DONE                                                                                   |
 | 034  | Web remote-execution UX for projected sessions           | P1       | M      | 032, 033   | DONE                                                                                   |
 | 035  | Unify model Inventory / Enrichment / Visibility / Selection | P1    | XL     | —          | IN PROGRESS (M0–M6 core done; polish/orphan UI copy optional)                          |
+| 036  | User-controlled local Work: isolated task to Draft PR    | P1       | XL     | —          | DONE                                                                                   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
@@ -126,6 +127,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
 - 032 is independent of the plugin track; it is the Remote Control product-layer keystone.
 - 033 requires 032 (session projection forwards through the upstream gateway; RemoteCradleClient must be gone).
 - 034 requires 032 and 033 (web consumes `execution` metadata and connection gates; server must proxy linked chat).
+- 036 is intentionally independent of 032-034: it composes the existing local Session/worktree/PR path and must not redesign remote execution.
 
 ## Remote Control product track (032-034)
 

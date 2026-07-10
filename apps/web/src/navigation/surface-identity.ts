@@ -2,6 +2,8 @@ import { getI18n } from '~/i18n/instance'
 
 export type SurfaceKind
   = | 'home'
+    | 'new-work'
+    | 'work'
     | 'new-chat'
     | 'chat'
     | 'diff'
@@ -19,6 +21,8 @@ export type SurfaceKind
 
 export type SurfaceRoute
   = | { to: '/', params?: undefined, search?: undefined }
+    | { to: '/work/new', params?: undefined, search?: { workspaceId?: string, issueId?: string } }
+    | { to: '/work/$workId', params: { workId: string }, search?: undefined }
     | { to: '/chat/new', params?: undefined, search?: { issueId?: string } }
     | { to: '/chat/$sessionId', params: { sessionId: string }, search?: undefined }
     | { to: '/diff', params?: undefined, search?: { workspace?: string, repo?: string, path?: string, review?: string, view?: 'commit' | 'guide' } }
@@ -76,6 +80,10 @@ export function chatSurfaceId(sessionId: string): string {
   return `chat:${sessionId}`
 }
 
+export function workSurfaceId(workId: string): string {
+  return `work:${workId}`
+}
+
 export function workspaceSurfaceId(workspaceId: string): string {
   return `workspace:${workspaceId}`
 }
@@ -118,6 +126,33 @@ export function surfaceDraftFromRoute(input: {
       kind: 'new-chat',
       title: getI18n().t('chrome:surface.newChat'),
       route: { to: '/chat/new' },
+      closable: true,
+    }
+  }
+
+  if (input.pathname === '/work/new') {
+    return {
+      id: 'new-work',
+      kind: 'new-work',
+      title: getI18n().t('work:surface.new'),
+      route: {
+        to: '/work/new',
+        search: {
+          workspaceId: readString(search.workspaceId),
+          issueId: readString(search.issueId),
+        },
+      },
+      closable: true,
+    }
+  }
+
+  const workId = readString(params.workId)
+  if (input.pathname.startsWith('/work/') && workId) {
+    return {
+      id: workSurfaceId(workId),
+      kind: 'work',
+      title: getI18n().t('work:surface.work'),
+      route: { to: '/work/$workId', params: { workId } },
       closable: true,
     }
   }
@@ -296,6 +331,10 @@ export function layoutSlotIdForRoute(route: SurfaceRoute | null | undefined): st
     return route.params.sessionId
   }
 
+  if (route.to === '/work/$workId') {
+    return workSurfaceId(route.params.workId)
+  }
+
   if (route.to === '/workspaces/$workspaceId') {
     return `workspace-detail:${route.params.workspaceId}`
   }
@@ -310,6 +349,10 @@ export function layoutSlotIdForRoute(route: SurfaceRoute | null | undefined): st
 
   if (route.to === '/chat/new') {
     return 'new-chat'
+  }
+
+  if (route.to === '/work/new') {
+    return 'new-work'
   }
 
   return null
@@ -327,6 +370,13 @@ export function chatSessionIdForSurface(surface: Pick<AppSurface, 'kind' | 'rout
     return surface.route.params.sessionId
   }
 
+  return null
+}
+
+export function workIdForSurface(surface: Pick<AppSurface, 'kind' | 'route'> | null | undefined): string | null {
+  if (surface?.kind === 'work' && surface.route.to === '/work/$workId') {
+    return surface.route.params.workId
+  }
   return null
 }
 

@@ -161,6 +161,7 @@ export function ComposerActions({
   sessionContextWindow,
   compactState,
   sendButtonAriaLabel,
+  sendButtonText,
   sendVariants,
 }: {
   actionsClassName?: string
@@ -187,10 +188,12 @@ export function ComposerActions({
   sessionContextWindow?: number | null
   compactState?: ChatRuntimeCompactUiSlotState | null
   sendButtonAriaLabel?: string
+  sendButtonText?: string
   sendVariants?: ComposerSendVariantAction[]
 }) {
   const isPlanSendMode = Boolean(isPlanMode && !isBangMode)
-  const sendButtonSize = isPlanSendMode ? 'xs' : 'icon-xs'
+  const showCustomSendText = !!sendButtonText && !isBangMode && !isPlanSendMode
+  const sendButtonSize = isPlanSendMode || showCustomSendText ? 'xs' : 'icon-xs'
   const sendButtonLabel = isBangMode
     ? 'Run shell command'
     : isPlanSendMode
@@ -208,6 +211,7 @@ export function ComposerActions({
       'focus-visible:border-amber-600 focus-visible:ring-amber-500/35',
       'dark:bg-amber-400 dark:text-amber-950 dark:hover:bg-amber-300',
     ],
+    showCustomSendText && 'min-w-20 gap-1.5 px-2.5',
   )
   const sendButton = (
     <Button
@@ -221,6 +225,7 @@ export function ComposerActions({
     >
       <ComposerSendIcon isBangMode={isBangMode} isPlanMode={isPlanMode} isSending={isSending} />
       {isPlanSendMode && <span className="text-[11px] font-semibold">Plan</span>}
+      {showCustomSendText && <span className="text-[11px] font-semibold">{sendButtonText}</span>}
     </Button>
   )
   const sendVariantsAvailable = !!sendVariants && sendVariants.length > 0 && !isBangMode && !isPlanSendMode

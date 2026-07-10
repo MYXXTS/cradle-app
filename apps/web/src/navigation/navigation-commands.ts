@@ -19,6 +19,7 @@ import {
   sortSurfaces,
   workspaceDiffsSurfaceId,
   workspaceSurfaceId,
+  workSurfaceId,
 } from './surface-identity'
 import { readSurface, useSurfaceStore } from './surface-store'
 
@@ -74,6 +75,36 @@ export function openNewChat(options: {
     route: Object.keys(search).length > 0
       ? { to: '/chat/new', search }
       : { to: '/chat/new' },
+    closable: true,
+  }, options)
+}
+
+export function openNewWork(options: {
+  replace?: boolean
+  workspaceId?: string
+  issueId?: string
+} = {}): void {
+  openSurface({
+    id: 'new-work',
+    kind: 'new-work',
+    title: getI18n().t('work:surface.new'),
+    route: {
+      to: '/work/new',
+      search: {
+        workspaceId: options.workspaceId,
+        issueId: options.issueId,
+      },
+    },
+    closable: true,
+  }, options)
+}
+
+export function openWork(workId: string, options: { replace?: boolean } = {}): void {
+  openSurface({
+    id: workSurfaceId(workId),
+    kind: 'work',
+    title: getI18n().t('work:surface.work'),
+    route: { to: '/work/$workId', params: { workId } },
     closable: true,
   }, options)
 }

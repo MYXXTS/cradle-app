@@ -71,6 +71,7 @@ export interface ComposerSendVariant {
 
 export interface ComposerSendController {
   submit: ComposerSendHandler
+  label?: string
   submitInNewWindow?: ComposerSendHandler
   sendVariants?: ComposerSendVariant[]
   stop?: () => void
@@ -221,6 +222,7 @@ export function Composer({
 }: ComposerProps) {
   const {
     submit,
+    label: sendLabel,
     submitInNewWindow,
     sendVariants,
     isStreaming,
@@ -918,6 +920,7 @@ export function Composer({
               sendBlocked={sendBlocked}
               attachButtonTestId={attachButtonTestId}
               sendButtonAriaLabel={sendButtonAriaLabel}
+              sendButtonText={sendLabel}
               sendButtonClassName={sendButtonClassName}
               sendButtonTestId={sendButtonTestId}
               stopButtonTestId={stopButtonTestId}

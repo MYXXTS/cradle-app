@@ -66,4 +66,39 @@ describe('thinking capability filtering', () => {
       'high',
     )).toBe('high')
   })
+
+  it('does not invent effort tiers when the server declared an empty list', () => {
+    const options = filterThinkingOptionsForModel(
+      model({
+        id: 'reasoning-without-effort-slider',
+        capabilities: {
+          reasoning: true,
+          reasoningEfforts: [],
+        },
+      }),
+      THINKING_EFFORTS,
+    )
+
+    expect(options.map(option => option.value)).toEqual([])
+    expect(getThinkingCapabilityTier(model({
+      id: 'reasoning-without-effort-slider',
+      capabilities: {
+        reasoning: true,
+        reasoningEfforts: [],
+      },
+    }))).toBe('none')
+  })
+
+  it('filters to the exact declared effort subset', () => {
+    expect(filterThinkingOptionsForModel(
+      model({
+        id: 'o3',
+        capabilities: {
+          reasoning: true,
+          reasoningEfforts: ['low', 'medium', 'high'],
+        },
+      }),
+      THINKING_EFFORTS,
+    ).map(option => option.value)).toEqual(['low', 'medium', 'high'])
+  })
 })

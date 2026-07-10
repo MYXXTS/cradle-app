@@ -16,11 +16,12 @@ import { ResourcesPopover } from '~/features/devtool/resources/resources-popover
 import { SessionExecutionChrome } from '~/features/remote-hosts/session-execution-chrome'
 import { SessionIsolationChrome } from '~/features/session/session-isolation-chrome'
 import { SessionPullRequestChrome } from '~/features/session/session-pull-request-chrome'
+import { WorkHeaderChrome } from '~/features/work/work-header-chrome'
 import { cn } from '~/lib/cn'
 import { isTearoffWindow, windowControlsSafeArea } from '~/lib/electron'
 import { useActiveSurface } from '~/navigation/active-surface'
 import { SurfaceBar } from '~/navigation/surface-bar'
-import { chatSessionIdForSurface } from '~/navigation/surface-identity'
+import { chatSessionIdForSurface, workIdForSurface } from '~/navigation/surface-identity'
 import { useLayoutStore } from '~/store/layout'
 
 interface AppHeaderProps {
@@ -61,6 +62,7 @@ export function AppHeader({
   const toggleSidebar = useLayoutStore(s => s.toggleSidebar)
   const toggleBrowserPanel = useLayoutStore(s => s.toggleBrowserPanel)
   const activeSurface = useActiveSurface()
+  const activeWorkId = workIdForSurface(activeSurface)
   const isSettingsActive = activeSurface?.kind === 'settings'
   const isDrillIn = isSettingsActive
   const sidebarToggleLabel = sidebarInSheet
@@ -178,6 +180,7 @@ export function AppHeader({
       {/* Right: panel toggles */}
       <div className="ml-auto flex shrink-0 items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {headerActions}
+        {activeWorkId && <WorkHeaderChrome workId={activeWorkId} />}
         <ResourcesPopover />
         {!isSettingsActive && hasBrowserPanel && (
           <Button

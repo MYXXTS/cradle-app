@@ -40,7 +40,7 @@ import { useShortcut } from '~/hooks/use-shortcut'
 import { cn } from '~/lib/cn'
 import { isElectron } from '~/lib/electron'
 import { useActiveSurface } from '~/navigation/active-surface'
-import { chatSessionIdForSurface } from '~/navigation/surface-identity'
+import { chatSessionIdForSurface, workIdForSurface } from '~/navigation/surface-identity'
 import type { BrowserTabSource } from '~/store/browser-panel'
 import { DEFAULT_BROWSER_PANEL_OWNER_ID, useBrowserPanelStore } from '~/store/browser-panel'
 import { useLayoutStore } from '~/store/layout'
@@ -446,6 +446,7 @@ function RetainedBottomPanels({
 
 interface RightAsideDescriptor {
   ownerId: string
+  workId: string | null
   sessionId: string | null
   workspaceId: string | null
   workspaceName: string | null
@@ -458,6 +459,7 @@ function areRightAsideDescriptorsEqual(
 ): boolean {
   return (
     left.ownerId === right.ownerId
+    && left.workId === right.workId
     && left.sessionId === right.sessionId
     && left.workspaceId === right.workspaceId
     && left.workspaceName === right.workspaceName
@@ -468,6 +470,7 @@ function areRightAsideDescriptorsEqual(
 function RetainedRightAsides({
   acceptCurrentOwner,
   ownerId,
+  workId,
   sessionId,
   validOwnerIds,
   visible,
@@ -477,6 +480,7 @@ function RetainedRightAsides({
 }: {
   acceptCurrentOwner: boolean
   ownerId: string | null
+  workId: string | null
   sessionId: string | null
   validOwnerIds?: readonly string[]
   visible: boolean
@@ -493,6 +497,7 @@ function RetainedRightAsides({
       if (acceptCurrentOwner && ownerId) {
         const descriptor: RightAsideDescriptor = {
           ownerId,
+          workId,
           sessionId,
           workspaceId,
           workspaceName,
@@ -514,6 +519,7 @@ function RetainedRightAsides({
   }, [
     acceptCurrentOwner,
     ownerId,
+    workId,
     sessionId,
     validOwnerIds,
     validOwnerIdsKey,
@@ -536,6 +542,7 @@ function RetainedRightAsides({
             <Suspense fallback={<RightAsideFallback />}>
               <MemoizedRightAside
                 ownerId={descriptor.ownerId}
+                workId={descriptor.workId}
                 visible={asideVisible}
                 sessionId={descriptor.sessionId}
                 workspaceId={descriptor.workspaceId}
@@ -620,8 +627,13 @@ function AppLayoutContent({
           : (activeSurface.route.params ?? {}),
       }
     : undefined
-  const activeSessionId = focusedSplitSessionId ?? chatSessionIdForSurface(activeSurface)
-  const activeSessionTitle = activeTab?.type === 'chat' ? activeTab.label : null
+  const activeSessionId = focusedSplitSessionId
+    ?? chatSessionIdForSurface(activeSurface)
+    ?? (activeSurface?.kind === 'work' ? slots.asideSessionId ?? null : null)
+  const activeWorkId = workIdForSurface(activeSurface)
+  const activeSessionTitle = activeTab?.type === 'chat' || activeTab?.type === 'work'
+    ? activeTab.label
+    : null
   const activeChromeOwnerId = activeSurface?.id ?? null
   const activeBrowserPanelOwnerId = activeChromeOwnerId
   const activeSessionLayout = useChatSessionLayoutRecord(activeSessionId)
@@ -946,6 +958,7 @@ function AppLayoutContent({
         {/* Right Aside — layout-owned, independent of tab lifecycle */}
         <AppRightAside
           ownerId={activeChromeOwnerId}
+          workId={activeWorkId}
           enabled={canUseRightAside}
           sessionId={resolvedAsideSessionId}
           workspaceId={resolvedAsideWorkspaceId}
@@ -967,6 +980,7 @@ function AppLayoutContent({
 interface AppRightAsideProps {
   enabled: boolean
   ownerId: string | null
+  workId?: string | null
   sessionId?: string | null
   validOwnerIds?: readonly string[]
   workspaceId?: string | null
@@ -980,6 +994,7 @@ const AppRightAside = memo(
   ({
     enabled,
     ownerId,
+    workId,
     sessionId,
     validOwnerIds,
     workspaceId,
@@ -1070,6 +1085,7 @@ const AppRightAside = memo(
             <RetainedRightAsides
               acceptCurrentOwner={enabled}
               ownerId={ownerId}
+              workId={workId ?? null}
               sessionId={sessionId ?? null}
               validOwnerIds={validOwnerIds}
               visible={asideVisible}

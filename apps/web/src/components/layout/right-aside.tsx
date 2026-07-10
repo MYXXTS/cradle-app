@@ -3,6 +3,7 @@ import {
   DotCircleLine as CircleDotIcon,
   GitBranchLine as GitBranchIcon,
   GitCompareLine as FileDiffIcon,
+  GitPullRequestLine as WorkIcon,
   HeartbeatLine as ActivityIcon,
   RssLine as RssIcon,
   SelectorHorizontalLine as SlidersHorizontalIcon,
@@ -25,6 +26,7 @@ import { IssueAsidePanel } from '~/features/kanban/issue-aside-panel'
 import { useLinkedIssue } from '~/features/kanban/use-kanban'
 import { useSessionIsolationState } from '~/features/session/use-session-isolation'
 import { AwaitPanel } from '~/features/session-await/await-panel'
+import { WorkAsidePanel } from '~/features/work/work-aside-panel'
 import { FileTree } from '~/features/workspace/file-tree'
 import type { Workspace } from '~/features/workspace/types'
 import { getLocalWorkspacePath } from '~/features/workspace/types'
@@ -42,12 +44,15 @@ interface Tab {
     | 'rightAside.tab.await'
     | 'rightAside.tab.runtime'
     | 'rightAside.tab.adjustment'
+    | 'rightAside.tab.work'
   icon: typeof FolderTreeIcon
   requiresSession?: boolean
+  requiresWork?: boolean
 }
 
 const TABS: Tab[] = [
   { id: 'files', labelKey: 'rightAside.tab.files', icon: FolderTreeIcon },
+  { id: 'work', labelKey: 'rightAside.tab.work', icon: WorkIcon, requiresWork: true },
   { id: 'changes', labelKey: 'rightAside.tab.changes', icon: FileDiffIcon },
   { id: 'git', labelKey: 'rightAside.tab.git', icon: GitBranchIcon },
   { id: 'issue', labelKey: 'rightAside.tab.issue', icon: CircleDotIcon, requiresSession: true },
@@ -143,6 +148,7 @@ interface RightAsideProps {
   ownerId?: string | null
   visible?: boolean
   sessionId?: string | null
+  workId?: string | null
   workspaceId?: string | null
   workspaceName?: string | null
   workspacePath?: string | null
@@ -152,6 +158,7 @@ type ActiveRightAsideProps = Omit<RightAsideProps, 'active'>
 
 interface RightAsidePanelContentProps {
   tabId: string
+  workId: string | null
   sessionId: string | null
   gitSessionId: string | null
   workspaceId: string | null
@@ -164,6 +171,7 @@ interface RightAsidePanelContentProps {
 
 function RightAsidePanelContent({
   tabId,
+  workId,
   sessionId,
   gitSessionId,
   workspaceId,
@@ -173,6 +181,9 @@ function RightAsidePanelContent({
   providerTargetId,
   active,
 }: RightAsidePanelContentProps) {
+  if (tabId === 'work' && workId) {
+    return <WorkAsidePanel workId={workId} />
+  }
   if (tabId === 'files') {
     return (
       <div
@@ -339,6 +350,7 @@ function ActiveRightAside({
   ownerId,
   visible = true,
   sessionId = null,
+  workId = null,
   workspaceId: explicitWorkspaceId = null,
   workspaceName: explicitWorkspaceName = null,
   workspacePath: explicitWorkspacePath = null,
@@ -397,6 +409,10 @@ function ActiveRightAside({
   })
   const visibleTabs = TABS.filter((tab) => {
     if (tab.requiresSession && !sessionId) {
+      return false
+    }
+
+    if (tab.requiresWork && !workId) {
       return false
     }
 
@@ -554,6 +570,7 @@ function ActiveRightAside({
           >
             <RightAsidePanelContent
               tabId={resolvedActiveTab}
+              workId={workId}
               sessionId={sessionId}
               gitSessionId={gitSessionId}
               workspaceId={workspaceId}

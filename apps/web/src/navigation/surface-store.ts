@@ -40,6 +40,17 @@ const diffSearchSchema = z.object({
 const surfaceRouteSchema = z.discriminatedUnion('to', [
   z.object({ to: z.literal('/') }),
   z.object({
+    to: z.literal('/work/new'),
+    search: z.object({
+      workspaceId: optionalStringSchema,
+      issueId: optionalStringSchema,
+    }).optional(),
+  }),
+  z.object({
+    to: z.literal('/work/$workId'),
+    params: z.object({ workId: z.string() }),
+  }),
+  z.object({
     to: z.literal('/chat/new'),
     search: z.object({ issueId: optionalStringSchema }).optional(),
   }),
@@ -87,6 +98,8 @@ const appSurfaceSchema = z.object({
   id: z.string().min(1),
   kind: z.enum([
     'home',
+    'new-work',
+    'work',
     'new-chat',
     'chat',
     'diff',

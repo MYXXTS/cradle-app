@@ -48,6 +48,7 @@ export default {
   'nav.automation': 'Automations',
   'nav.diffs': 'Diffs',
   'nav.newChat': 'New chat',
+  'nav.newWork': 'New Work',
   'nav.profile': 'Profile',
   'nav.search': 'Search',
   'nav.settings': 'Settings',

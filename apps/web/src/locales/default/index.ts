@@ -21,6 +21,7 @@ import skills from './skills'
 import systemAgent from './system-agent'
 import usage from './usage'
 import workspace from './workspace'
+import work from './work'
 
 const resources = {
   agentManagement,
@@ -46,6 +47,7 @@ const resources = {
   'system-agent': systemAgent,
   usage,
   workspace,
+  work,
 } as const
 
 export type DefaultResources = typeof resources

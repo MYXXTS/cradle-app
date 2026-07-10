@@ -81,6 +81,7 @@ const moduleDescriptions: Record<string, string> = {
   'skill': 'Manage skills and skill sources.',
   'status': 'Manage Kanban statuses.',
   'usage': 'Inspect usage and cost data.',
+  'work': 'Manage user-controlled local Work containers and Draft PR delivery.',
   'workflow-rule': 'Manage workflow rules.',
   'workspace': 'Manage workspaces, files, and git helpers.',
 }

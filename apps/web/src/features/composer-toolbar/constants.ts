@@ -30,12 +30,19 @@ export type ThinkingCapabilityTier = 'none' | 'standard' | 'extended'
 
 const EXTENDED_REASONING_EFFORTS = new Set(['minimal', 'xhigh', 'max'])
 
-function readModelReasoningEfforts(model: ModelDescriptor | null | undefined): Set<string> | null {
+/**
+ * Returns declared effort values when the server/registry set `reasoningEfforts`
+ * (including an empty list). `undefined` means "not declared" → heuristic fallback.
+ */
+function readDeclaredReasoningEfforts(model: ModelDescriptor | null | undefined): Set<string> | undefined {
   if (model?.capabilities.reasoning === false) {
-    return null
+    return new Set()
   }
   const efforts = model?.capabilities.reasoningEfforts
-  return efforts?.length ? new Set(efforts) : null
+  if (efforts !== undefined) {
+    return new Set(efforts)
+  }
+  return undefined
 }
 
 export function getThinkingCapabilityTier(model: ModelDescriptor | null | undefined): ThinkingCapabilityTier {
@@ -43,13 +50,17 @@ export function getThinkingCapabilityTier(model: ModelDescriptor | null | undefi
     return 'none'
   }
 
-  const reasoningEfforts = readModelReasoningEfforts(model)
-  if (reasoningEfforts) {
-    for (const effort of reasoningEfforts) {
+  const declared = readDeclaredReasoningEfforts(model)
+  if (declared !== undefined) {
+    if (declared.size === 0) {
+      return 'none'
+    }
+    for (const effort of declared) {
       if (EXTENDED_REASONING_EFFORTS.has(effort)) {
         return 'extended'
       }
     }
+    return 'standard'
   }
 
   return 'standard'
@@ -59,9 +70,10 @@ export function filterThinkingOptionsForModel<TThinking extends string | null>(
   model: ModelDescriptor | null | undefined,
   options: Array<ThinkingOption<TThinking>>,
 ): Array<ThinkingOption<TThinking>> {
-  const reasoningEfforts = readModelReasoningEfforts(model)
-  if (reasoningEfforts) {
-    return options.filter(option => option.value === null || reasoningEfforts.has(option.value))
+  const declared = readDeclaredReasoningEfforts(model)
+  if (declared !== undefined) {
+    // Explicit list (possibly empty): never invent tiers via heuristic.
+    return options.filter(option => option.value === null || declared.has(option.value))
   }
 
   const tier = getThinkingCapabilityTier(model)

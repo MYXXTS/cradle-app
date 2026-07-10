@@ -1,11 +1,11 @@
 {
-  "chrome.draft": "Draft",
-  "chrome.ready": "Ready",
   "chrome.closed": "Closed",
-  "chrome.merged": "Merged",
-  "chrome.markReady": "Mark ready",
+  "chrome.draft": "Draft",
+  "chrome.errorTitle": "Pull request action failed",
   "chrome.markingReady": "Marking…",
-  "chrome.readySuccessTitle": "Pull request ready",
+  "chrome.markReady": "Mark ready",
+  "chrome.merged": "Merged",
+  "chrome.ready": "Ready",
   "chrome.readySuccessDescription": "PR #{{number}} is ready for review.",
-  "chrome.errorTitle": "Pull request action failed"
+  "chrome.readySuccessTitle": "Pull request ready"
 }

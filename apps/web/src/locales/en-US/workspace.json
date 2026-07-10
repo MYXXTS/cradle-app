@@ -47,6 +47,7 @@
   "nav.automation": "Automations",
   "nav.diffs": "Diffs",
   "nav.newChat": "New chat",
+  "nav.newWork": "New Work",
   "nav.profile": "Profile",
   "nav.search": "Search",
   "nav.settings": "Settings",
@@ -70,6 +71,7 @@
   "session.aria.menu": "Session menu",
   "session.aria.newReply": "New reply",
   "session.aria.pinned": "Pinned",
+  "session.aria.remote": "Runs on remote host {{hostName}}",
   "session.aria.running": "Session running",
   "session.aria.waitingForUserInput": "Waiting for your input",
   "session.empty": "No sessions yet",
@@ -270,6 +272,5 @@
   "workspace.toast.recognitionSingleFailed": "Workspace could not be added",
   "workspace.toast.remoteWorkspaceCreated": "Remote workspace added",
   "workspace.toast.remoteWorkspaceCreateFailed": "Remote workspace could not be added",
-  "workspace.toast.renameFailed": "Workspace could not be renamed",
-  "session.aria.remote": "Runs on remote host {{hostName}}"
+  "workspace.toast.renameFailed": "Workspace could not be renamed"
 }

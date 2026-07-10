@@ -60,6 +60,20 @@ export function deriveActiveLayoutContract({
     }
   }
 
+  if (activeTab?.type === 'work') {
+    const sessionId = slots.asideSessionId ?? null
+    const workspaceId = sessionLayout?.workspaceId ?? slots.asideWorkspaceId ?? null
+    const hasWorkspace = !!workspaceId
+    return {
+      asideSessionId: sessionId,
+      asideWorkspaceId: workspaceId,
+      hasAside: true,
+      hasBrowserPanel: deriveCapability(hasWorkspace, slots.hasBrowserPanel, explicitHasBrowserPanel),
+      hasPanel: deriveCapability(hasWorkspace, slots.hasPanel, explicitHasPanel),
+      panel: slots.panel ?? explicitPanel,
+    }
+  }
+
   if (activeTab?.type === 'workspace-detail') {
     const workspaceId = activeTab.params.workspaceId ?? null
     const activeSlots = workspaceId && slots.asideWorkspaceId === workspaceId ? slots : {}
@@ -74,7 +88,7 @@ export function deriveActiveLayoutContract({
     }
   }
 
-  if (activeTab?.type === 'new-chat') {
+  if (activeTab?.type === 'new-chat' || activeTab?.type === 'new-work') {
     const activeSlots = !slots.asideSessionId ? slots : {}
 
     return {

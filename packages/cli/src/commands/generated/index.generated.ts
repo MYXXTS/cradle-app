@@ -249,6 +249,12 @@ import { register as registerUsageSession } from './usage/session'
 import { register as registerUsageSessionsRecent } from './usage/sessions/recent'
 import { register as registerUsageStats } from './usage/stats'
 import { register as registerUsageSummary } from './usage/summary'
+import { register as registerWorkArchive } from './work/archive'
+import { register as registerWorkCreate } from './work/create'
+import { register as registerWorkGet } from './work/get'
+import { register as registerWorkList } from './work/list'
+import { register as registerWorkPrepare } from './work/prepare'
+import { register as registerWorkSubmit } from './work/submit'
 import { register as registerWorkflowRuleDelete } from './workflow-rule/delete'
 import { register as registerWorkflowRuleGet } from './workflow-rule/get'
 import { register as registerWorkflowRuleList } from './workflow-rule/list'
@@ -557,6 +563,12 @@ export function registerGeneratedCommands(program: Command): void {
   registerUsageSessionsRecent(program)
   registerUsageStats(program)
   registerUsageSummary(program)
+  registerWorkArchive(program)
+  registerWorkCreate(program)
+  registerWorkGet(program)
+  registerWorkList(program)
+  registerWorkPrepare(program)
+  registerWorkSubmit(program)
   registerWorkflowRuleDelete(program)
   registerWorkflowRuleGet(program)
   registerWorkflowRuleList(program)

@@ -25,6 +25,7 @@ Use `cradle` to manage Cradle or query its state from the terminal. You can use 
 | Wait for CI, review, approval, or later continuation | `cradle session await ...` | `sleep`, polling loops, `gh run watch` |
 | Manage tasks, status, comments, delegation, or issue sessions | `cradle issue ...`, `cradle issue-agent-session ...` | local TODO files, direct DB edits |
 | Inspect workspace identity, files, or git state | `cradle workspace ...` | guessing workspace IDs, raw HTTP |
+| Prepare local Work or explicitly deliver a Draft PR | `cradle work prepare|submit ...` | background push, `gh pr create` |
 | Search Cradle state or past threads | `cradle search ...` | grepping data directories |
 | Read or maintain Chronicle memory/activity/knowledge | `cradle chronicle ...` | direct SQLite edits |
 | Schedule or inspect recurring work | `cradle automation ...` | cron scripts outside Cradle |
@@ -158,6 +159,29 @@ cradle session pull-request ready
 
 Do not auto-await CI after create. Only register `cradle session await github-ci ...` when the user asks.
 
+## Work (Prepare → User Submit → Review)
+
+Work runs inside a managed local Worktree. Preparing a handoff is safe and does
+not push or call GitHub:
+
+```bash
+cradle work prepare <workId> \
+  --title "Fix login redirect" \
+  --summary "Describe the committed changes" \
+  --test-plan "Describe verification"
+```
+
+Do not run `cradle work submit` merely because the implementation is ready.
+Submit only when the user explicitly asks or clicks Create/Update Draft PR:
+
+```bash
+cradle work submit <workId>
+```
+
+Each submit authorizes one push and one Draft PR create/update. Follow-up changes
+require another explicit submit. Mark Ready and merge remain separate user
+decisions.
+
 ## Session Await (Pause & Resume)
 
 Register an await to pause your session and let Cradle automatically resume it when an external condition is met:
@@ -279,6 +303,7 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `session-group` | 7 | Generated Cradle CLI module. | `cradle man session-group` |
 | `skill` | 10 | Manage skills and skill sources. | `cradle man skill` |
 | `usage` | 10 | Inspect usage and cost data. | `cradle man usage` |
+| `work` | 6 | Manage user-controlled local Work containers and Draft PR delivery. | `cradle man work` |
 | `workflow-rule` | 4 | Manage workflow rules. | `cradle man workflow-rule` |
 | `workspace` | 53 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
 

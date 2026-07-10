@@ -5,6 +5,9 @@
 Workspace management UI — sidebar listing, directory picker, session grouping.
 Connects to main-process IPC for workspace CRUD, session listing, and native open actions.
 Also owns the sidebar interaction contract between workspace groups and the launcher route.
+Expanded Workspace sections render Work separately from ordinary Chats. Primary
+Work Sessions are filtered before Session Group partitioning so one conversation
+never appears under both Work and Chats.
 
 ## Files
 

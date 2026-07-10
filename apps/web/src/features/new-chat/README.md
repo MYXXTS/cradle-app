@@ -4,6 +4,9 @@
 
 Chat launcher domain: the empty-state home screen where users compose a new chat.
 Handles optional workspace selection, Agent Profile selection, and session creation before navigating to the chat route.
+New Chat remains the flexible conversational entry point for ad-hoc, remote,
+Issue, and Session Group flows. Outcome-oriented local coding work belongs to
+the separate New Work surface and continues to use its own `POST /works` entry.
 默认 launcher 会启动 no-project chat：它省略 `workspaceId`，让 server 在打开 chat session 前创建 Cradle-owned ad-hoc workspace。选择 workspace 后仍保留 project-bound file mentions 和 recent-session view。
 Split from `features/workspace/` to keep workspace management separate from new-session creation.
 User-facing composer placeholders, quick prompt labels, readiness notices, workspace picker fallbacks, and recent-session labels are owned by the `new-chat` i18n namespace.

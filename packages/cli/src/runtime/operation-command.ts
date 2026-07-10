@@ -156,6 +156,7 @@ function describeGroup(name: string): string | undefined {
     'source': 'Manage external sources',
     'status': 'Manage kanban statuses',
     'usage': 'Inspect usage data',
+    'work': 'Manage local Work and explicit Draft PR delivery',
     'workflow': 'Manage workflow rules',
     'workflow-rule': 'Manage workflow rules',
     'workspace': 'Manage workspaces',

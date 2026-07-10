@@ -7,6 +7,7 @@ import {
   DotCircleLine as CircleDotIcon,
   FolderOpenLine as FolderOpenIcon,
   GitCompareLine as FileDiffIcon,
+  GitPullRequestLine as WorkIcon,
   Home2Line as HomeIcon,
   Plugin2Line,
   Settings2Line as SettingsIcon,
@@ -25,6 +26,9 @@ export function SurfaceIcon({ surface, className }: { surface: Pick<AppSurface, 
   switch (kind) {
     case 'home':
       return <HomeIcon className={cls} />
+    case 'new-work':
+    case 'work':
+      return <WorkIcon className={cls} />
     case 'new-chat':
       return <MessageSquarePlusIcon className={cls} />
     case 'chat':

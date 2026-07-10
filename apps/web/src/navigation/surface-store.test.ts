@@ -69,4 +69,19 @@ describe('surface store persistence', () => {
       surfaces: [HOME_SURFACE],
     })
   })
+
+  it('restores persisted Work surfaces', () => {
+    const state = readPersistedSurfaceState({
+      surfaces: [{
+        id: 'work:work-1',
+        kind: 'work',
+        title: 'Fix retries',
+        route: { to: '/work/$workId', params: { workId: 'work-1' } },
+        order: 1,
+        closable: true,
+      }],
+    })
+
+    expect(state.surfaces.some(surface => surface.id === 'work:work-1')).toBe(true)
+  })
 })

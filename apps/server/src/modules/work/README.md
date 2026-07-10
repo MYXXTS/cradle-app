@@ -1,0 +1,35 @@
+# Work module
+
+The Work module owns the local outcome container: its objective, primary-thread
+membership, prepared handoff metadata, archive fact, and composition of existing
+Session, Worktree, Pull Request, Chat Runtime, and Await read models.
+
+## Invariants
+
+- A Session belongs to at most one Work.
+- A Work has exactly one primary Session in the local v1 flow.
+- Work creation requires a clean local Git workspace and an immediately active
+  managed Worktree.
+- Work stores facts only. Activity labels are derived and no Work status machine
+  exists.
+- Preparing a handoff never pushes or calls GitHub.
+- Creating or updating a Draft PR requires an explicit submit request.
+- Mark Ready and merge remain user-controlled outside this module.
+
+## Ownership boundaries
+
+- Session owns conversation metadata and archive behavior.
+- Worktree owns Git checkout creation, binding, health, and cleanup.
+- Pull Request owns Git comparison, push, GitHub API calls, and PR persistence.
+- Chat Runtime owns runs and pending interaction state.
+- Session Await owns external waiting facts.
+
+Work reads and composes those services but does not duplicate their semantics.
+
+## Files
+
+- `index.ts`: HTTP/OpenAPI/CLI routes.
+- `model.ts`: TypeBox request and response schemas.
+- `service.ts`: Work persistence, aggregate reads, compensated creation,
+  preparation, and explicit delivery orchestration.
+- `service.test.ts`: critical Work invariants and delivery-control tests.

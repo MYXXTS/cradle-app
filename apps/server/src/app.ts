@@ -54,6 +54,7 @@ import { testReset } from './modules/test-reset'
 import { usage } from './modules/usage'
 import { workflowRules } from './modules/workflow-rules'
 import { workspace } from './modules/workspace'
+import { sessionWork, work } from './modules/work'
 import { worktree } from './modules/worktree'
 
 interface CreateServerAppOptions {
@@ -152,6 +153,8 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(automation)
   app.use(assets)
   app.use(session)
+  app.use(work)
+  app.use(sessionWork)
   app.use(pullRequest)
   app.use(sessionGroup)
   app.use(sessionAwait)

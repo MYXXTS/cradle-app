@@ -20,7 +20,8 @@ function readProviderReasoningEfforts(model: ModelDescriptor): ModelCapabilities
     return undefined
   }
 
-  if (model.capabilities.reasoningEfforts?.length) {
+  // Declared list (including empty) wins — empty means "no selectable efforts".
+  if (Array.isArray(model.capabilities.reasoningEfforts)) {
     return [...model.capabilities.reasoningEfforts]
   }
 
@@ -38,12 +39,12 @@ export function projectProviderModelCapabilities(model: ModelDescriptor): ModelD
   const defaults = readProviderDefaultModelCapabilities(model.providerKind)
   if (!defaults.inputModalities?.length && !defaults.outputModalities?.length) {
     const reasoningEfforts = readProviderReasoningEfforts(model)
-    return reasoningEfforts
+    return reasoningEfforts !== undefined
       ? {
           ...model,
           capabilities: {
             ...model.capabilities,
-            reasoning: true,
+            ...(reasoningEfforts.length > 0 ? { reasoning: true } : {}),
             reasoningEfforts,
           },
         }
@@ -58,8 +59,10 @@ export function projectProviderModelCapabilities(model: ModelDescriptor): ModelD
     capabilities.outputModalities = [...defaults.outputModalities]
   }
   const reasoningEfforts = readProviderReasoningEfforts(model)
-  if (reasoningEfforts?.length) {
-    capabilities.reasoning = true
+  if (reasoningEfforts !== undefined) {
+    if (reasoningEfforts.length > 0) {
+      capabilities.reasoning = true
+    }
     capabilities.reasoningEfforts = [...reasoningEfforts]
   }
 

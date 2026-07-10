@@ -5,12 +5,20 @@ import { z } from 'zod'
 import { db } from '../../infra'
 import type { ModelCapabilities, ModelDescriptor } from '../provider-contracts/types'
 
+export type ModelsDevReasoningOption = {
+  type?: string
+  values?: Array<string | null>
+  min?: number
+}
+
 export interface ModelsDevModel {
   id: string
   name?: string
   limit?: { context?: number, output?: number }
   modalities?: { input?: string[], output?: string[] }
   reasoning?: boolean
+  /** Per-model reasoning controls from models.dev (`effort` / `toggle` / `budget_tokens`). */
+  reasoning_options?: ModelsDevReasoningOption[]
   tool_call?: boolean
   temperature?: boolean
   structured_output?: boolean
@@ -18,6 +26,60 @@ export interface ModelsDevModel {
   family?: string
   knowledge?: string
   release_date?: string
+}
+
+type ReasoningEffort = NonNullable<ModelCapabilities['reasoningEfforts']>[number]
+
+const KNOWN_REASONING_EFFORTS = new Set<ReasoningEffort>([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+])
+
+function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === 'string' && KNOWN_REASONING_EFFORTS.has(value as ReasoningEffort)
+}
+
+/**
+ * Project models.dev `reasoning_options` into Cradle `reasoningEfforts`.
+ * - `effort.values` → discrete efforts (unknown values like `ultra` dropped)
+ * - empty options / toggle / budget_tokens-only → `[]` (reasoning supported, no effort slider)
+ * - `reasoning: false` → no efforts field
+ */
+function readModelsDevReasoningEfforts(model: ModelsDevModel): ReasoningEffort[] | undefined {
+  if (model.reasoning === false) {
+    return undefined
+  }
+
+  if (!Array.isArray(model.reasoning_options)) {
+    // reasoning:true without options → declare empty (do not invent a ladder)
+    return model.reasoning === true ? [] : undefined
+  }
+
+  const efforts: ReasoningEffort[] = []
+  const seen = new Set<ReasoningEffort>()
+  for (const option of model.reasoning_options) {
+    if (option?.type !== 'effort' || !Array.isArray(option.values)) {
+      continue
+    }
+    for (const value of option.values) {
+      if (!isReasoningEffort(value) || seen.has(value)) {
+        continue
+      }
+      seen.add(value)
+      efforts.push(value)
+    }
+  }
+
+  // reasoning:true (or effort values present) → always declare the list, even when empty
+  if (model.reasoning === true || efforts.length > 0) {
+    return efforts
+  }
+  return undefined
 }
 
 export interface ModelRegistryMappingEntry {
@@ -67,6 +129,11 @@ export const ModelsDevModelSchema: z.ZodType<ModelsDevModel> = z.object({
     output: z.array(z.string()).optional(),
   }).optional(),
   reasoning: z.boolean().optional(),
+  reasoning_options: z.array(z.object({
+    type: z.string().optional(),
+    values: z.array(z.union([z.string(), z.null()])).optional(),
+    min: z.number().finite().optional(),
+  }).passthrough()).optional(),
   tool_call: z.boolean().optional(),
   temperature: z.boolean().optional(),
   structured_output: z.boolean().optional(),
@@ -447,6 +514,11 @@ function extractCapabilities(model: ModelsDevModel): ModelCapabilities {
   if (model.reasoning != null) {
     caps.reasoning = model.reasoning
   }
+  const reasoningEfforts = readModelsDevReasoningEfforts(model)
+  if (reasoningEfforts !== undefined) {
+    caps.reasoning = true
+    caps.reasoningEfforts = reasoningEfforts
+  }
   if (model.tool_call != null) {
     caps.toolCall = model.tool_call
   }
@@ -549,6 +621,7 @@ export function enrichModelsWithRegistryData(
     const registryCaps = extractCapabilities(result.model)
     const registryName = result.model.name
     // Strip stale registry-derived fields from inventory caps so registry always wins
+    // for enrichment metadata. Upstream-native reasoningEfforts are restored below.
     const {
       registryMatch: _rm,
       registryModelId: _rmi,
@@ -559,16 +632,25 @@ export function enrichModelsWithRegistryData(
       releaseDate: _rd,
       ...inventoryCaps
     } = model.capabilities
+    const capabilities: ModelCapabilities = {
+      ...inventoryCaps,
+      ...registryCaps,
+      registryMatch: result.matchType,
+      registryModelId: result.id,
+      registryModelLabel: registryName ?? result.id,
+    }
+    // Upstream inventory efforts (Codex / OpenCode / protocol) win over registry projection.
+    const upstreamEfforts = inventoryCaps.reasoningEfforts
+    if (Array.isArray(upstreamEfforts) && upstreamEfforts.length > 0) {
+      capabilities.reasoningEfforts = [...upstreamEfforts]
+      if (inventoryCaps.reasoning !== false) {
+        capabilities.reasoning = true
+      }
+    }
     return {
       ...model,
       label: registryName ?? model.label,
-      capabilities: {
-        ...inventoryCaps,
-        ...registryCaps,
-        registryMatch: result.matchType,
-        registryModelId: result.id,
-        registryModelLabel: registryName ?? result.id,
-      },
+      capabilities,
     }
   })
 }

@@ -20,6 +20,7 @@
 - **default/skills.ts**: Skill import flow labels, loading states, selection summaries, and completion copy.
 - **default/system-agent.ts**: Jarvis/system-agent popover empty states and setup guidance.
 - **default/usage.ts**: Usage analytics headings, chart labels, stat pills, and empty state copy.
+- **default/work.ts**: Work creation, local execution, handoff, delivery, and sidebar copy.
 - **default/workspace.ts**: Workspace sidebar app navigation, session menu read-state actions, file tree, workspace detail, workspace composer copy, and native open/reveal failure toasts.
 - **default/index.ts**: Namespace registry used by runtime and workflow scripts.
 - **en-US/*.json**: Generated baseline JSON for default English copy.

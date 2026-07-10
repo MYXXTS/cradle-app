@@ -1,4 +1,4 @@
-import { sessionGroups, sessions, workspaces } from '@cradle/db'
+import { sessionGroups, sessions, works, workspaces, workThreads } from '@cradle/db'
 import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -9,9 +9,63 @@ import { resolveSessionSystemPrompt } from './turn-context'
 const WORKSPACE_ID = 'workspace-turn-context-test'
 
 afterEach(() => {
+  db().delete(workThreads).run()
+  db().delete(works).run()
   db().delete(sessions).run()
   db().delete(sessionGroups).run()
   db().delete(workspaces).run()
+})
+
+describe('resolveSessionSystemPrompt Work context', () => {
+  it('adds prepare-only guidance to the primary Work thread', () => {
+    db().insert(workspaces).values({
+      id: WORKSPACE_ID,
+      name: 'Turn Context Workspace',
+      locatorJson: serializeWorkspaceLocator(localWorkspaceLocator('/tmp/turn-context')),
+      identifier: 'TCT',
+    }).run()
+    db().insert(sessions).values({
+      id: 'work-session',
+      workspaceId: WORKSPACE_ID,
+      title: 'Primary Work thread',
+    }).run()
+    db().insert(works).values({
+      id: 'work-1',
+      title: 'Fix retries',
+      objective: 'Make checkout retries deterministic.',
+    }).run()
+    db().insert(workThreads).values({
+      workId: 'work-1',
+      sessionId: 'work-session',
+      role: 'primary',
+    }).run()
+
+    const session = db().select().from(sessions).where(eq(sessions.id, 'work-session')).get()!
+    const prompt = resolveSessionSystemPrompt(session)
+
+    expect(prompt).toContain('## Cradle Work')
+    expect(prompt).toContain('Work ID: work-1')
+    expect(prompt).toContain('cradle work prepare work-1')
+    expect(prompt).toContain('Preparing only records a local handoff.')
+    expect(prompt).toContain('Do not run work submit')
+  })
+
+  it('does not add Work guidance to an ordinary Session', () => {
+    db().insert(workspaces).values({
+      id: WORKSPACE_ID,
+      name: 'Turn Context Workspace',
+      locatorJson: serializeWorkspaceLocator(localWorkspaceLocator('/tmp/turn-context')),
+      identifier: 'TCT',
+    }).run()
+    db().insert(sessions).values({
+      id: 'ordinary-session',
+      workspaceId: WORKSPACE_ID,
+      title: 'Ordinary chat',
+    }).run()
+
+    const session = db().select().from(sessions).where(eq(sessions.id, 'ordinary-session')).get()!
+    expect(resolveSessionSystemPrompt(session)).not.toContain('## Cradle Work')
+  })
 })
 
 describe('resolveSessionSystemPrompt session group context', () => {

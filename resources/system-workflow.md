@@ -20,44 +20,12 @@ Key operations:
 
 Use status names for issue status changes. Status names are matched as lower-case slugs with spaces converted to underscores, so `In Progress` can be passed as `in_progress`.
 
-## How to Open a Draft Pull Request
+## Delivery Control
 
-When you finish isolated work in a session worktree and the user wants a GitHub PR, **do not use `gh pr create`**. Use Cradle:
-
-```bash
-# Create a draft PR from the current isolated session (pushes the branch, opens draft):
-cradle session pull-request create \
-  --title "Short summary of the change" \
-  --body "$(cat <<'EOF'
-## Summary
-- What changed and why
-
-## Test plan
-- [ ] How to verify
-EOF
-)"
-
-# Inspect the bound PR:
-cradle session pull-request get --json pullRequest
-
-# Mark ready for review only when the user asks (or they can do it in the Cradle UI):
-cradle session pull-request ready
-```
-
-Rules:
-
-1. Only create a PR from an **isolated** session (`session isolation`). Cradle will push the worktree branch and open a **draft** PR.
-2. Commit your changes first. Cradle rejects dirty worktrees.
-3. On every commit you create for this work, include this trailer at the end of the commit message (blank line before it):
-
-   ```text
-   Co-authored-by: Cradle Agent <cradleagent@wibus.ren>
-   ```
-
-   Do not put the co-author only in the PR body — GitHub attributes co-authors from commit trailers. Skip adding it again if the trailer is already present.
-4. Write a clear PR title and body (summary + test plan). Cradle does not invent the description for you.
-5. Do **not** automatically wait for CI after opening a PR. Only register `cradle session await github-ci ...` when the user asks you to wait.
-6. Prefer Cradle mark-ready over `gh pr ready`. The user can also mark ready in the Cradle UI.
+Do not push branches, create or update pull requests, mark pull requests ready,
+or merge unless the user explicitly requests that external action. Sessions
+with a product-specific delivery workflow receive the exact Cradle CLI guidance
+in their dynamic context. Use `cradle man` before invoking those commands.
 
 ## How to Wait for External Events
 

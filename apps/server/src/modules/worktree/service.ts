@@ -434,6 +434,28 @@ export async function repairSessionWorktree(sessionId: string): Promise<Worktree
   return repaired
 }
 
+export async function assertWorkspaceCleanForManagedIsolation(workspaceId: string): Promise<void> {
+  const workspacePath = Workspace.getLocalWorkspacePath(workspaceId)
+  if (!workspacePath) {
+    throw new AppError({
+      code: 'workspace_local_path_required',
+      status: 409,
+      message: 'Managed isolation requires a local workspace',
+      details: { workspaceId },
+    })
+  }
+
+  await resolveGitRepoRoot(workspacePath)
+  if (await isWorkingTreeDirty(workspacePath)) {
+    throw new AppError({
+      code: 'work_source_dirty',
+      status: 409,
+      message: 'The source checkout has uncommitted changes. Commit, stash, or discard them before starting Work.',
+      details: { workspaceId },
+    })
+  }
+}
+
 export async function createWorktree(input: {
   sourceWorkspaceId: string
   sessionId: string
@@ -457,44 +479,56 @@ export async function createWorktree(input: {
   const baseRef = await getHeadSha(repoRoot)
 
   ensureWorktreeCheckoutParentDir(absolutePath)
-  await addGitWorktree({
-    repoPath: repoRoot,
-    worktreePath: absolutePath,
-    branch,
-    baseRef,
-  })
-  if (input.confirmedSetupHooks === true) {
-    grantWorktreeSetupHookTrust(input.sourceWorkspaceId, 'Confirmed during worktree creation.')
-  }
-  await runWorktreeSetupHooks(workspacePath, absolutePath, {
-    trusted: hasWorktreeSetupHookTrust(input.sourceWorkspaceId),
-    relayExposed: isRelayHostExposed(),
-  })
-
-  const timestamp = now()
   const id = randomUUID()
-  db().insert(worktrees).values({
-    id,
-    sourceWorkspaceId: input.sourceWorkspaceId,
-    name,
-    path: absolutePath,
-    branch,
-    baseRef,
-    status: 'active',
-    createdBySessionId: input.sessionId,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }).run()
-
-  const created = getWorktree(id)
-  if (!created) {
-    throw new AppError({
-      code: 'worktree_create_failed',
-      status: 500,
-      message: 'Worktree record was not persisted',
+  let checkoutCreated = false
+  try {
+    await addGitWorktree({
+      repoPath: repoRoot,
+      worktreePath: absolutePath,
+      branch,
+      baseRef,
     })
+    checkoutCreated = true
+    if (input.confirmedSetupHooks === true) {
+      grantWorktreeSetupHookTrust(input.sourceWorkspaceId, 'Confirmed during worktree creation.')
+    }
+    await runWorktreeSetupHooks(workspacePath, absolutePath, {
+      trusted: hasWorktreeSetupHookTrust(input.sourceWorkspaceId),
+      relayExposed: isRelayHostExposed(),
+    })
+
+    const timestamp = now()
+    db().insert(worktrees).values({
+      id,
+      sourceWorkspaceId: input.sourceWorkspaceId,
+      name,
+      path: absolutePath,
+      branch,
+      baseRef,
+      status: 'active',
+      createdBySessionId: input.sessionId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }).run()
+
+    const created = getWorktree(id)
+    if (!created) {
+      throw new AppError({
+        code: 'worktree_create_failed',
+        status: 500,
+        message: 'Worktree record was not persisted',
+      })
+    }
+    return created
   }
-  return created
+  catch (error) {
+    db().delete(worktrees).where(eq(worktrees.id, id)).run()
+    if (checkoutCreated) {
+      await removeGitWorktree({ repoPath: repoRoot, worktreePath: absolutePath, force: true }).catch(() => undefined)
+      await deleteLocalBranch(repoRoot, branch).catch(() => undefined)
+    }
+    throw error
+  }
 }
 
 export function attachSessionToWorktree(input: {

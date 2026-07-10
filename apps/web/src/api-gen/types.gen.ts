@@ -6225,6 +6225,779 @@ export type GetSessionsByIdIsolationResponses = {
 
 export type GetSessionsByIdIsolationResponse = GetSessionsByIdIsolationResponses[keyof GetSessionsByIdIsolationResponses];
 
+export type GetWorksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        workspaceId?: string;
+        linkedIssueId?: string;
+        archived?: boolean;
+    };
+    url: '/works';
+};
+
+export type GetWorksResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        id: string;
+        title: string;
+        objective: string;
+        linkedIssueId: string | null;
+        handoffTitle: string | null;
+        handoffSummary: string | null;
+        handoffTestPlan: string | null;
+        preparedAt: number | null;
+        lastSubmittedAt: number | null;
+        closedAt: number | null;
+        archivedAt: number | null;
+        createdAt: number;
+        updatedAt: number;
+        workspaceId: string;
+        primarySessionId: string;
+        activity: 'idle' | 'running' | 'waiting' | 'blocked';
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+    }>;
+};
+
+export type GetWorksResponse = GetWorksResponses[keyof GetWorksResponses];
+
+export type PostWorksData = {
+    body: {
+        workspaceId: string;
+        title: string;
+        objective: string;
+        linkedIssueId?: string;
+        providerTargetId?: string;
+        modelId?: string | null;
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        runtimeKind?: string;
+        runtimeSettings?: {
+            permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | null;
+            accessMode?: 'approval-required' | 'full-access' | null;
+            interactionMode?: 'default' | 'plan' | null;
+            claudeAgent?: {
+                modelAliases?: {
+                    haiku?: string;
+                    sonnet?: string;
+                    opus?: string;
+                };
+            } | null;
+            [key: string]: string | number | boolean | null | 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | null | 'approval-required' | 'full-access' | null | 'default' | 'plan' | null | {
+                modelAliases?: {
+                    haiku?: string;
+                    sonnet?: string;
+                    opus?: string;
+                };
+            } | null | undefined;
+        };
+        agentId?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/works';
+};
+
+export type PostWorksResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        work: {
+            id: string;
+            title: string;
+            objective: string;
+            linkedIssueId: string | null;
+            handoffTitle: string | null;
+            handoffSummary: string | null;
+            handoffTestPlan: string | null;
+            preparedAt: number | null;
+            lastSubmittedAt: number | null;
+            closedAt: number | null;
+            archivedAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+        primaryThread: {
+            id: string;
+            execution: {
+                kind: string;
+            } | {
+                kind: string;
+                hostId: string;
+                remoteSessionId: string;
+            };
+            parentSessionId: string | null;
+            sideContextSource: 'provider-native' | 'cradle-context' | null;
+            workspaceId: string | null;
+            title: string | null;
+            origin: string;
+            providerTargetId: string | null;
+            agentId: string | null;
+            modelId: string | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            linkedIssueId: string | null;
+            sessionGroupId: string | null;
+            runtimeKind: string;
+            status: 'idle' | 'streaming' | 'error';
+            pinned: number;
+            archivedAt: number | null;
+            lastReadAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+            latestUserMessageAt: number | null;
+            latestAssistantMessageAt: number | null;
+            unread: boolean;
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        execution: {
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        readiness: {
+            isolated: boolean;
+            clean: boolean;
+            branch: string | null;
+            baseRef: string | null;
+            commitsAhead: number;
+            changedFiles: number;
+        };
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+        activity: 'idle' | 'running' | 'waiting' | 'blocked';
+    };
+};
+
+export type PostWorksResponse = PostWorksResponses[keyof PostWorksResponses];
+
+export type GetWorksByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/works/{id}';
+};
+
+export type GetWorksByIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        work: {
+            id: string;
+            title: string;
+            objective: string;
+            linkedIssueId: string | null;
+            handoffTitle: string | null;
+            handoffSummary: string | null;
+            handoffTestPlan: string | null;
+            preparedAt: number | null;
+            lastSubmittedAt: number | null;
+            closedAt: number | null;
+            archivedAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+        primaryThread: {
+            id: string;
+            execution: {
+                kind: string;
+            } | {
+                kind: string;
+                hostId: string;
+                remoteSessionId: string;
+            };
+            parentSessionId: string | null;
+            sideContextSource: 'provider-native' | 'cradle-context' | null;
+            workspaceId: string | null;
+            title: string | null;
+            origin: string;
+            providerTargetId: string | null;
+            agentId: string | null;
+            modelId: string | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            linkedIssueId: string | null;
+            sessionGroupId: string | null;
+            runtimeKind: string;
+            status: 'idle' | 'streaming' | 'error';
+            pinned: number;
+            archivedAt: number | null;
+            lastReadAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+            latestUserMessageAt: number | null;
+            latestAssistantMessageAt: number | null;
+            unread: boolean;
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        execution: {
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        readiness: {
+            isolated: boolean;
+            clean: boolean;
+            branch: string | null;
+            baseRef: string | null;
+            commitsAhead: number;
+            changedFiles: number;
+        };
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+        activity: 'idle' | 'running' | 'waiting' | 'blocked';
+    };
+};
+
+export type GetWorksByIdResponse = GetWorksByIdResponses[keyof GetWorksByIdResponses];
+
+export type PostWorksByIdArchiveData = {
+    body: {
+        archived: boolean;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/works/{id}/archive';
+};
+
+export type PostWorksByIdArchiveResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        work: {
+            id: string;
+            title: string;
+            objective: string;
+            linkedIssueId: string | null;
+            handoffTitle: string | null;
+            handoffSummary: string | null;
+            handoffTestPlan: string | null;
+            preparedAt: number | null;
+            lastSubmittedAt: number | null;
+            closedAt: number | null;
+            archivedAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+        primaryThread: {
+            id: string;
+            execution: {
+                kind: string;
+            } | {
+                kind: string;
+                hostId: string;
+                remoteSessionId: string;
+            };
+            parentSessionId: string | null;
+            sideContextSource: 'provider-native' | 'cradle-context' | null;
+            workspaceId: string | null;
+            title: string | null;
+            origin: string;
+            providerTargetId: string | null;
+            agentId: string | null;
+            modelId: string | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            linkedIssueId: string | null;
+            sessionGroupId: string | null;
+            runtimeKind: string;
+            status: 'idle' | 'streaming' | 'error';
+            pinned: number;
+            archivedAt: number | null;
+            lastReadAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+            latestUserMessageAt: number | null;
+            latestAssistantMessageAt: number | null;
+            unread: boolean;
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        execution: {
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        readiness: {
+            isolated: boolean;
+            clean: boolean;
+            branch: string | null;
+            baseRef: string | null;
+            commitsAhead: number;
+            changedFiles: number;
+        };
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+        activity: 'idle' | 'running' | 'waiting' | 'blocked';
+    };
+};
+
+export type PostWorksByIdArchiveResponse = PostWorksByIdArchiveResponses[keyof PostWorksByIdArchiveResponses];
+
+export type PostWorksByIdPrepareData = {
+    body: {
+        title: string;
+        summary: string;
+        testPlan: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/works/{id}/prepare';
+};
+
+export type PostWorksByIdPrepareResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        work: {
+            id: string;
+            title: string;
+            objective: string;
+            linkedIssueId: string | null;
+            handoffTitle: string | null;
+            handoffSummary: string | null;
+            handoffTestPlan: string | null;
+            preparedAt: number | null;
+            lastSubmittedAt: number | null;
+            closedAt: number | null;
+            archivedAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+        primaryThread: {
+            id: string;
+            execution: {
+                kind: string;
+            } | {
+                kind: string;
+                hostId: string;
+                remoteSessionId: string;
+            };
+            parentSessionId: string | null;
+            sideContextSource: 'provider-native' | 'cradle-context' | null;
+            workspaceId: string | null;
+            title: string | null;
+            origin: string;
+            providerTargetId: string | null;
+            agentId: string | null;
+            modelId: string | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            linkedIssueId: string | null;
+            sessionGroupId: string | null;
+            runtimeKind: string;
+            status: 'idle' | 'streaming' | 'error';
+            pinned: number;
+            archivedAt: number | null;
+            lastReadAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+            latestUserMessageAt: number | null;
+            latestAssistantMessageAt: number | null;
+            unread: boolean;
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        execution: {
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        readiness: {
+            isolated: boolean;
+            clean: boolean;
+            branch: string | null;
+            baseRef: string | null;
+            commitsAhead: number;
+            changedFiles: number;
+        };
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+        activity: 'idle' | 'running' | 'waiting' | 'blocked';
+    };
+};
+
+export type PostWorksByIdPrepareResponse = PostWorksByIdPrepareResponses[keyof PostWorksByIdPrepareResponses];
+
+export type PostWorksByIdSubmitData = {
+    body: {
+        title?: string;
+        summary?: string;
+        testPlan?: string;
+        base?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/works/{id}/submit';
+};
+
+export type PostWorksByIdSubmitResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        work: {
+            id: string;
+            title: string;
+            objective: string;
+            linkedIssueId: string | null;
+            handoffTitle: string | null;
+            handoffSummary: string | null;
+            handoffTestPlan: string | null;
+            preparedAt: number | null;
+            lastSubmittedAt: number | null;
+            closedAt: number | null;
+            archivedAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+        primaryThread: {
+            id: string;
+            execution: {
+                kind: string;
+            } | {
+                kind: string;
+                hostId: string;
+                remoteSessionId: string;
+            };
+            parentSessionId: string | null;
+            sideContextSource: 'provider-native' | 'cradle-context' | null;
+            workspaceId: string | null;
+            title: string | null;
+            origin: string;
+            providerTargetId: string | null;
+            agentId: string | null;
+            modelId: string | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            linkedIssueId: string | null;
+            sessionGroupId: string | null;
+            runtimeKind: string;
+            status: 'idle' | 'streaming' | 'error';
+            pinned: number;
+            archivedAt: number | null;
+            lastReadAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+            latestUserMessageAt: number | null;
+            latestAssistantMessageAt: number | null;
+            unread: boolean;
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        execution: {
+            isIsolated: boolean;
+            worktreeId: string | null;
+            worktreeBranch: string | null;
+            worktreePath: string | null;
+            worktreeHealth: 'ok' | 'missing' | 'stale' | null;
+            pendingWorktreeId: string | null;
+            isolationBoundaryRequired: boolean;
+        };
+        readiness: {
+            isolated: boolean;
+            clean: boolean;
+            branch: string | null;
+            baseRef: string | null;
+            commitsAhead: number;
+            changedFiles: number;
+        };
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+        activity: 'idle' | 'running' | 'waiting' | 'blocked';
+    };
+};
+
+export type PostWorksByIdSubmitResponse = PostWorksByIdSubmitResponses[keyof PostWorksByIdSubmitResponses];
+
+export type GetSessionsByIdWorkData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/work';
+};
+
+export type GetSessionsByIdWorkResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        work: {
+            id: string;
+            title: string;
+            objective: string;
+            linkedIssueId: string | null;
+            handoffTitle: string | null;
+            handoffSummary: string | null;
+            handoffTestPlan: string | null;
+            preparedAt: number | null;
+            lastSubmittedAt: number | null;
+            closedAt: number | null;
+            archivedAt: number | null;
+            createdAt: number;
+            updatedAt: number;
+            workspaceId: string;
+            primarySessionId: string;
+            activity: 'idle' | 'running' | 'waiting' | 'blocked';
+            pullRequest: {
+                owner: string;
+                repo: string;
+                number: number;
+                url: string;
+                title: string;
+                isDraft: boolean;
+                state: 'open' | 'closed';
+                merged: boolean;
+                headRef: string;
+                baseRef: string;
+                headSha: string | null;
+                createdAt: number;
+                updatedAt: number;
+            } | null;
+        } | null;
+    };
+};
+
+export type GetSessionsByIdWorkResponse = GetSessionsByIdWorkResponses[keyof GetSessionsByIdWorkResponses];
+
+export type GetSessionsByIdPullRequestData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/pull-request';
+};
+
+export type GetSessionsByIdPullRequestResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        } | null;
+    };
+};
+
+export type GetSessionsByIdPullRequestResponse = GetSessionsByIdPullRequestResponses[keyof GetSessionsByIdPullRequestResponses];
+
+export type PostSessionsByIdPullRequestData = {
+    body: {
+        title: string;
+        body?: string;
+        base?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/pull-request';
+};
+
+export type PostSessionsByIdPullRequestResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+    };
+};
+
+export type PostSessionsByIdPullRequestResponse = PostSessionsByIdPullRequestResponses[keyof PostSessionsByIdPullRequestResponses];
+
+export type PostSessionsByIdPullRequestReadyData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/pull-request/ready';
+};
+
+export type PostSessionsByIdPullRequestReadyResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        pullRequest: {
+            owner: string;
+            repo: string;
+            number: number;
+            url: string;
+            title: string;
+            isDraft: boolean;
+            state: 'open' | 'closed';
+            merged: boolean;
+            headRef: string;
+            baseRef: string;
+            headSha: string | null;
+            createdAt: number;
+            updatedAt: number;
+        };
+    };
+};
+
+export type PostSessionsByIdPullRequestReadyResponse = PostSessionsByIdPullRequestReadyResponses[keyof PostSessionsByIdPullRequestReadyResponses];
+
 export type GetSessionGroupsData = {
     body?: never;
     path?: never;

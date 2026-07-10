@@ -15,6 +15,7 @@ import {
   FolderOpenLine as FolderOpenIcon,
   GitBranchLine as WorktreeIcon,
   GitCompareLine as FileDiffIcon,
+  GitPullRequestLine as WorkIcon,
   LoadingLine,
   MailLine as MailIcon,
   MailOpenLine as MailOpenIcon,
@@ -115,6 +116,8 @@ import { useGlobalSearchStore } from '~/features/search/global-search-store'
 import { SettingsGroup, SettingsPage } from '~/features/settings/settings-container'
 import { SettingsRow } from '~/features/settings/settings-row'
 import { useFeatureFlag } from '~/features/settings/use-app-preferences'
+import { useWorkspaceWorks } from '~/features/work/use-work'
+import { WorkSidebarSection } from '~/features/work/work-sidebar-section'
 import { MigrateWorkspaceDialog } from '~/features/workspace/migrate-workspace-dialog'
 import { ensureRemoteWorkspaceForPath } from '~/features/workspace/remote-workspace-import'
 import type { Workspace } from '~/features/workspace/types'
@@ -129,6 +132,7 @@ import {
   openChatSession,
   openDiff,
   openNewChat,
+  openNewWork,
   openSettingsSection,
   openUsage,
   openWorkspaceDetail,
@@ -2478,6 +2482,15 @@ const WorkspaceGroup = memo(
         return 0
       })
     }, [filteredSessions, locallyStreamingSessionIds])
+    const { data: workspaceWorks = [] } = useWorkspaceWorks(workspace.id)
+    const primaryWorkSessionIds = useMemo(
+      () => new Set(workspaceWorks.map(work => work.primarySessionId)),
+      [workspaceWorks],
+    )
+    const ordinarySessions = useMemo(
+      () => sortedSessions.filter(session => session.origin !== 'work' && !primaryWorkSessionIds.has(session.id)),
+      [primaryWorkSessionIds, sortedSessions],
+    )
     const { data: sessionGroups = [] } = useSessionGroups(workspace.id)
     const createSessionGroup = useCreateSessionGroup(workspace.id)
     const updateSessionGroup = useUpdateSessionGroup(workspace.id)
@@ -2488,8 +2501,8 @@ const WorkspaceGroup = memo(
     const [createGroupSeedSession, setCreateGroupSeedSession] = useState<WorkspaceSession | null>(null)
     const [renameGroupTarget, setRenameGroupTarget] = useState<WorkspaceSessionGroup | null>(null)
     const { grouped: groupedSessions, ungrouped: ungroupedSessions } = useMemo(
-      () => partitionWorkspaceSessions(sortedSessions, sessionGroups),
-      [sessionGroups, sortedSessions],
+      () => partitionWorkspaceSessions(ordinarySessions, sessionGroups),
+      [ordinarySessions, sessionGroups],
     )
     const sortSessionsForList = useCallback((items: WorkspaceSession[]) => {
       return items.toSorted((a, b) => {
@@ -3024,6 +3037,7 @@ const WorkspaceGroup = memo(
         )}
       >
         <div className="flex min-w-0 flex-col">
+          <WorkSidebarSection works={workspaceWorks} />
           {groupedSessions.map(({ group, sessions: groupSessions }) => (
             <WorkspaceSessionGroupSection
               key={group.id}
@@ -3736,6 +3750,13 @@ export const WorkspaceSidebar = memo(({ collapsed = false }: { collapsed?: boole
       {/* ── Top navigation ── */}
       <TooltipProvider delayDuration={collapsed ? 0 : 600}>
         <nav className="flex flex-col gap-0.5 px-2 pt-1 pb-2">
+          <TopNavItem
+            icon={<WorkIcon className="size-3.5" />}
+            label={t('nav.newWork')}
+            collapsed={collapsed}
+            onClick={openNewWork}
+            dataTestId="nav-new-work"
+          />
           <TopNavItem
             icon={<MessageSquarePlusIcon className="size-3.5" />}
             label={t('nav.newChat')}

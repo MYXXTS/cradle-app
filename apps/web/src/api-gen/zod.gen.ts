@@ -1385,6 +1385,104 @@ export const zGetSessionsByIdIsolationPath = z.object({
     id: z.string().min(1)
 });
 
+export const zGetWorksQuery = z.object({
+    workspaceId: z.string().min(1).optional(),
+    linkedIssueId: z.string().min(1).optional(),
+    archived: z.boolean().optional()
+});
+
+export const zPostWorksBody = z.object({
+    workspaceId: z.string().min(1),
+    title: z.string().min(1),
+    objective: z.string().min(1),
+    linkedIssueId: z.string().min(1).optional(),
+    providerTargetId: z.string().min(1).optional(),
+    modelId: z.string().min(1).nullish(),
+    thinkingEffort: z.enum([
+        'none',
+        'minimal',
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+        'max'
+    ]).optional(),
+    runtimeKind: z.string().min(1).optional(),
+    runtimeSettings: z.object({
+        permissionMode: z.enum([
+            'default',
+            'acceptEdits',
+            'bypassPermissions',
+            'plan'
+        ]).nullish(),
+        accessMode: z.enum(['approval-required', 'full-access']).nullish(),
+        interactionMode: z.enum(['default', 'plan']).nullish(),
+        claudeAgent: z.object({
+            modelAliases: z.object({
+                haiku: z.string().optional(),
+                sonnet: z.string().optional(),
+                opus: z.string().optional()
+            }).optional()
+        }).nullish()
+    }).optional(),
+    agentId: z.string().min(1).optional()
+});
+
+export const zGetWorksByIdPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostWorksByIdArchiveBody = z.object({
+    archived: z.boolean()
+});
+
+export const zPostWorksByIdArchivePath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostWorksByIdPrepareBody = z.object({
+    title: z.string().min(1),
+    summary: z.string().min(1),
+    testPlan: z.string().min(1)
+});
+
+export const zPostWorksByIdPreparePath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostWorksByIdSubmitBody = z.object({
+    title: z.string().min(1).optional(),
+    summary: z.string().min(1).optional(),
+    testPlan: z.string().min(1).optional(),
+    base: z.string().min(1).optional()
+});
+
+export const zPostWorksByIdSubmitPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zGetSessionsByIdWorkPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zGetSessionsByIdPullRequestPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdPullRequestBody = z.object({
+    title: z.string().min(1),
+    body: z.string().optional(),
+    base: z.string().min(1).optional()
+});
+
+export const zPostSessionsByIdPullRequestPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostSessionsByIdPullRequestReadyPath = z.object({
+    id: z.string().min(1)
+});
+
 export const zGetSessionGroupsQuery = z.object({
     workspaceId: z.string().min(1).optional(),
     linkedIssueId: z.string().min(1).optional(),

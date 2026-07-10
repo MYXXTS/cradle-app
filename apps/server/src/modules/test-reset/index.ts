@@ -32,6 +32,8 @@ import {
   runtimeAuditLog,
   sessions,
   usageLogs,
+  works,
+  workThreads,
   workspaces,
 } from '@cradle/db'
 import { sql } from 'drizzle-orm'
@@ -55,6 +57,8 @@ const TABLES_IN_DELETION_ORDER = [
   kanbanBoards,
   messages,
   usageLogs,
+  workThreads,
+  works,
   sessions,
   backendCapabilitySnapshots,
   backendSessionBindings,

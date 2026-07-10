@@ -18,6 +18,8 @@ import { Route as AutomationRouteImport } from './routes/automation'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PluginsIndexRouteImport } from './routes/plugins/index'
 import { Route as WorkspacesWorkspaceIdRouteImport } from './routes/workspaces/$workspaceId'
+import { Route as WorkNewRouteImport } from './routes/work/new'
+import { Route as WorkWorkIdRouteImport } from './routes/work/$workId'
 import { Route as SettingsSectionRouteImport } from './routes/settings/$section'
 import { Route as KanbanBoardIdRouteImport } from './routes/kanban/$boardId'
 import { Route as ChatNewRouteImport } from './routes/chat/new'
@@ -71,6 +73,16 @@ const WorkspacesWorkspaceIdRoute = WorkspacesWorkspaceIdRouteImport.update({
   path: '/workspaces/$workspaceId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkNewRoute = WorkNewRouteImport.update({
+  id: '/work/new',
+  path: '/work/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkWorkIdRoute = WorkWorkIdRouteImport.update({
+  id: '/work/$workId',
+  path: '/work/$workId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsSectionRoute = SettingsSectionRouteImport.update({
   id: '/settings/$section',
   path: '/settings/$section',
@@ -122,6 +134,8 @@ export interface FileRoutesByFullPath {
   '/chat/new': typeof ChatNewRoute
   '/kanban/$boardId': typeof KanbanBoardIdRoute
   '/settings/$section': typeof SettingsSectionRoute
+  '/work/$workId': typeof WorkWorkIdRoute
+  '/work/new': typeof WorkNewRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
   '/plugins/': typeof PluginsIndexRoute
   '/plugins/$routeSegment/$localId': typeof PluginsRouteSegmentLocalIdRoute
@@ -140,6 +154,8 @@ export interface FileRoutesByTo {
   '/chat/new': typeof ChatNewRoute
   '/kanban/$boardId': typeof KanbanBoardIdRoute
   '/settings/$section': typeof SettingsSectionRoute
+  '/work/$workId': typeof WorkWorkIdRoute
+  '/work/new': typeof WorkNewRoute
   '/plugins': typeof PluginsIndexRoute
   '/plugins/$routeSegment/$localId': typeof PluginsRouteSegmentLocalIdRoute
   '/workspaces/$workspaceId/diffs': typeof WorkspacesWorkspaceIdDiffsRoute
@@ -158,6 +174,8 @@ export interface FileRoutesById {
   '/chat/new': typeof ChatNewRoute
   '/kanban/$boardId': typeof KanbanBoardIdRoute
   '/settings/$section': typeof SettingsSectionRoute
+  '/work/$workId': typeof WorkWorkIdRoute
+  '/work/new': typeof WorkNewRoute
   '/workspaces/$workspaceId': typeof WorkspacesWorkspaceIdRouteWithChildren
   '/plugins/': typeof PluginsIndexRoute
   '/plugins/$routeSegment/$localId': typeof PluginsRouteSegmentLocalIdRoute
@@ -178,6 +196,8 @@ export interface FileRouteTypes {
     | '/chat/new'
     | '/kanban/$boardId'
     | '/settings/$section'
+    | '/work/$workId'
+    | '/work/new'
     | '/workspaces/$workspaceId'
     | '/plugins/'
     | '/plugins/$routeSegment/$localId'
@@ -196,6 +216,8 @@ export interface FileRouteTypes {
     | '/chat/new'
     | '/kanban/$boardId'
     | '/settings/$section'
+    | '/work/$workId'
+    | '/work/new'
     | '/plugins'
     | '/plugins/$routeSegment/$localId'
     | '/workspaces/$workspaceId/diffs'
@@ -213,6 +235,8 @@ export interface FileRouteTypes {
     | '/chat/new'
     | '/kanban/$boardId'
     | '/settings/$section'
+    | '/work/$workId'
+    | '/work/new'
     | '/workspaces/$workspaceId'
     | '/plugins/'
     | '/plugins/$routeSegment/$localId'
@@ -232,6 +256,8 @@ export interface RootRouteChildren {
   ChatNewRoute: typeof ChatNewRoute
   KanbanBoardIdRoute: typeof KanbanBoardIdRoute
   SettingsSectionRoute: typeof SettingsSectionRoute
+  WorkWorkIdRoute: typeof WorkWorkIdRoute
+  WorkNewRoute: typeof WorkNewRoute
   WorkspacesWorkspaceIdRoute: typeof WorkspacesWorkspaceIdRouteWithChildren
   PluginsIndexRoute: typeof PluginsIndexRoute
   PluginsRouteSegmentLocalIdRoute: typeof PluginsRouteSegmentLocalIdRoute
@@ -300,6 +326,20 @@ declare module '@tanstack/react-router' {
       path: '/workspaces/$workspaceId'
       fullPath: '/workspaces/$workspaceId'
       preLoaderRoute: typeof WorkspacesWorkspaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/work/new': {
+      id: '/work/new'
+      path: '/work/new'
+      fullPath: '/work/new'
+      preLoaderRoute: typeof WorkNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/work/$workId': {
+      id: '/work/$workId'
+      path: '/work/$workId'
+      fullPath: '/work/$workId'
+      preLoaderRoute: typeof WorkWorkIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/$section': {
@@ -381,6 +421,8 @@ const rootRouteChildren: RootRouteChildren = {
   ChatNewRoute: ChatNewRoute,
   KanbanBoardIdRoute: KanbanBoardIdRoute,
   SettingsSectionRoute: SettingsSectionRoute,
+  WorkWorkIdRoute: WorkWorkIdRoute,
+  WorkNewRoute: WorkNewRoute,
   WorkspacesWorkspaceIdRoute: WorkspacesWorkspaceIdRouteWithChildren,
   PluginsIndexRoute: PluginsIndexRoute,
   PluginsRouteSegmentLocalIdRoute: PluginsRouteSegmentLocalIdRoute,

@@ -7,6 +7,10 @@ Owns session-bound GitHub pull request lifecycle for isolated agent work:
 3. Persist PR linkage on `sessions.configJson.github.pullRequest`
 4. Refresh status and mark ready for review
 
+The module also owns read-only delivery readiness (`baseRef..HEAD`, cleanliness,
+changed files) and updating an existing open PR after pushing follow-up commits.
+The Work module composes these APIs but does not duplicate Git or GitHub logic.
+
 Does **not** own merge, CI awaits, or Diff Review sync. Waiting for CI remains a user/agent decision via `session await`.
 
 ## Routes
@@ -21,5 +25,5 @@ Does **not** own merge, CI awaits, or Diff Review sync. Waiting for CI remains a
 
 - **index.ts**: Elysia routes under `/sessions/:id/pull-request*` with `x-cradle-cli` metadata.
 - **model.ts**: TypeBox request/response schemas.
-- **service.ts**: Isolation checks, remote resolution, push, GitHub create/ready, `configJson` persistence.
+- **service.ts**: Isolation/readiness checks, remote resolution, push, GitHub create/update/ready, `configJson` persistence.
 - **github-remote.ts**: Parse `owner/repo` from GitHub HTTPS/SSH remote URLs.

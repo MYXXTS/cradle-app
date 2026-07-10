@@ -111,6 +111,7 @@ interface DraftChatComposerProps {
   onSendInNewWindow?: DraftChatComposerSendHandler
   onSendIsolated?: DraftChatComposerSendHandler
   testIdPrefix?: string
+  sendButtonText?: string
 }
 
 interface DraftChatComposerContentProps extends DraftChatComposerProps {
@@ -160,6 +161,7 @@ function DraftChatComposerContent({
   onSendInNewWindow,
   onSendIsolated,
   testIdPrefix = 'draft-chat',
+  sendButtonText,
   composerState,
 }: DraftChatComposerContentProps) {
   const { t } = useTranslation('new-chat')
@@ -505,6 +507,7 @@ function DraftChatComposerContent({
       <Composer
         send={{
           submit: handleSend,
+          label: sendButtonText,
           submitInNewWindow: handleSendInNewWindow,
           sendVariants,
           isSending: sending,

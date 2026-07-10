@@ -1,5 +1,5 @@
 import type { Session } from '@cradle/db'
-import { agents, sessionGroups, sessions } from '@cradle/db'
+import { agents, sessionGroups, sessions, works, workThreads } from '@cradle/db'
 import type { UIMessage } from 'ai'
 import { and, eq, isNull, ne } from 'drizzle-orm'
 
@@ -7,6 +7,7 @@ import { readTrustedAgentRuntimeConfig } from '../../../helpers/agent-runtime-co
 import { readPositiveIntegerEnv } from '../../../helpers/env'
 import { getSystemWorkflow } from '../../../helpers/system-workflow'
 import { db } from '../../../infra'
+import { resolveSessionExecutionRoot } from '../../worktree/service'
 import type { CradleTurnTranscript } from '../transcript'
 import { resolveCradleTurnTranscript } from '../transcript'
 
@@ -64,6 +65,39 @@ function resolveSessionGroupPrompt(session: Session): string | undefined {
   ].join('\n')
 }
 
+function resolvePrimaryWorkPrompt(session: Session): string | undefined {
+  const work = db()
+    .select({
+      id: works.id,
+      title: works.title,
+      objective: works.objective,
+    })
+    .from(workThreads)
+    .innerJoin(works, eq(works.id, workThreads.workId))
+    .where(and(eq(workThreads.sessionId, session.id), eq(workThreads.role, 'primary')))
+    .get()
+  if (!work) {
+    return undefined
+  }
+
+  const execution = resolveSessionExecutionRoot(session)
+  return [
+    '## Cradle Work',
+    `Work ID: ${work.id}`,
+    `Title: ${work.title}`,
+    `Objective: ${work.objective}`,
+    `Managed Worktree: ${execution.rootPath || '(unavailable)'}`,
+    `Branch: ${execution.branch || '(unavailable)'}`,
+    '',
+    'Implement and verify the objective inside this managed Worktree.',
+    'Create coherent commits and keep the checkout clean.',
+    'Every commit must include: Co-authored-by: Cradle Agent <cradleagent@wibus.ren>',
+    `When the implementation is ready for user review, inspect \`cradle man work prepare\` and run \`cradle work prepare ${work.id} ...\` with a clear title, summary, and test plan.`,
+    'Preparing only records a local handoff. It does not publish anything.',
+    'Do not run work submit, push, create or update a pull request, mark ready, or merge unless the user explicitly requests that action.',
+  ].join('\n')
+}
+
 export function resolveSessionSystemPrompt(session: Session | null | undefined): string | undefined {
   let systemPrompt: string | undefined
   if (session?.agentId) {
@@ -81,6 +115,13 @@ export function resolveSessionSystemPrompt(session: Session | null | undefined):
     systemPrompt = systemPrompt
       ? `${systemPrompt}\n\n---\n\n${sessionGroupPrompt}`
       : sessionGroupPrompt
+  }
+
+  const workPrompt = session ? resolvePrimaryWorkPrompt(session) : undefined
+  if (workPrompt) {
+    systemPrompt = systemPrompt
+      ? `${systemPrompt}\n\n---\n\n${workPrompt}`
+      : workPrompt
   }
 
   return systemPrompt

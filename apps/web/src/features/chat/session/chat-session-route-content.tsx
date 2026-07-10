@@ -35,10 +35,14 @@ const TuiView = lazy(loadTuiView)
 
 function ChatSessionLayoutSlots({
   sessionId,
+  slotId,
+  ownerId,
   workspaceId,
   workspacePath,
 }: {
   sessionId: string
+  slotId: string
+  ownerId: string
   workspaceId: string | null
   workspacePath: string | null
 }) {
@@ -51,16 +55,16 @@ function ChatSessionLayoutSlots({
       ? (
           <Suspense fallback={null}>
             <BottomTerminalPanel
-              ownerId={`chat:${sessionId}`}
+              ownerId={ownerId}
               cwd={workspacePath!}
             />
           </Suspense>
         )
       : undefined,
-    [hasWorkspace, sessionId, workspacePath],
+    [hasWorkspace, ownerId, workspacePath],
   )
 
-  useRegisterLayoutSlots(sessionId, useMemo(() => ({
+  useRegisterLayoutSlots(slotId, useMemo(() => ({
     asideSessionId: sessionId,
     asideWorkspaceId: hasWorkspace ? workspaceId : null,
     hasAside: true,
@@ -75,16 +79,21 @@ function ChatSessionLayoutSlots({
 export function ChatSessionRouteContent({
   sessionId,
   onTitleChange,
+  surfaceId: explicitSurfaceId,
+  layoutSlotId,
 }: {
   sessionId: string
   /** Notified whenever the resolved session title changes (e.g. to drive a dockview pane tab label). */
   onTitleChange?: (title: string) => void
+  surfaceId?: string
+  layoutSlotId?: string
 }) {
   'use no memo'
 
   const active = useSurfaceActive()
   const updateSurfaceTitle = useSurfaceStore(state => state.updateSurfaceTitle)
-  const surfaceId = chatSurfaceId(sessionId)
+  const surfaceId = explicitSurfaceId ?? chatSurfaceId(sessionId)
+  const slotId = layoutSlotId ?? sessionId
 
   const { data: session } = useQuery({
     ...getSessionsByIdOptions({ path: { id: sessionId } }),
@@ -162,7 +171,13 @@ export function ChatSessionRouteContent({
   if (usesCollapsedRuntimeView) {
     return (
       <>
-        <ChatSessionLayoutSlots sessionId={sessionId} workspaceId={workspaceId} workspacePath={workspacePath} />
+        <ChatSessionLayoutSlots
+          sessionId={sessionId}
+          slotId={slotId}
+          ownerId={surfaceId}
+          workspaceId={workspaceId}
+          workspacePath={workspacePath}
+        />
         <Suspense fallback={null}>
           <TuiView sessionId={sessionId} />
         </Suspense>
@@ -172,7 +187,13 @@ export function ChatSessionRouteContent({
 
   return (
     <>
-      <ChatSessionLayoutSlots sessionId={sessionId} workspaceId={workspaceId} workspacePath={workspacePath} />
+      <ChatSessionLayoutSlots
+        sessionId={sessionId}
+        slotId={slotId}
+        ownerId={surfaceId}
+        workspaceId={workspaceId}
+        workspacePath={workspacePath}
+      />
       <ChatSessionFrameHost activeSession={activeSession} active={active} />
     </>
   )

@@ -200,6 +200,107 @@ describe('enrichModelsWithRegistryData', () => {
   })
 })
 
+describe('models.dev reasoning_options projection', () => {
+  it('projects effort.values into reasoningEfforts and drops unknown values', () => {
+    const data = makeModelsDevData({
+      'gpt-5.6': {
+        name: 'GPT-5.6',
+        reasoning: true,
+        reasoning_options: [
+          { type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', null] },
+        ],
+      },
+    })
+    const result = enrichModelsWithRegistryData([makeModel('gpt-5.6', 'GPT-5.6')], data, [])
+    expect(result[0].capabilities.reasoning).toBe(true)
+    expect(result[0].capabilities.reasoningEfforts).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+  })
+
+  it('declares empty reasoningEfforts for empty options, toggle-only, or budget_tokens-only', () => {
+    const data = makeModelsDevData({
+      'empty-options': {
+        name: 'Empty',
+        reasoning: true,
+        reasoning_options: [],
+      },
+      'toggle-only': {
+        name: 'Toggle',
+        reasoning: true,
+        reasoning_options: [{ type: 'toggle' }],
+      },
+      'budget-only': {
+        name: 'Budget',
+        reasoning: true,
+        reasoning_options: [{ type: 'budget_tokens', min: 1024 }],
+      },
+    })
+    const result = enrichModelsWithRegistryData(
+      [
+        makeModel('empty-options', 'Empty'),
+        makeModel('toggle-only', 'Toggle'),
+        makeModel('budget-only', 'Budget'),
+      ],
+      data,
+      [],
+    )
+    for (const model of result) {
+      expect(model.capabilities.reasoning).toBe(true)
+      expect(model.capabilities.reasoningEfforts).toEqual([])
+    }
+  })
+
+  it('keeps effort values when budget_tokens is also present', () => {
+    const data = makeModelsDevData({
+      'claude-opus-4-5': {
+        name: 'Claude Opus 4.5',
+        reasoning: true,
+        reasoning_options: [
+          { type: 'effort', values: ['low', 'medium', 'high'] },
+          { type: 'budget_tokens', min: 1024 },
+        ],
+      },
+    })
+    const result = enrichModelsWithRegistryData(
+      [makeModel('claude-opus-4-5', 'Claude Opus 4.5')],
+      data,
+      [],
+    )
+    expect(result[0].capabilities.reasoningEfforts).toEqual(['low', 'medium', 'high'])
+  })
+
+  it('preserves upstream-native reasoningEfforts over registry projection', () => {
+    const data = makeModelsDevData({
+      'gpt-5.6': {
+        name: 'GPT-5.6',
+        reasoning: true,
+        reasoning_options: [
+          { type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+        ],
+      },
+    })
+    const inventory: ModelDescriptor[] = [{
+      id: 'gpt-5.6',
+      label: 'GPT-5.6',
+      providerKind: 'openai-compatible',
+      capabilities: {
+        reasoning: true,
+        reasoningEfforts: ['low', 'medium', 'high'],
+      },
+    }]
+    const result = enrichModelsWithRegistryData(inventory, data, [])
+    expect(result[0].capabilities.reasoningEfforts).toEqual(['low', 'medium', 'high'])
+    expect(result[0].capabilities.family).toBeUndefined()
+    expect(result[0].capabilities.registryMatch).toBe('exact')
+  })
+})
+
 // ── DB-backed tests ───────────────────────────────────────────────────────────
 
 describe('getCachedModelsDevCost (DB-backed)', () => {

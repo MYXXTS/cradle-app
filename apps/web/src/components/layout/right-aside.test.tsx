@@ -45,6 +45,10 @@ vi.mock('~/features/workspace/file-tree', () => ({
   FileTree: () => <div data-testid="file-tree" />,
 }))
 
+vi.mock('~/features/work/work-aside-panel', () => ({
+  WorkAsidePanel: ({ workId }: { workId: string }) => <div data-testid="work-panel">{workId}</div>,
+}))
+
 vi.mock('~/features/chat/session/use-session-await', () => ({
   useSessionAwaitSummary: () => ({ data: null }),
 }))
@@ -122,5 +126,19 @@ describe('rightAside browser panel coupling', () => {
     await waitFor(() => {
       expect(useLayoutStore.getState().asideActiveTab).toBe('files')
     })
+  })
+
+  it('shows the Work tab only for Work-owned surfaces', () => {
+    const { rerender } = renderRightAside(<RightAside ownerId="owner-b" visible />)
+    expect(screen.queryByTestId('right-aside-tab-work')).toBeNull()
+
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <TooltipProvider>
+          <RightAside ownerId="owner-b" workId="work-1" visible />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('right-aside-tab-work')).not.toBeNull()
   })
 })

@@ -24,5 +24,5 @@ This module owns **Inventory** (layer 1):
 - `service.ts`: Provider target override resolution, `collectProviderModelInventory` (raw upstream), `listModels` (full pipeline), custom model/default model fallback, and audit writes.
 - `catalog.ts`: Provider-specific metadata implementations for OpenAI-compatible, Anthropic, and Universal model APIs.
 - `model-cache.ts`: Inventory-only cache persistence; async read with re-enrichment.
-- `model-capabilities.ts`: Provider-owned default modality and reasoning effort capability projection for live and cached model descriptors.
+- `model-capabilities.ts`: Provider-owned default modality and reasoning effort capability projection for live and cached model descriptors. Declared `reasoningEfforts` (including `[]` from registry) is preserved; Claude Agent effort heuristics only apply when the list is undeclared.
 - `model-capabilities.test.ts`: Focused coverage for default capability projection.
