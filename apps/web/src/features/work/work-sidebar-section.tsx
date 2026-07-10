@@ -29,24 +29,36 @@ function WorkRow({ work }: { work: WorkSummary }) {
 
   return (
     <div
-      className={cn(
-        'group flex min-w-0 items-center gap-1 rounded-lg px-2 py-1',
-        active ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-      )}
+      className="group relative isolate flex min-w-0 w-full items-center rounded-lg text-left text-xs hover:bg-accent/50"
       data-testid={`work-sidebar-row-${work.id}`}
     >
+      {/* Active state is a dedicated background layer so the interactive
+          content can sit at z-10 above it — mirrors SessionItem's hierarchy. */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          'pointer-events-none absolute inset-0 rounded-lg transition-colors',
+          active ? 'bg-accent/80' : 'bg-transparent',
+        )}
+      />
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
         onClick={() => openWork(work.id)}
+        className="relative z-10 flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-sidebar-foreground/80"
       >
         <PullRequestIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-xs">{work.title}</span>
+        <span className="min-w-0 flex-1 truncate">{work.title}</span>
         <span className="shrink-0 text-[10px] text-muted-foreground/70">{pullRequestLabel}</span>
       </button>
       <Menu>
         <MenuTrigger
-          render={<Button variant="ghost" size="icon-xs" className="opacity-0 group-hover:opacity-100" />}
+          render={(
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="relative z-10 mr-0.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            />
+          )}
           aria-label={t('sidebar.open')}
         >
           <MoreIcon />
@@ -72,15 +84,11 @@ function WorkRow({ work }: { work: WorkSummary }) {
 }
 
 export function WorkSidebarSection({ works }: { works: WorkSummary[] }) {
-  const { t } = useTranslation('work')
   if (works.length === 0) {
     return null
   }
   return (
-    <section className="mb-1 flex min-w-0 flex-col" data-testid="work-sidebar-section">
-      <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
-        {t('sidebar.section')}
-      </div>
+    <section className="ml-4.25 flex min-w-0 flex-col gap-0.5 border-l border-sidebar-border/50 pl-2 py-0.5" data-testid="work-sidebar-section">
       {works.map(work => <WorkRow key={work.id} work={work} />)}
     </section>
   )

@@ -143,6 +143,7 @@ export function openWorkspaceDiffs(input: {
   workspaceId: string
   repositoryPath?: string
   path?: string
+  reviewId?: string
 }, options: { replace?: boolean } = {}): void {
   openSurface({
     id: workspaceDiffsSurfaceId(input.workspaceId),
@@ -154,6 +155,7 @@ export function openWorkspaceDiffs(input: {
       search: {
         repo: input.repositoryPath && input.repositoryPath !== '.' ? input.repositoryPath : undefined,
         path: input.path,
+        review: input.reviewId,
       },
     },
     closable: true,

@@ -6,6 +6,8 @@ import { getCached, isCacheStale, setCache } from './github-cache'
 
 let cachedToken: string | null | undefined
 
+const GITHUB_REQUEST_TIMEOUT_MS = 20_000
+
 export class GitHubApiError extends Error {
   readonly status: number
   readonly path: string
@@ -131,7 +133,10 @@ async function githubGet<T>(path: string, schema: JsonSchema<T>): Promise<T | nu
   const cached = etagCache.get(url)
   const headers = buildGitHubHeaders({ etag: cached?.etag })
 
-  const res = await fetch(url, { headers })
+  const res = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
+  })
   recordRateLimit(res.headers)
 
   if (res.status === 304) {
@@ -169,6 +174,7 @@ async function githubMutate<T>(
     method,
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
   })
   recordRateLimit(res.headers)
 
@@ -181,6 +187,41 @@ async function githubMutate<T>(
   }
 
   return schema.parse(await res.json())
+}
+
+const GitHubGraphQLResponseSchema = z.object({
+  data: z.unknown().optional(),
+  errors: z.array(z.object({ message: z.string() }).passthrough()).optional(),
+}).passthrough()
+
+async function githubGraphQL<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  schema: JsonSchema<T>,
+): Promise<T> {
+  const path = '/graphql'
+  const headers = buildGitHubHeaders({ requireToken: true })
+  headers['Content-Type'] = 'application/json'
+
+  const res = await fetch(`https://api.github.com${path}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
+  })
+  recordRateLimit(res.headers)
+
+  const payload = GitHubGraphQLResponseSchema.parse(await res.json())
+  const errorMessage = payload.errors?.map(error => error.message).join('; ')
+  if (!res.ok || errorMessage || payload.data === undefined) {
+    throw new GitHubApiError({
+      status: res.ok ? 422 : res.status,
+      path,
+      message: errorMessage || `GitHub GraphQL API returned ${res.status}`,
+    })
+  }
+
+  return schema.parse(payload.data)
 }
 
 async function githubGetPaged<T>(path: string, schema: JsonSchema<T[]>, maxPages = 10): Promise<T[] | null> {
@@ -345,6 +386,10 @@ const GitHubPullRequestSchema = z.object({
   base: z.object({ ref: z.string() }),
 }).passthrough()
 
+const GitHubPullRequestNodeSchema = z.object({
+  node_id: z.string(),
+}).passthrough()
+
 const CreatedGitHubPullRequestSchema = z.object({
   number: z.number().finite(),
   title: z.string(),
@@ -354,6 +399,21 @@ const CreatedGitHubPullRequestSchema = z.object({
   head: z.object({ sha: z.string(), ref: z.string() }),
   base: z.object({ ref: z.string() }),
 }).passthrough()
+
+const MarkPullRequestReadyDataSchema = z.object({
+  markPullRequestReadyForReview: z.object({
+    pullRequest: z.object({
+      number: z.number().finite(),
+      title: z.string(),
+      isDraft: z.boolean(),
+      url: z.string(),
+      state: z.enum(['OPEN', 'CLOSED', 'MERGED']),
+      headRefName: z.string(),
+      baseRefName: z.string(),
+      headRefOid: z.string(),
+    }),
+  }),
+})
 
 const GitHubCheckRunSchema = z.object({
   id: z.number().finite().optional(),
@@ -451,6 +511,10 @@ export function fetchPullRequest(owner: string, repo: string, pr: number): Promi
   return githubGet(`/repos/${owner}/${repo}/pulls/${pr}`, GitHubPullRequestSchema)
 }
 
+function fetchPullRequestNode(owner: string, repo: string, pr: number): Promise<{ node_id: string } | null> {
+  return githubGet(`/repos/${owner}/${repo}/pulls/${pr}`, GitHubPullRequestNodeSchema)
+}
+
 export function createPullRequest(input: CreatePullRequestInput): Promise<CreatedGitHubPullRequest> {
   return githubMutate(
     'POST',
@@ -478,13 +542,49 @@ export function updatePullRequest(input: UpdatePullRequestInput): Promise<Create
   )
 }
 
-export function markPullRequestReady(owner: string, repo: string, pr: number): Promise<CreatedGitHubPullRequest> {
-  return githubMutate(
-    'PATCH',
-    `/repos/${owner}/${repo}/pulls/${pr}`,
-    { draft: false },
-    CreatedGitHubPullRequestSchema,
+export async function markPullRequestReady(
+  owner: string,
+  repo: string,
+  pr: number,
+): Promise<CreatedGitHubPullRequest> {
+  const current = await fetchPullRequestNode(owner, repo, pr)
+  if (!current) {
+    throw new GitHubApiError({
+      status: 502,
+      path: `/repos/${owner}/${repo}/pulls/${pr}`,
+      message: 'GitHub pull request was unavailable before marking it ready for review.',
+    })
+  }
+
+  const data = await githubGraphQL(
+    `mutation MarkPullRequestReadyForReview($pullRequestId: ID!) {
+      markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
+        pullRequest {
+          number
+          title
+          isDraft
+          url
+          state
+          headRefName
+          baseRefName
+          headRefOid
+        }
+      }
+    }`,
+    { pullRequestId: current.node_id },
+    MarkPullRequestReadyDataSchema,
   )
+  const updated = data.markPullRequestReadyForReview.pullRequest
+
+  return {
+    number: updated.number,
+    title: updated.title,
+    draft: updated.isDraft,
+    html_url: updated.url,
+    state: updated.state === 'OPEN' ? 'open' : 'closed',
+    head: { sha: updated.headRefOid, ref: updated.headRefName },
+    base: { ref: updated.baseRefName },
+  }
 }
 
 export async function fetchCheckRuns(owner: string, repo: string, ref: string): Promise<GitHubCheckRunsResponse | null> {

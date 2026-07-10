@@ -8,6 +8,7 @@ import { createRequestIdPlugin } from './http/request-id'
 import { acp } from './modules/acp'
 import { agentIdentity } from './modules/agent-identity'
 import { agentInteractionRuntime } from './modules/agent-interaction-runtime'
+import { registerAgentToolsMcpServer } from './modules/agent-tools/runtime-registration'
 import { assets } from './modules/assets'
 import { automation } from './modules/automation'
 import { chatRuntime } from './modules/chat-runtime'
@@ -236,6 +237,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
   }
 
   const app = await createServerContractApp({ includeRuntimeHttpPlugins: true })
+  registerAgentToolsMcpServer()
 
   // Initialize the always-on relay host-connector (connects to the host's own
   // HTTP port to bridge controller tunnels). The local target is this server's

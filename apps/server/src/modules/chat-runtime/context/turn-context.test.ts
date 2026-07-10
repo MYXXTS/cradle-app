@@ -45,9 +45,10 @@ describe('resolveSessionSystemPrompt Work context', () => {
 
     expect(prompt).toContain('## Cradle Work')
     expect(prompt).toContain('Work ID: work-1')
-    expect(prompt).toContain('cradle work prepare work-1')
-    expect(prompt).toContain('Preparing only records a local handoff.')
+    expect(prompt).toContain('MUST call the native cradle work_prepare tool')
+    expect(prompt).toContain('work_prepare only records a local handoff.')
     expect(prompt).toContain('Do not run work submit')
+    expect(prompt).not.toContain('/tmp/turn-context')
   })
 
   it('does not add Work guidance to an ordinary Session', () => {

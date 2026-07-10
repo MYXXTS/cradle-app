@@ -16,9 +16,12 @@ import {
   updatePullRequest as updateGitHubPullRequest,
 } from '../../lib/github-api'
 import * as Worktree from '../worktree/service'
+import { isForceWithLeaseRejection, resolveDeliveryPushArgs } from './delivery-push'
 import { parseGitHubOwnerRepo } from './github-remote'
 import type { pullRequestViewSchema } from './model'
 import { withCradlePullRequestFooter } from './pr-body'
+
+export { resolveDeliveryPushArgs } from './delivery-push'
 
 export type SessionPullRequestView = Static<typeof pullRequestViewSchema>
 export interface PullRequestReadiness {
@@ -192,6 +195,24 @@ async function resolveGitHubRemote(rootPath: string): Promise<{ owner: string, r
   return { ...parsed, remoteName: preferred.name }
 }
 
+async function readRemoteBranchSha(input: {
+  rootPath: string
+  remoteName: string
+  branch: string
+}): Promise<string | null> {
+  const git = simpleGit(input.rootPath)
+  const output = await git.raw(['ls-remote', '--heads', input.remoteName, input.branch])
+  const line = output
+    .split('\n')
+    .map(entry => entry.trim())
+    .find(entry => entry.length > 0)
+  if (!line) {
+    return null
+  }
+  const sha = line.split(/\s/)[0]?.trim()
+  return sha && /^[0-9a-f]{7,40}$/i.test(sha) ? sha : null
+}
+
 async function ensureBranchPushed(input: {
   rootPath: string
   branch: string
@@ -208,14 +229,48 @@ async function ensureBranchPushed(input: {
     })
   }
 
+  let remoteSha: string | null = null
   try {
-    await git.push(input.remoteName, input.branch, ['--set-upstream'])
+    remoteSha = await readRemoteBranchSha(input)
   }
   catch (error) {
     throw new AppError({
       code: 'git_push_failed',
       status: 502,
-      message: error instanceof Error ? error.message : 'Failed to push branch to remote.',
+      message: error instanceof Error
+        ? error.message
+        : 'Failed to inspect the remote branch before pushing.',
+      details: { branch: input.branch, remoteName: input.remoteName },
+    })
+  }
+
+  const pushArgs = resolveDeliveryPushArgs({
+    branch: input.branch,
+    remoteSha,
+  })
+
+  try {
+    await git.push(input.remoteName, input.branch, pushArgs)
+  }
+  catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to push branch to remote.'
+    if (remoteSha && isForceWithLeaseRejection(message)) {
+      throw new AppError({
+        code: 'git_push_lease_rejected',
+        status: 409,
+        message: 'Remote branch tip changed since Cradle inspected it. Fetch/rebase the worktree branch, or resolve the remote update before submitting again.',
+        details: {
+          branch: input.branch,
+          remoteName: input.remoteName,
+          expectedRemoteSha: remoteSha,
+          cause: message,
+        },
+      })
+    }
+    throw new AppError({
+      code: 'git_push_failed',
+      status: 502,
+      message,
       details: { branch: input.branch, remoteName: input.remoteName },
     })
   }

@@ -1,18 +1,23 @@
 import { ExternalLinkLine as ExternalLinkIcon } from '@mingcute/react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 
-import { getWorksByIdQueryKey } from '~/api-gen/@tanstack/react-query.gen'
+import {
+  getWorksByIdQueryKey,
+  postWorkspacesByWorkspaceIdDiffReviewsLocalBranchCompareMutation,
+} from '~/api-gen/@tanstack/react-query.gen'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
 import { Spinner } from '~/components/ui/spinner'
+import { toastManager } from '~/components/ui/toast'
 import { useRepairSessionIsolation } from '~/features/session/use-session-isolation'
 import { useMarkSessionPullRequestReady } from '~/features/session/use-session-pull-request'
 import { apiErrorMessage } from '~/lib/api-error'
-import { useLayoutStore } from '~/store/layout'
+import { openWorkspaceDiffs } from '~/navigation/navigation-commands'
 
+import type { WorkDetail } from './use-work'
 import { useSubmitWork, useWorkDetail } from './use-work'
 
 export function WorkAsidePanel({ workId }: { workId: string }) {
@@ -21,8 +26,8 @@ export function WorkAsidePanel({ workId }: { workId: string }) {
   const workQuery = useWorkDetail(workId)
   const submitWork = useSubmitWork()
   const markReady = useMarkSessionPullRequestReady()
+  const reviewChanges = useMutation(postWorkspacesByWorkspaceIdDiffReviewsLocalBranchCompareMutation())
   const repair = useRepairSessionIsolation()
-  const openAsideTab = useLayoutStore(state => state.openAsideTab)
   const detail = workQuery.data
 
   if (!detail) {
@@ -50,13 +55,63 @@ export function WorkAsidePanel({ workId }: { workId: string }) {
   }
 
   const handleMarkReady = async () => {
-    await markReady.mutateAsync(detail.primaryThread.id)
-    await queryClient.invalidateQueries({
-      queryKey: getWorksByIdQueryKey({ path: { id: workId } }),
-    })
+    try {
+      const result = await markReady.mutateAsync({
+        path: { id: detail.primaryThread.id },
+      })
+      queryClient.setQueryData<WorkDetail>(
+        getWorksByIdQueryKey({ path: { id: workId } }),
+        current => current ? { ...current, pullRequest: result.pullRequest } : current,
+      )
+      void queryClient.invalidateQueries({
+        queryKey: getWorksByIdQueryKey({ path: { id: workId } }),
+      })
+      toastManager.add({
+        type: 'success',
+        title: t('aside.markReadySuccessTitle'),
+        description: t('aside.markReadySuccessDescription', { number: result.pullRequest.number }),
+      })
+    }
+    catch (error) {
+      toastManager.add({
+        type: 'error',
+        title: t('aside.markReadyFailed'),
+        description: apiErrorMessage(error),
+      })
+    }
   }
 
-  const deliveryError = submitWork.error ?? markReady.error ?? repair.error
+  const handleReviewChanges = async () => {
+    const baseRef = detail.readiness.baseRef
+    const headRef = detail.readiness.branch
+    const workspaceId = detail.primaryThread.workspaceId
+    if (!baseRef || !headRef || !workspaceId) {
+      return
+    }
+
+    try {
+      const review = await reviewChanges.mutateAsync({
+        path: { workspaceId },
+        body: { baseRef, headRef },
+      })
+      openWorkspaceDiffs({
+        workspaceId,
+        reviewId: review.id,
+      })
+    }
+    catch (error) {
+      toastManager.add({
+        type: 'error',
+        title: t('aside.reviewChangesFailed'),
+        description: apiErrorMessage(error),
+      })
+    }
+  }
+
+  const canReviewChanges = detail.primaryThread.workspaceId !== null
+    && detail.readiness.baseRef !== null
+    && detail.readiness.branch !== null
+  const deliveryError = submitWork.error ?? repair.error
 
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3" data-testid="work-aside-panel">
@@ -67,8 +122,14 @@ export function WorkAsidePanel({ workId }: { workId: string }) {
             <CardDescription>{t('aside.localOnly')}</CardDescription>
           </CardHeader>
           <CardFooter className="gap-2 border-primary/15 bg-primary/5">
-            <Button type="button" size="sm" variant="outline" onClick={() => openAsideTab('changes')}>
-              {t('aside.reviewChanges')}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canReviewChanges || reviewChanges.isPending}
+              onClick={() => void handleReviewChanges()}
+            >
+              {reviewChanges.isPending ? <Spinner className="size-3" /> : t('aside.reviewChanges')}
             </Button>
             <Button
               type="button"
@@ -94,8 +155,14 @@ export function WorkAsidePanel({ workId }: { workId: string }) {
             <CardDescription>{t('aside.draftLatest', { number: pullRequest.number })}</CardDescription>
           </CardHeader>
           <CardFooter className="flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => openAsideTab('changes')}>
-              {t('aside.reviewChanges')}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canReviewChanges || reviewChanges.isPending}
+              onClick={() => void handleReviewChanges()}
+            >
+              {reviewChanges.isPending ? <Spinner className="size-3" /> : t('aside.reviewChanges')}
             </Button>
             <Button asChild type="button" size="sm" variant="outline">
               <a href={pullRequest.url} target="_blank" rel="noreferrer">
@@ -109,6 +176,7 @@ export function WorkAsidePanel({ workId }: { workId: string }) {
                 size="sm"
                 disabled={markReady.isPending}
                 onClick={() => void handleMarkReady()}
+                data-testid="work-mark-ready"
               >
                 {markReady.isPending ? t('aside.markingReady') : t('aside.markReady')}
               </Button>

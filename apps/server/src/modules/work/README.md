@@ -13,6 +13,9 @@ Session, Worktree, Pull Request, Chat Runtime, and Await read models.
 - Work stores facts only. Activity labels are derived and no Work status machine
   exists.
 - Preparing a handoff never pushes or calls GitHub.
+- The builtin `cradle` MCP server exposes `work_prepare` as the required
+  Agent-facing finalization tool; the tool delegates to this module's prepare
+  API and does not own Work persistence.
 - Creating or updating a Draft PR requires an explicit submit request.
 - Mark Ready and merge remain user-controlled outside this module.
 

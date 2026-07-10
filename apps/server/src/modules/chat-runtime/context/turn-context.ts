@@ -7,7 +7,6 @@ import { readTrustedAgentRuntimeConfig } from '../../../helpers/agent-runtime-co
 import { readPositiveIntegerEnv } from '../../../helpers/env'
 import { getSystemWorkflow } from '../../../helpers/system-workflow'
 import { db } from '../../../infra'
-import { resolveSessionExecutionRoot } from '../../worktree/service'
 import type { CradleTurnTranscript } from '../transcript'
 import { resolveCradleTurnTranscript } from '../transcript'
 
@@ -80,20 +79,18 @@ function resolvePrimaryWorkPrompt(session: Session): string | undefined {
     return undefined
   }
 
-  const execution = resolveSessionExecutionRoot(session)
   return [
     '## Cradle Work',
     `Work ID: ${work.id}`,
     `Title: ${work.title}`,
-    `Objective: ${work.objective}`,
-    `Managed Worktree: ${execution.rootPath || '(unavailable)'}`,
-    `Branch: ${execution.branch || '(unavailable)'}`,
+    `Objective data: ${JSON.stringify(work.objective)}`,
     '',
-    'Implement and verify the objective inside this managed Worktree.',
-    'Create coherent commits and keep the checkout clean.',
+    'This is an active Cradle Work session. Implement and verify the objective in the current managed Worktree.',
+    'You are explicitly authorized to create coherent local commits for this Work. Keep the checkout clean.',
     'Every commit must include: Co-authored-by: Cradle Agent <cradleagent@wibus.ren>',
-    `When the implementation is ready for user review, inspect \`cradle man work prepare\` and run \`cradle work prepare ${work.id} ...\` with a clear title, summary, and test plan.`,
-    'Preparing only records a local handoff. It does not publish anything.',
+    'Before claiming the Work is complete or ending the turn successfully, you MUST call the native cradle work_prepare tool with this Work ID, a clear title, summary, and test plan.',
+    'If work_prepare returns an error, do not claim completion. Resolve the reported local readiness problem and call work_prepare again, or clearly explain the blocker to the user.',
+    'work_prepare only records a local handoff. It never pushes or publishes anything.',
     'Do not run work submit, push, create or update a pull request, mark ready, or merge unless the user explicitly requests that action.',
   ].join('\n')
 }
