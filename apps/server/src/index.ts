@@ -146,7 +146,7 @@ async function bootstrap() {
     },
   )
 
-  // Pre-warm models.dev cache so first model list request is fast
+  // Force-refresh models.dev catalog on boot (SWR soft/hard TTL applies afterward)
   warmupModelsDevCache()
 
   logger.info(`listening on http://${config.host}:${config.port}`)

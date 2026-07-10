@@ -4,9 +4,12 @@ import { AppError } from '../../errors/app-error'
 import { guardedFetch } from '../../lib/ssrf-guard'
 import {
   CodexChatgptAuthReauthRequiredError,
-  ensureCodexChatgptAuthAccessToken,
   readCodexChatgptAuthCredential,
 } from '../chat-runtime-providers/codex/app-server/chatgpt-auth'
+import { listCodexChatgptModels } from '../chat-runtime-providers/codex/app-server/model-list'
+import {
+  buildCodexExternalModelProviderConfig,
+} from '../chat-runtime-providers/codex/config/runtime-config'
 import {
   AnthropicConfigJsonSchema,
   normalizeBaseUrl,
@@ -85,8 +88,31 @@ class OpenAICompatibleMetadataProvider implements ProviderMetadataProvider {
     deps: ProviderCatalogDeps,
   ): Promise<ModelDescriptor[]> {
     const config = OpenAICompatibleConfigJsonSchema.parse(input.configJson)
-
     const secret = input.secretRef ? deps.readSecret(input.secretRef) : null
+    const chatgptAuth = readCodexChatgptAuthCredential(input.secretRef, secret)
+
+    // ChatGPT login is an account identity, not an OpenAI-compatible gateway.
+    // Official models come from Codex app-server `model/list`, including when
+    // baseUrl is empty (native ChatGPT) or set (external Responses endpoint).
+    if (chatgptAuth) {
+      try {
+        const baseUrl = config.baseUrl?.trim() || null
+        return await listCodexChatgptModels({
+          credential: chatgptAuth,
+          config: baseUrl
+            ? buildCodexExternalModelProviderConfig(
+                normalizeBaseUrl(baseUrl),
+                'chatgptAuthTokens',
+              )
+            : undefined,
+          updateSecretValue: deps.updateSecretValue,
+        })
+      }
+      catch (error) {
+        throw wrapProviderModelsError(this.providerKind, error)
+      }
+    }
+
     if (!config.baseUrl) {
       throw invalidProviderRequest('Base URL is required')
     }
@@ -99,7 +125,7 @@ class OpenAICompatibleMetadataProvider implements ProviderMetadataProvider {
           this.providerKind,
           modelRequestOptions(
             baseUrl,
-            await projectOpenAICompatibleModelListAuthHeaders(input.secretRef, secret, deps),
+            secret ? { Authorization: `Bearer ${secret}` } : undefined,
           ),
         ),
       )
@@ -164,28 +190,6 @@ function projectAnthropicAuthHeaders(
     return { Authorization: `Bearer ${credential}` }
   }
   return { 'x-api-key': credential }
-}
-
-async function projectOpenAICompatibleModelListAuthHeaders(
-  secretRef: string | null,
-  secret: string | null,
-  deps: ProviderCatalogDeps,
-): Promise<Record<string, string> | undefined> {
-  const chatgptAuth = readCodexChatgptAuthCredential(secretRef, secret)
-  if (!chatgptAuth) {
-    return secret ? { Authorization: `Bearer ${secret}` } : undefined
-  }
-
-  const credential = await ensureCodexChatgptAuthAccessToken(chatgptAuth, {
-    updateSecretValue: deps.updateSecretValue,
-  })
-  if (!credential.accessToken) {
-    throw new Error('ChatGPT auth requires an access token')
-  }
-  return {
-    'Authorization': `Bearer ${credential.accessToken}`,
-    'ChatGPT-Account-ID': credential.chatgptAccountId,
-  }
 }
 
 class UniversalMetadataProvider implements ProviderMetadataProvider {

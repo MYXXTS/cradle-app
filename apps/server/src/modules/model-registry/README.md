@@ -9,4 +9,4 @@
 - `index.ts`: HTTP routes for listing, upserting, and deleting global model registry mappings.
 - `model.ts`: TypeBox schemas for mapping route params, payloads, and responses.
 - `service.ts`: Drizzle-backed global mapping persistence plus enrichment projection helpers.
-- `model-info-registry.ts`: Read-only models.dev cache, search, lookup, and registry enrichment helpers.
+- `model-info-registry.ts`: Read-only models.dev cache (SWR: 1h soft / 24h hard TTL, force-refresh on server boot), search, lookup, and registry enrichment helpers.

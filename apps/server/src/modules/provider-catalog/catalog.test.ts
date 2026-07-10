@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { setSsrAddressLookupForTests } from '../../lib/ssrf-guard'
+import { setCodexChatgptModelListClientFactoryForTests } from '../chat-runtime-providers/codex/app-server/model-list'
 import type { ProviderRequest } from '../provider-contracts/types'
 import { ProviderCatalog } from './catalog'
 import {
@@ -27,6 +28,7 @@ function createUnexpiredJwt(): string {
 describe('providerCatalog', () => {
   afterEach(() => {
     setSsrAddressLookupForTests(null)
+    setCodexChatgptModelListClientFactoryForTests(null)
     vi.restoreAllMocks()
   })
 
@@ -81,23 +83,42 @@ describe('providerCatalog', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 
-  it('lists OpenAI-compatible ChatGPT-auth models from the OpenAI-compatible endpoint', async () => {
-    setSsrAddressLookupForTests(async () => ['93.184.216.34'])
+  it('lists ChatGPT-auth models from Codex model/list when baseUrl is empty', async () => {
     const accessToken = createUnexpiredJwt()
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = getRequestUrl(input)
-      if (url !== 'https://api.openai.com/v1/models') {
-        throw new Error(`Unexpected ChatGPT-auth model list request: ${url}`)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const codexRequests: Array<{ method: string, params?: unknown }> = []
+    const codexClientOptions: Array<{ config?: Record<string, unknown> } | undefined> = []
+    setCodexChatgptModelListClientFactoryForTests((options) => {
+      codexClientOptions.push(options)
+      return {
+        initialize: vi.fn(async () => undefined),
+        request: vi.fn(async (method: string, params?: unknown) => {
+          codexRequests.push({ method, params })
+          if (method === 'account/login/start') {
+            return {}
+          }
+          if (method === 'model/list') {
+            return {
+              data: [
+                {
+                  id: 'gpt-5-codex',
+                  model: 'gpt-5-codex',
+                  displayName: 'GPT-5 Codex',
+                  supportedReasoningEfforts: [
+                    { reasoningEffort: 'medium', description: 'Medium' },
+                    { reasoningEffort: 'high', description: 'High' },
+                  ],
+                  inputModalities: ['text'],
+                },
+              ],
+              nextCursor: null,
+            }
+          }
+          throw new Error(`unexpected Codex app-server method ${method}`)
+        }),
+        nextNotification: vi.fn(async () => null),
+        close: vi.fn(),
       }
-
-      expect(init?.headers).toMatchObject({
-        'Authorization': `Bearer ${accessToken}`,
-        'ChatGPT-Account-ID': 'chatgpt-account-1',
-      })
-      return new Response(JSON.stringify({ data: [{ id: 'gpt-chatgpt-auth' }] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
     })
     const updateSecretValue = vi.fn()
 
@@ -108,15 +129,16 @@ describe('providerCatalog', () => {
 
     const request: ProviderRequest = {
       providerKind: 'openai-compatible',
-      label: 'OpenAI',
+      label: 'RisingWave Team',
       configJson: JSON.stringify({
-        baseUrl: 'https://api.openai.com/v1',
-        apiMode: 'responses',
+        baseUrl: '',
+        authMode: 'chatgptAuthTokens',
+        enabledModels: [],
       }),
       secretRef: 'chatgpt-auth-secret',
-      profileId: null,
+      profileId: 'openai',
       providerTargetKind: 'manual',
-      providerTargetId: 'openai-chatgpt-auth-target',
+      providerTargetId: 'openai',
       sourceApp: null,
     }
 
@@ -133,15 +155,101 @@ describe('providerCatalog', () => {
       updateSecretValue,
     })).resolves.toEqual([
       {
-        id: 'gpt-chatgpt-auth',
-        label: 'gpt-chatgpt-auth',
+        id: 'gpt-5-codex',
+        label: 'GPT-5 Codex',
         providerKind: 'openai-compatible',
-        capabilities: {},
+        capabilities: {
+          inputModalities: ['text'],
+          reasoning: true,
+          reasoningEfforts: ['medium', 'high'],
+        },
       },
     ])
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(codexClientOptions).toEqual([undefined])
+    expect(codexRequests.map(entry => entry.method)).toEqual(['account/login/start', 'model/list'])
     expect(updateSecretValue).not.toHaveBeenCalled()
+  })
+
+  it('lists ChatGPT-auth models from Codex model/list with external provider config when baseUrl is set', async () => {
+    const accessToken = createUnexpiredJwt()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const codexClientOptions: Array<{ config?: Record<string, unknown> } | undefined> = []
+    setCodexChatgptModelListClientFactoryForTests((options) => {
+      codexClientOptions.push(options)
+      return {
+        initialize: vi.fn(async () => undefined),
+        request: vi.fn(async (method: string) => {
+          if (method === 'account/login/start') {
+            return {}
+          }
+          if (method === 'model/list') {
+            return {
+              data: [{ id: 'gpt-chatgpt-auth', model: 'gpt-chatgpt-auth', displayName: 'gpt-chatgpt-auth' }],
+              nextCursor: null,
+            }
+          }
+          throw new Error(`unexpected Codex app-server method ${method}`)
+        }),
+        nextNotification: vi.fn(async () => null),
+        close: vi.fn(),
+      }
+    })
+
+    const provider = new ProviderCatalog().get('openai-compatible')
+    if (!provider) {
+      throw new Error('OpenAI-compatible provider is not registered')
+    }
+
+    const request: ProviderRequest = {
+      providerKind: 'openai-compatible',
+      label: 'OpenAI',
+      configJson: JSON.stringify({
+        baseUrl: 'https://api.openai.com/v1',
+        authMode: 'chatgptAuthTokens',
+      }),
+      secretRef: 'chatgpt-auth-secret',
+      profileId: null,
+      providerTargetKind: 'manual',
+      providerTargetId: 'openai-chatgpt-auth-target',
+      sourceApp: null,
+    }
+
+    await expect(provider.listModels(request, {
+      readSecret: () => JSON.stringify({
+        accessToken,
+        refreshToken: 'refresh-token',
+        chatgptAccountId: 'chatgpt-account-1',
+        chatgptPlanType: 'plus',
+      }),
+    })).resolves.toEqual([
+      {
+        id: 'gpt-chatgpt-auth',
+        label: 'gpt-chatgpt-auth',
+        providerKind: 'openai-compatible',
+        capabilities: {
+          inputModalities: [],
+          reasoning: false,
+          reasoningEfforts: [],
+        },
+      },
+    ])
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(codexClientOptions).toEqual([{
+      config: {
+        model_provider: 'cradle-openai-compatible',
+        model_providers: {
+          'cradle-openai-compatible': {
+            name: 'Cradle OpenAI Compatible',
+            base_url: 'https://api.openai.com/v1',
+            wire_api: 'responses',
+            requires_openai_auth: true,
+          },
+        },
+      },
+    }])
   })
 
   it('lists Universal models from the OpenAI-compatible endpoint only', async () => {

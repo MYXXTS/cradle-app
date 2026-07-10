@@ -41,12 +41,16 @@ interface ModelsDevProvider {
 type ModelsDevData = Record<string, ModelsDevProvider>
 
 const MODELS_DEV_URL = 'https://models.dev/api.json'
-const CACHE_TTL_MS = 1000 * 60 * 60 * 24 // 24 hours (DB-backed)
 const CACHE_KEY = 'models_dev_api_json'
+/** Serve cached data without refresh while younger than this. */
+const SOFT_TTL_MS = 1000 * 60 * 60 // 1 hour
+/** After this age, block on a network refresh (still fall back to stale on failure). */
+const HARD_TTL_MS = 1000 * 60 * 60 * 24 // 24 hours
 
 let memCache: ModelsDevData | null = null
-let memCacheAt = 0
-const MEM_TTL_MS = 1000 * 60 * 10 // 10 min in-memory to avoid repeated DB reads
+/** Wall-clock ms when the in-memory snapshot was fetched from the network. */
+let memFetchedAt = 0
+let refreshInFlight: Promise<ModelsDevData | null> | null = null
 const DATE_SUFFIX_RE = /-\d{8}$/
 const VERSION_SUFFIX_RE = /-\d{4}-\d{2}-\d{2}$/
 const SEP_RE = /[.\-]+/
@@ -100,20 +104,30 @@ async function fetchFromNetwork(): Promise<ModelsDevData | null> {
   }
 }
 
-function readDbCache(): ModelsDevData | null {
+/**
+ * Read the DB snapshot. `expiresAt` is the hard-TTL deadline; fetch time is
+ * derived as expiresAt - HARD_TTL so we don't need a schema change for SWR.
+ * Hard-expired rows are still returned as stale fallbacks.
+ */
+function readDbCache(): { data: ModelsDevData, fetchedAt: number } | null {
   const row = db().select().from(kvCache).where(eq(kvCache.key, CACHE_KEY)).get()
   if (!row) {
     return null
   }
-  if (Date.now() / 1000 > row.expiresAt) {
+  try {
+    return {
+      data: ModelsDevDataJsonSchema.parse(row.value),
+      fetchedAt: row.expiresAt * 1000 - HARD_TTL_MS,
+    }
+  }
+  catch {
     return null
   }
-  return ModelsDevDataJsonSchema.parse(row.value)
 }
 
 function writeDbCache(data: ModelsDevData): void {
   try {
-    const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(CACHE_TTL_MS / 1000)
+    const expiresAt = Math.floor(Date.now() / 1000) + Math.floor(HARD_TTL_MS / 1000)
     db().insert(kvCache).values({ key: CACHE_KEY, value: JSON.stringify(data), expiresAt }).onConflictDoUpdate({ target: kvCache.key, set: { value: JSON.stringify(data), expiresAt } }).run()
   }
   catch {
@@ -121,41 +135,78 @@ function writeDbCache(data: ModelsDevData): void {
   }
 }
 
-async function fetchModelsDevData(): Promise<ModelsDevData | null> {
-  // 1. In-memory hot cache
-  if (memCache && Date.now() - memCacheAt < MEM_TTL_MS) {
-    return memCache
+function getLocalCache(): { data: ModelsDevData, fetchedAt: number } | null {
+  if (memCache) {
+    return { data: memCache, fetchedAt: memFetchedAt }
   }
-
-  // 2. DB persistent cache (per-day)
   const fromDb = readDbCache()
-  if (fromDb) {
-    memCache = fromDb
-    memCacheAt = Date.now()
-    return fromDb
+  if (!fromDb) {
+    return null
   }
-
-  // 3. Network fetch
-  let fresh: ModelsDevData | null = null
-  try {
-    fresh = await fetchFromNetwork()
-  }
-  catch {
-    return memCache
-  }
-  if (fresh) {
-    memCache = fresh
-    memCacheAt = Date.now()
-    writeDbCache(fresh)
-    return fresh
-  }
-
-  return memCache
+  memCache = fromDb.data
+  memFetchedAt = fromDb.fetchedAt
+  return fromDb
 }
 
-/** Pre-warm the models.dev cache on server startup (fire and forget) */
+function applyFresh(data: ModelsDevData): ModelsDevData {
+  memCache = data
+  memFetchedAt = Date.now()
+  writeDbCache(data)
+  return data
+}
+
+async function refreshFromNetwork(): Promise<ModelsDevData | null> {
+  try {
+    const fresh = await fetchFromNetwork()
+    if (fresh) {
+      return applyFresh(fresh)
+    }
+  }
+  catch {
+    // non-critical — caller falls back to stale
+  }
+  return null
+}
+
+function scheduleBackgroundRefresh(): void {
+  if (refreshInFlight) {
+    return
+  }
+  refreshInFlight = refreshFromNetwork().finally(() => {
+    refreshInFlight = null
+  })
+}
+
+/**
+ * Load models.dev catalog with stale-while-revalidate:
+ * - age < soft TTL → return cache
+ * - soft ≤ age < hard → return cache, refresh in background
+ * - age ≥ hard (or miss) → await network; fall back to stale on failure
+ */
+async function fetchModelsDevData(options?: { forceRefresh?: boolean }): Promise<ModelsDevData | null> {
+  if (options?.forceRefresh) {
+    return (await refreshFromNetwork()) ?? getLocalCache()?.data ?? null
+  }
+
+  const cached = getLocalCache()
+  if (cached) {
+    const age = Date.now() - cached.fetchedAt
+    if (age < SOFT_TTL_MS) {
+      return cached.data
+    }
+    if (age < HARD_TTL_MS) {
+      scheduleBackgroundRefresh()
+      return cached.data
+    }
+    return (await refreshFromNetwork()) ?? cached.data
+  }
+
+  return refreshFromNetwork()
+}
+
+/** Force-refresh models.dev on server startup (fire and forget; falls back to stale cache). */
 export function warmupModelsDevCache(): void {
-  void fetchModelsDevData()
+  void fetchModelsDevData({ forceRefresh: true })
 }
 
 /**
