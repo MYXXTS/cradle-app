@@ -418,6 +418,16 @@ export function upsertManualProviderTarget(
       tx.delete(providerTargetModelCache).where(eq(providerTargetModelCache.providerTargetId, id)).run()
       tx.delete(agentSessions).where(eq(agentSessions.providerTargetId, id)).run()
     }
+    else if (
+      existing
+      && (
+        existing.connectionConfigJson !== connectionConfigJson
+        || existing.credentialRef !== (input.credentialRef ?? null)
+      )
+    ) {
+      // Connection/credential changes invalidate inventory — upstream model list may differ.
+      tx.delete(providerTargetModelCache).where(eq(providerTargetModelCache.providerTargetId, id)).run()
+    }
     if (!nextEnabled) {
       disableAgentsForProviderTargetInDb(id, tx)
     }

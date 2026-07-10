@@ -10,7 +10,7 @@ import type { RegisteredMcpServer } from '../../../plugins/mcp-registry'
 import { getRegisteredMcpServers } from '../../../plugins/mcp-registry'
 import type { RuntimeProviderTargetProfile } from '../../chat-runtime/runtime-provider-types'
 import type { ModelRegistryMappingEntry, ModelsDevModel } from '../../model-registry/model-info-registry'
-import { lookupModelRawExact } from '../../model-registry/model-info-registry'
+import { lookupModelRaw } from '../../model-registry/model-info-registry'
 import { resolveAnthropicWireAuth } from '../../provider-catalog/provider-endpoint-registry'
 import {
   readTrustedAnthropicConfig,
@@ -200,7 +200,8 @@ async function buildOpencodeModels(
       return
     }
     const id = readModelID(modelId, modelId)
-    const registryModel = await resolveMappedRegistryModel(registryMappings, [modelId, id])
+    const mapped = await resolveMappedRegistryModel(registryMappings, [modelId, id])
+    const registryModel = mapped ?? await lookupModelRaw(id)
     models.set(id, {
       id,
       ...projectRegistryModelConfig(registryModel),
@@ -240,7 +241,7 @@ async function resolveMappedRegistryModel(
   if (!mapping.registryModelId) {
     return null
   }
-  return await lookupModelRawExact(mapping.registryModelId)
+  return await lookupModelRaw(mapping.registryModelId)
 }
 
 function projectRegistryModelConfig(model: ModelsDevModel | null): Partial<OpencodeModelConfig> {

@@ -120,19 +120,25 @@ function resolveEffectiveProviderRequest(input: ProviderRequest) {
 
 // ── list models ──
 
-export async function listModels(input: ProviderRequest & { workspaceId?: string | null }): Promise<ModelDescriptor[]> {
+/**
+ * Collect the raw upstream model inventory for a provider request.
+ * Returns models as reported by the upstream API plus custom model entries,
+ * WITHOUT registry enrichment or capability projection. This is the correct
+ * data to persist in the provider target model cache.
+ */
+export async function collectProviderModelInventory(input: ProviderRequest & { workspaceId?: string | null }): Promise<ModelDescriptor[]> {
   const workspacePath = input.workspaceId ? Workspace.getLocalWorkspacePath(input.workspaceId) ?? undefined : undefined
   const runtimeOwnedModels = await listRuntimeOwnedProviderTargetModels({
     providerTargetId: input.providerTargetId,
     workspacePath,
   })
   if (runtimeOwnedModels) {
-    return projectProviderModelListCapabilities(runtimeOwnedModels.map(model => ({
+    return runtimeOwnedModels.map(model => ({
       id: model.id,
       label: model.label,
       providerKind: model.providerKind,
       capabilities: model.capabilities,
-    })))
+    }))
   }
 
   const effective = resolveEffectiveProviderRequest(input)
@@ -153,7 +159,7 @@ export async function listModels(input: ProviderRequest & { workspaceId?: string
       count: models.length,
     })
   }
- catch (error) {
+  catch (error) {
     if (!effective.resolved) {
       throw mapOperationalError(error)
     }
@@ -183,9 +189,18 @@ export async function listModels(input: ProviderRequest & { workspaceId?: string
     }
   }
 
-  models = await enrichModelsFromRegistryMappings(models, ModelRegistry.listMappingEntries())
+  return models
+}
 
-  return projectProviderModelListCapabilities(models)
+/**
+ * List models for a provider request: collect inventory, apply registry enrichment,
+ * then project provider-level capability defaults. Use collectProviderModelInventory
+ * when you need the raw inventory for caching.
+ */
+export async function listModels(input: ProviderRequest & { workspaceId?: string | null }): Promise<ModelDescriptor[]> {
+  const inventory = await collectProviderModelInventory(input)
+  const enriched = await enrichModelsFromRegistryMappings(inventory, ModelRegistry.listMappingEntries())
+  return projectProviderModelListCapabilities(enriched)
 }
 
 // ── audit persistence (merged from store) ──

@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
 import type { ModelRegistryMappingEntry, ModelsDevModel } from '../model-registry/model-info-registry'
-import { lookupModelRawExact, ModelsDevModelSchema } from '../model-registry/model-info-registry'
+import { lookupModelRaw, ModelsDevModelSchema } from '../model-registry/model-info-registry'
 
 const nonEmptyTrimmedString = z.string().trim().min(1)
 
@@ -93,7 +93,7 @@ export async function upsertMapping(rawInput: {
     })
   }
 
-  const registryModel = input.model ?? (await lookupModelRawExact(registryModelId))
+  const registryModel = input.model ?? (await lookupModelRaw(registryModelId))
   const matchType = input.matchType ?? (input.model ? 'manual' : 'alias')
   const now = nowUnix()
 

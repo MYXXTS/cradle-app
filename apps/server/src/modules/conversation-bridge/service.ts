@@ -287,16 +287,32 @@ function listSessionTargets(): SessionTargetSummary[] {
   return [...agentTargets, ...providerRuntimeTargets]
 }
 
-function listProviderTargetModels(providerTargetId: string): ProviderModelSummary[] {
+async function listProviderTargetModels(providerTargetId: string): Promise<ProviderModelSummary[]> {
   const target = ProviderTargets.getProviderTarget(providerTargetId)
   if (!target) {
     return []
   }
-  const cached = getCachedModelsForTarget({ id: target.id, kind: target.kind })
-  return (cached?.models ?? []).map(model => ({
-    id: model.id,
-    label: model.label,
-  }))
+  const cached = await getCachedModelsForTarget({ id: target.id, kind: target.kind })
+  const models = cached?.models ?? []
+  const enabledRaw = (() => {
+    try {
+      const parsed = JSON.parse(target.enabledModelsJson)
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
+    }
+    catch {
+      return []
+    }
+  })()
+  if (enabledRaw.length === 0) {
+    return models.map(model => ({ id: model.id, label: model.label }))
+  }
+  if (enabledRaw.length === 1 && enabledRaw[0] === '__all_disabled__') {
+    return []
+  }
+  const allowed = new Set(enabledRaw.filter(id => id !== '__all_disabled__'))
+  return models
+    .filter(model => allowed.has(model.id))
+    .map(model => ({ id: model.id, label: model.label }))
 }
 
 function sessionTargetValue(
@@ -590,12 +606,12 @@ function resolveStatusConversations(
   }))
 }
 
-function listModelsForBinding(
+async function listModelsForBinding(
   binding: ConversationBridgeChannelBindingView | null,
   targets: SessionTargetSummary[],
-): ProviderModelSummary[] {
+): Promise<ProviderModelSummary[]> {
   const selected = selectedTargetForBinding(binding, targets)
-  return selected?.providerTargetId ? listProviderTargetModels(selected.providerTargetId) : []
+  return selected?.providerTargetId ? await listProviderTargetModels(selected.providerTargetId) : []
 }
 
 function buildStatusResponse(input: {
@@ -725,12 +741,12 @@ function buildStatusResponse(input: {
   }
 }
 
-function statusResponseForChannel(input: {
+async function statusResponseForChannel(input: {
   connectionId: string
   externalWorkspaceId: string
   externalChannelId: string
   replaceOriginal?: boolean
-}): ConversationBridgeControlResponse {
+}): Promise<ConversationBridgeControlResponse> {
   const binding = getChannelBinding(
     input.connectionId,
     input.externalWorkspaceId,
@@ -743,7 +759,7 @@ function statusResponseForChannel(input: {
     limit: 5,
   })
   const sessionTargets = listSessionTargets()
-  const models = listModelsForBinding(binding, sessionTargets)
+  const models = await listModelsForBinding(binding, sessionTargets)
   return buildStatusResponse({
     ...input,
     binding,
@@ -994,18 +1010,18 @@ function bindWorkspaceForControl(input: {
   })
 }
 
-function bindWorkspaceResponse(input: {
+async function bindWorkspaceResponse(input: {
   control: NormalizedConversationControl
   workspace: WorkspaceSummary
   visibility: ConversationBridgeControlResponse['visibility']
   replaceOriginal?: boolean
-}): ConversationBridgeControlResponse {
+}): Promise<ConversationBridgeControlResponse> {
   const binding = bindWorkspaceForControl({
     control: input.control,
     workspace: input.workspace,
   })
   const sessionTargets = listSessionTargets()
-  const models = listModelsForBinding(binding, sessionTargets)
+  const models = await listModelsForBinding(binding, sessionTargets)
   return {
     text: `Bound this external channel to Cradle workspace ${input.workspace.id}. Choose the default Cradle runtime for new external threads.`,
     blocks: buildSessionTargetSelectBlocks({
@@ -1053,7 +1069,7 @@ async function handleCommandControl(
     if (!workspace) {
       return ephemeralControlResponse(`Workspace ${value} was not found in Cradle.`)
     }
-    return bindWorkspaceResponse({
+    return await bindWorkspaceResponse({
       control: input,
       workspace,
       visibility: 'in_channel',
@@ -1069,7 +1085,7 @@ async function handleCommandControl(
   }
 
   if (action === 'status' || !action) {
-    return statusResponseForChannel(input)
+    return await statusResponseForChannel(input)
   }
 
   return ephemeralControlResponse(
@@ -1087,7 +1103,7 @@ async function handleWorkspaceSelectControl(
   if (!workspace) {
     return ephemeralControlResponse('Selected Cradle workspace is no longer available.')
   }
-  return bindWorkspaceResponse({
+  return await bindWorkspaceResponse({
     control: input,
     workspace,
     visibility: 'ephemeral',
@@ -1134,7 +1150,7 @@ async function handleSessionTargetSelectControl(
     sessionModelId: null,
     actorId: input.externalActorId,
   })
-  return statusResponseForChannel({ ...input, replaceOriginal: true })
+  return await statusResponseForChannel({ ...input, replaceOriginal: true })
 }
 
 async function handleSessionModelSelectControl(
@@ -1162,7 +1178,7 @@ async function handleSessionModelSelectControl(
 
   const modelId = parseSessionModelValue(input.selectedValue)
   if (modelId) {
-    const models = listProviderTargetModels(selectedTarget.providerTargetId)
+    const models = await listProviderTargetModels(selectedTarget.providerTargetId)
     if (!models.some(model => model.id === modelId)) {
       return ephemeralControlResponse('Selected Cradle model is no longer available.')
     }
@@ -1176,7 +1192,7 @@ async function handleSessionModelSelectControl(
     sessionModelId: modelId,
     actorId: input.externalActorId,
   })
-  return statusResponseForChannel({ ...input, replaceOriginal: true })
+  return await statusResponseForChannel({ ...input, replaceOriginal: true })
 }
 
 async function handleActionControl(
@@ -1184,10 +1200,10 @@ async function handleActionControl(
 ): Promise<ConversationBridgeControlResponse> {
   switch (input.actionId) {
     case CONVERSATION_BRIDGE_STATUS_REFRESH_ACTION:
-      return statusResponseForChannel({ ...input, replaceOriginal: true })
+      return await statusResponseForChannel({ ...input, replaceOriginal: true })
     case CONVERSATION_BRIDGE_CHANNEL_UNBIND_ACTION:
       unbindChannel(input.connectionId, input.externalWorkspaceId, input.externalChannelId)
-      return statusResponseForChannel({ ...input, replaceOriginal: true })
+      return await statusResponseForChannel({ ...input, replaceOriginal: true })
     case CONVERSATION_BRIDGE_WORKSPACE_SELECT_ACTION:
       return await handleWorkspaceSelectControl(input)
     case CONVERSATION_BRIDGE_SESSION_TARGET_SELECT_ACTION:

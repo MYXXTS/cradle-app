@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia'
 
-import { lookupModel, searchModels } from '../model-registry/model-info-registry'
+import { enrichModelsFromRegistryMappings, lookupModel, searchModels } from '../model-registry/model-info-registry'
+import * as ModelRegistry from '../model-registry/service'
 import { resolveProviderTarget } from '../provider-targets/service'
 import { ProvidersModel } from './model'
 import {
@@ -8,6 +9,7 @@ import {
   isCacheStale,
   setCachedModelsForTarget,
 } from './model-cache'
+import { projectProviderModelListCapabilities } from './model-capabilities'
 import * as Providers from './service'
 
 export const providers = new Elysia({
@@ -18,20 +20,22 @@ export const providers = new Elysia({
     '/models',
     async ({ body }) => {
       const request = Providers.ProviderRequestSchema.parse(body)
-      const models = await Providers.listModels(request)
+      // Collect raw inventory first so we can cache it before enriching
+      const inventory = await Providers.collectProviderModelInventory(request)
       if (request.providerTargetId) {
         setCachedModelsForTarget(
           {
             ...(request.providerTargetKind ? { kind: request.providerTargetKind } : {}),
             id: request.providerTargetId,
           },
-          models,
+          inventory,
         )
       }
       else if (request.profileId) {
-        setCachedModelsForTarget({ kind: 'manual', id: request.profileId }, models)
+        setCachedModelsForTarget({ kind: 'manual', id: request.profileId }, inventory)
       }
-      return models
+      const enriched = await enrichModelsFromRegistryMappings(inventory, ModelRegistry.listMappingEntries())
+      return projectProviderModelListCapabilities(enriched)
     },
     {
       detail: {
@@ -48,7 +52,7 @@ export const providers = new Elysia({
     '/targets/:providerTargetId/models-cache',
     async ({ params }) => {
       const target = { id: params.providerTargetId }
-      const cached = getCachedModelsForTarget(target)
+      const cached = await getCachedModelsForTarget(target)
       if (!cached) {
         return { models: [], cached: false, stale: false, providerLabel: '' }
       }
@@ -80,7 +84,7 @@ export const providers = new Elysia({
   .get(
     '/:profileId/models-cache',
     async ({ params }) => {
-      const cached = getCachedModelsForTarget({ kind: 'manual', id: params.profileId })
+      const cached = await getCachedModelsForTarget({ kind: 'manual', id: params.profileId })
       if (!cached) {
         return { models: [], cached: false, stale: false }
       }

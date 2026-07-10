@@ -14,7 +14,7 @@ function model(overrides: Partial<ModelDescriptor> & { id: string }): ModelDescr
 }
 
 describe('resolveChatModelId', () => {
-  it('does not treat a missing bound agent model as a resolved chat model', () => {
+  it('keeps a bound agent model id even when it is outside the visible inventory', () => {
     expect(resolveChatModelId({
       boundAgentModelId: 'old-model',
       boundAgentProviderTargetId: 'provider-1',
@@ -22,10 +22,10 @@ describe('resolveChatModelId', () => {
       boundProviderTargetId: 'provider-1',
       manualProfileId: null,
       models: [model({ id: 'current-model' })],
-    })).toBe('current-model')
+    })).toBe('old-model')
   })
 
-  it('falls back to first model when boundModelId is not in models list', () => {
+  it('keeps boundModelId when it is outside the visible inventory (hidden-but-bound)', () => {
     expect(resolveChatModelId({
       boundAgentModelId: null,
       boundAgentProviderTargetId: null,
@@ -33,7 +33,7 @@ describe('resolveChatModelId', () => {
       boundProviderTargetId: 'provider-a',
       manualProfileId: null,
       models: [model({ id: 'sonnet-4.6' }), model({ id: 'haiku-4.5' })],
-    })).toBe('sonnet-4.6')
+    })).toBe('opus-4.7')
   })
 
   it('returns boundModelId when it exists in models list', () => {
@@ -59,6 +59,28 @@ describe('resolveChatModelId', () => {
         model({ id: 'gpt-5.5' }),
       ],
     })).toBe('gpt-5.5')
+  })
+
+  it('returns null when nothing is bound and the inventory is empty', () => {
+    expect(resolveChatModelId({
+      boundAgentModelId: null,
+      boundAgentProviderTargetId: null,
+      boundModelId: null,
+      boundProviderTargetId: null,
+      manualProfileId: null,
+      models: [],
+    })).toBeNull()
+  })
+
+  it('returns null when nothing is bound rather than silently picking models[0]', () => {
+    expect(resolveChatModelId({
+      boundAgentModelId: null,
+      boundAgentProviderTargetId: null,
+      boundModelId: null,
+      boundProviderTargetId: null,
+      manualProfileId: null,
+      models: [model({ id: 'sonnet-4.6' })],
+    })).toBeNull()
   })
 })
 

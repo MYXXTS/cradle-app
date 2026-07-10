@@ -95,6 +95,8 @@ import {
 import type { EditableCustomModel } from './provider-target-model-settings'
 import {
   CustomModelsJsonSchema,
+  enabledModelsFromConfig,
+  loadProviderTargetModelSettings,
   updateProviderTargetCustomModels,
   updateProviderTargetModelVisibility,
 } from './provider-target-model-settings'
@@ -645,6 +647,31 @@ export function ProfileDetailPanel({
     form.reset(initialValues)
     dispatch({ type: 'reset' })
   }, [form, profile, runtimeSettingsFields, runtimeSettingsFieldsSignature])
+
+  // Visibility lives in enabled_models_json (model-settings), not connectionConfigJson.
+  useEffect(() => {
+    let active = true
+    void loadProviderTargetModelSettings({ kind: 'manual', id: profile.id })
+      .then((settings) => {
+        if (!active || selectedProfileIdRef.current !== profile.id) {
+          return
+        }
+        const nextEnabled = enabledModelsFromConfig(settings.configJson)
+        const current = form.getValues('enabledModels')
+        if (JSON.stringify(current) === JSON.stringify(nextEnabled)) {
+          return
+        }
+        form.setValue('enabledModels', nextEnabled, { shouldDirty: false })
+        const nextValues = { ...form.getValues(), enabledModels: nextEnabled }
+        savedSignatureRef.current = createProfileSignature(nextValues)
+      })
+      .catch(() => {
+        // Keep form defaults if model-settings is unavailable.
+      })
+    return () => {
+      active = false
+    }
+  }, [form, profile.id])
 
   useEffect(() => {
     if (runtimeSettingsFieldsSignatureRef.current === runtimeSettingsFieldsSignature) {

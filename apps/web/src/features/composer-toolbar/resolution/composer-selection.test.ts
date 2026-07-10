@@ -158,7 +158,7 @@ describe('resolveComposerModelId', () => {
     })).toBe('manual-model')
   })
 
-  it('uses persisted provider model before falling back to the first model', () => {
+  it('uses persisted provider model when present in the inventory', () => {
     expect(resolveComposerModelId({
       composerUsesModelSelection: true,
       context: 'new-chat',
@@ -175,6 +175,25 @@ describe('resolveComposerModelId', () => {
       profileId: 'provider-1',
       lastModelByProfile: { 'provider-1': 'persisted-model' },
     })).toBe('persisted-model')
+  })
+
+  it('returns null instead of silently picking models[0] when nothing is selected', () => {
+    expect(resolveComposerModelId({
+      composerUsesModelSelection: true,
+      context: 'new-chat',
+      targetMode: 'provider',
+      selectedAgentId: null,
+      selectedAgentModelId: null,
+      manualModelId: null,
+      models: [model({ id: 'first-model' }), model({ id: 'second-model' })],
+      boundAgentModelId: null,
+      boundAgentProviderTargetId: null,
+      boundModelId: null,
+      boundProviderTargetId: null,
+      manualProfileId: null,
+      profileId: 'provider-1',
+      lastModelByProfile: {},
+    })).toBeNull()
   })
 
   it('delegates chat model precedence to the bound session and agent resolver', () => {

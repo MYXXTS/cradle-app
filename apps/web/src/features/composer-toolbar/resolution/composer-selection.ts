@@ -137,7 +137,15 @@ export function resolveComposerModelId(input: {
   if (input.manualModelId && input.models.some(model => model.id === input.manualModelId)) {
     return input.manualModelId
   }
-  if (input.selectedAgentModelId) {
+  if (
+    input.selectedAgentModelId
+    && input.models.some(model => model.id === input.selectedAgentModelId)
+  ) {
+    return input.selectedAgentModelId
+  }
+  // Agent model configured but not in visible inventory — keep as orphan id for UI,
+  // do not silently fall through to models[0] via chat/new-chat paths below when agent mode.
+  if (input.selectedAgentModelId && input.targetMode === 'agent') {
     return input.selectedAgentModelId
   }
   if (input.context === 'chat') {
@@ -154,5 +162,6 @@ export function resolveComposerModelId(input: {
   if (persisted && input.models.some(model => model.id === persisted)) {
     return persisted
   }
-  return input.models[0]?.id ?? null
+  // Prefer empty over silent models[0] when nothing valid is selected.
+  return null
 }

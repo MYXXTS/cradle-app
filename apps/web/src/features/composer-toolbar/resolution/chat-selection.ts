@@ -24,13 +24,18 @@ export function resolveChatModelId(input: {
   const canUseBoundAgentModel = !manualProfileId || manualProfileId === boundAgentProviderTargetId
   const canUseBoundSessionModel = !manualProfileId || manualProfileId === boundProviderTargetId
 
-  if (canUseBoundSessionModel && boundModelId && models.some(model => model.id === boundModelId)) {
+  // Bound session model wins even when outside the current visible inventory
+  // (hidden-but-bound). Callers must not silently rewrite the session to models[0].
+  if (canUseBoundSessionModel && boundModelId) {
     return boundModelId
   }
   if (canUseBoundAgentModel && boundAgentModelId && models.some(model => model.id === boundAgentModelId)) {
     return boundAgentModelId
   }
-  return models[0]?.id ?? null
+  if (canUseBoundAgentModel && boundAgentModelId) {
+    return boundAgentModelId
+  }
+  return null
 }
 
 export function resolveRuntimeOwnedChatProfileId(input: {

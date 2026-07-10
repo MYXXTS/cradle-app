@@ -212,19 +212,37 @@ export function warmupModelsDevCache(): void {
 /**
  * Synchronously look up a model's pricing.
  * Resolution order:
- *  1. Local model_registry_mappings table (user-configured overrides)
- *  2. In-memory models.dev cache (fuzzy matching)
+ *  1. Global mapping for exact modelId — if mapping.modelJson has cost, use it;
+ *     else if mapping has registryModelId, resolve cost via local cache (exact then fuzzy).
+ *  2. Fuzzy match modelId on local cache (DB-backed, falls back to in-memory).
  * Returns null if no cost data is found.
  */
 export function getCachedModelsDevCost(modelId: string): { input: number, output: number } | null {
-  // 1. Local mapping override (DB)
   try {
     const row = db().select().from(modelRegistryMappings).where(eq(modelRegistryMappings.modelId, modelId)).get()
-    if (row?.modelJson) {
-      const parsed = ModelsDevModelSchema.parse(JSON.parse(row.modelJson))
-      const cost = parsed.cost
-      if (cost && (cost.input != null || cost.output != null)) {
-        return { input: cost.input ?? 0, output: cost.output ?? 0 }
+    if (row) {
+      if (row.modelJson) {
+        const parsed = ModelsDevModelSchema.parse(JSON.parse(row.modelJson))
+        const cost = parsed.cost
+        if (cost && (cost.input != null || cost.output != null)) {
+          return { input: cost.input ?? 0, output: cost.output ?? 0 }
+        }
+      }
+      // Mapping has a registryModelId but no usable cost in modelJson — resolve from registry cache
+      if (row.registryModelId) {
+        const local = getLocalCache()
+        if (local) {
+          const exact = findModel(local.data, row.registryModelId)
+          const exactCost = exact?.cost
+          if (exactCost && (exactCost.input != null || exactCost.output != null)) {
+            return { input: exactCost.input ?? 0, output: exactCost.output ?? 0 }
+          }
+          const fuzzy = findModelFuzzy(local.data, row.registryModelId)
+          const fuzzyCost = fuzzy?.model?.cost
+          if (fuzzyCost && (fuzzyCost.input != null || fuzzyCost.output != null)) {
+            return { input: fuzzyCost.input ?? 0, output: fuzzyCost.output ?? 0 }
+          }
+        }
       }
     }
   }
@@ -232,11 +250,12 @@ export function getCachedModelsDevCost(modelId: string): { input: number, output
     // non-critical, fall through
   }
 
-  // 2. models.dev cache (fuzzy)
-  if (!memCache) {
+  // Fuzzy match on modelId using DB-backed local cache (not mem-only)
+  const local = getLocalCache()
+  if (!local) {
     return null
   }
-  const result = findModelFuzzy(memCache, modelId)
+  const result = findModelFuzzy(local.data, modelId)
   const cost = result?.model?.cost
   if (!cost || (cost.input == null && cost.output == null)) {
     return null
@@ -467,9 +486,44 @@ function extractCapabilities(model: ModelsDevModel): ModelCapabilities {
   return caps
 }
 
-export async function enrichModelsFromRegistry(models: ModelDescriptor[]): Promise<ModelDescriptor[]> {
-  const data = await fetchModelsDevData()
-  return enrichModelsWithRegistryData(models, data, [])
+/**
+ * Core enrichment resolver. Returns the best registry match for a model ID given
+ * the current models.dev data and global mapping entries. Resolution order:
+ * 1. Global mapping for exact modelId — use mapping.model if present; else resolve
+ *    mapping.registryModelId via exact then fuzzy on models.dev.
+ * 2. Else findModelFuzzyWithId on modelId.
+ * 3. Else null.
+ */
+export function resolveModelEnrichment(
+  modelId: string,
+  data: ModelsDevData | null,
+  mappings: ModelRegistryMappingEntry[],
+): { id: string, model: ModelsDevModel, matchType: 'exact' | 'fuzzy' | 'manual' | 'alias' } | null {
+  const mapping = mappings.find(m => m.modelId === modelId)
+
+  if (mapping) {
+    if (mapping.model) {
+      const id = mapping.model.id ?? mapping.registryModelId ?? modelId
+      return { id, model: mapping.model, matchType: mapping.matchType ?? 'manual' }
+    }
+    if (mapping.registryModelId && data) {
+      const exact = findModelWithProvider(data, mapping.registryModelId)
+      if (exact) {
+        return { id: exact.id, model: exact.model, matchType: mapping.matchType ?? 'alias' }
+      }
+      const fuzzy = findModelFuzzyWithId(data, mapping.registryModelId)
+      if (fuzzy) {
+        return { id: fuzzy.id, model: fuzzy.model, matchType: mapping.matchType ?? 'alias' }
+      }
+    }
+    // Mapping exists but could not resolve to a registry model — fall through to fuzzy
+  }
+
+  if (data) {
+    return findModelFuzzyWithId(data, modelId)
+  }
+
+  return null
 }
 
 export function enrichModelsWithRegistryData(
@@ -477,44 +531,40 @@ export function enrichModelsWithRegistryData(
   data: ModelsDevData | null,
   mappings: ModelRegistryMappingEntry[],
 ): ModelDescriptor[] {
-  const mappingsByModelId = new Map(mappings.map(mapping => [mapping.modelId, mapping]))
-
   return models.map((model) => {
-    const mapping = mappingsByModelId.get(model.id)
-    const mappedResult = mapping
-      ? (() => {
-          const mappedModel
-            = mapping.model
-              ?? (data && mapping.registryModelId
-              ? findModelWithProvider(data, mapping.registryModelId)?.model
-              : null)
-          const mappedModelId = mapping.model?.id ?? mapping.registryModelId
-          return mappedModel && mappedModelId
-            ? { id: mappedModelId, model: mappedModel, matchType: mapping.matchType ?? 'manual' }
-            : null
-        })()
-      : null
-    const result = mappedResult ?? (data ? findModelFuzzyWithId(data, model.id) : null)
+    const result = resolveModelEnrichment(model.id, data, mappings)
 
     if (!result) {
+      // Strip any stale registry fields when unmatched
+      const { registryMatch: _rm, registryModelId: _rmi, registryModelLabel: _rml, ...restCaps } = model.capabilities
       return {
         ...model,
         capabilities: {
-          ...model.capabilities,
-          registryMatch: 'unmatched',
+          ...restCaps,
+          registryMatch: 'unmatched' as const,
         },
       }
     }
 
     const registryCaps = extractCapabilities(result.model)
     const registryName = result.model.name
-    const label = registryName ?? model.label
+    // Strip stale registry-derived fields from inventory caps so registry always wins
+    const {
+      registryMatch: _rm,
+      registryModelId: _rmi,
+      registryModelLabel: _rml,
+      cost: _c,
+      family: _f,
+      knowledgeCutoff: _kc,
+      releaseDate: _rd,
+      ...inventoryCaps
+    } = model.capabilities
     return {
       ...model,
-      label,
+      label: registryName ?? model.label,
       capabilities: {
+        ...inventoryCaps,
         ...registryCaps,
-        ...model.capabilities,
         registryMatch: result.matchType,
         registryModelId: result.id,
         registryModelLabel: registryName ?? result.id,
@@ -532,7 +582,7 @@ export async function enrichModelsFromRegistryMappings(
 }
 
 /**
- * Look up the context window for a single model ID.
+ * Look up the context window for a single model ID using fuzzy matching.
  * Returns null if the model is not found in the registry.
  */
 export async function lookupContextWindow(modelId: string): Promise<number | null> {
@@ -540,12 +590,12 @@ export async function lookupContextWindow(modelId: string): Promise<number | nul
   if (!data) {
     return null
   }
-  const info = findModel(data, modelId)
-  return info?.limit?.context ?? null
+  const result = findModelFuzzy(data, modelId)
+  return result?.model?.limit?.context ?? null
 }
 
 /**
- * Look up a single model's metadata from models.dev registry.
+ * Look up a single model's metadata from models.dev registry using fuzzy matching.
  * Returns null if the model is not found.
  */
 export async function lookupModel(modelId: string): Promise<ModelRegistrySearchResult | null> {
@@ -553,14 +603,14 @@ export async function lookupModel(modelId: string): Promise<ModelRegistrySearchR
   if (!data) {
     return null
   }
-  const info = findModel(data, modelId)
-  if (!info) {
+  const result = findModelFuzzyWithId(data, modelId)
+  if (!result) {
     return null
   }
   return {
-    id: modelId,
-    label: info.name ?? modelId,
-    capabilities: extractCapabilities(info),
+    id: result.id,
+    label: result.model.name ?? result.id,
+    capabilities: extractCapabilities(result.model),
   }
 }
 

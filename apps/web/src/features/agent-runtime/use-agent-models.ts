@@ -233,45 +233,56 @@ async function refreshProviderTargetModels(
   return ModelDescriptorListSchema.parse(data) satisfies ModelDescriptor[]
 }
 
+/**
+ * Shared inventory read policy for full provider-target records:
+ * - `refresh: true` always live-fetches (even when cache is warm)
+ * - cache hit with models → return filtered cache (server re-enriches on read)
+ * - cache miss / empty → live-fetch for enabled API provider kinds
+ */
+async function fetchVisibleModelsForProviderTarget(
+  target: ProviderTargetModelRequestTarget,
+  options?: ProviderTargetModelFetchOptions,
+): Promise<ModelDescriptor[]> {
+  const { visibility, cache } = await readProviderTargetModelInventory(target, options)
+  const canLiveFetch = Boolean(target.enabled && isApiProviderKind(target.providerKind))
+
+  if (options?.refresh) {
+    if (!canLiveFetch) {
+      if (cache.cached) {
+        return filterVisibleModels(ModelDescriptorListSchema.parse(cache.models), visibility)
+      }
+      return []
+    }
+    const liveModels = await refreshProviderTargetModels(target, options)
+    return filterVisibleModels(liveModels, visibility)
+  }
+
+  if (cache.cached && cache.models.length > 0) {
+    return filterVisibleModels(ModelDescriptorListSchema.parse(cache.models), visibility)
+  }
+
+  if (!canLiveFetch) {
+    return []
+  }
+
+  const liveModels = await refreshProviderTargetModels(target, options)
+  return filterVisibleModels(liveModels, visibility)
+}
+
+/**
+ * Cache-first inventory for id-only provider targets (e.g. session binding).
+ * Does not invent providerKind for live fetch — callers with full target metadata
+ * should use fetchVisibleModelsForProviderTarget via useProviderTargetModelMap.
+ */
 async function fetchCachedVisibleModelsForProviderTarget(
   target: ProviderTarget,
   options?: ProviderTargetModelFetchOptions,
 ): Promise<ModelDescriptor[]> {
   const { visibility, cache } = await readProviderTargetModelInventory(target, options)
   if (!cache.cached || cache.models.length === 0) {
-    if (!shouldRefreshProviderTargetModelsOnCacheMiss(target)) {
-      return []
-    }
-    const liveModels = await refreshProviderTargetModels({
-      ...target,
-      enabled: true,
-      name: target.id,
-      providerKind: 'universal',
-    }, options)
-    return filterVisibleModels(liveModels, visibility)
-  }
-
-  const models = ModelDescriptorListSchema.parse(cache.models) satisfies ModelDescriptor[]
-  return filterVisibleModels(models, visibility)
-}
-
-async function fetchVisibleModelsForProviderTarget(
-  target: ProviderTargetModelRequestTarget,
-  options?: ProviderTargetModelFetchOptions,
-): Promise<ModelDescriptor[]> {
-  const { visibility, cache } = await readProviderTargetModelInventory(target, options)
-  if (cache.cached) {
-    const cachedModels = ModelDescriptorListSchema.parse(cache.models) satisfies ModelDescriptor[]
-    return filterVisibleModels(cachedModels, visibility)
-  }
-
-  const shouldRefresh = options?.refresh || shouldRefreshProviderTargetModelsOnCacheMiss(target)
-  if (!shouldRefresh || !target.enabled || !isApiProviderKind(target.providerKind)) {
     return []
   }
-
-  const liveModels = await refreshProviderTargetModels(target, options)
-  return filterVisibleModels(liveModels, visibility)
+  return filterVisibleModels(ModelDescriptorListSchema.parse(cache.models), visibility)
 }
 
 export function useAgentModels(profileId: string | null) {

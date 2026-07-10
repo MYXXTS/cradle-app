@@ -49,6 +49,7 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 032  | Transparent remote-host Upstream Gateway; delete RemoteCradleClient | P1 | L | —     | DONE                                                                                   |
 | 033  | Remote session projection + link; block local runtime    | P1       | L      | 032        | DONE                                                                                   |
 | 034  | Web remote-execution UX for projected sessions           | P1       | M      | 032, 033   | DONE                                                                                   |
+| 035  | Unify model Inventory / Enrichment / Visibility / Selection | P1    | XL     | —          | IN PROGRESS (M0–M6 core done; polish/orphan UI copy optional)                          |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 

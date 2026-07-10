@@ -16,6 +16,7 @@ import { z } from 'zod'
 
 import { getModelRegistryMappingsQueryKey } from '~/api-gen/@tanstack/react-query.gen'
 import { putModelRegistryMappingsByModelId } from '~/api-gen/sdk.gen'
+import { AGENT_MODELS_QUERY_KEY } from '~/features/agent-runtime/use-agent-models'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import {
@@ -460,6 +461,8 @@ export function ModelRegistryMappingDialog({
           throwOnError: true,
         })
         void queryClient.invalidateQueries({ queryKey: getModelRegistryMappingsQueryKey() })
+        // Re-enrichment is read-time on the server; bust client inventory so composer/panels refresh.
+        void queryClient.invalidateQueries({ queryKey: AGENT_MODELS_QUERY_KEY })
         onSaved?.(modelId, result, matchType)
         setSaving(false)
         close()

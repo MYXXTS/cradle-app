@@ -6,7 +6,7 @@
 
 import type { DefaultRuntimeConfigOptions } from '@hijarvis/core'
 
-import { lookupModelRaw, lookupModelRawExact } from '../../model-registry/model-info-registry'
+import { lookupModelRaw } from '../../model-registry/model-info-registry'
 import * as ModelRegistry from '../../model-registry/service'
 import type { SystemAgentConfig } from '../../provider-contracts/provider-base'
 import type { JarvisThinkingLevel } from './types'
@@ -126,7 +126,7 @@ async function resolveMappedRegistryModel(modelId: string): Promise<RegistryMode
   if (!mapping.registryModelId) {
     return null
   }
-  return lookupModelRawExact(mapping.registryModelId)
+  return lookupModelRaw(mapping.registryModelId)
 }
 
 function supportsExtendedThinking(modelId: string, family?: string): boolean {

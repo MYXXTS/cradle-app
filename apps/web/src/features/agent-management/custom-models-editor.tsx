@@ -6,7 +6,7 @@ import {
 import { useEffect, useReducer, useRef } from 'react'
 import { z } from 'zod'
 
-import { postProvidersModelLookup, postProvidersModelSearch } from '~/api-gen/sdk.gen'
+import { postProvidersModelLookup, postProvidersModelSearch, putModelRegistryMappingsByModelId } from '~/api-gen/sdk.gen'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -227,6 +227,16 @@ export function CustomModelsEditor({
             : m),
       )
       dispatch({ type: 'enrich/apply' })
+      // Persist as a global registry mapping — capabilities are not stored on custom_models_json.
+      void putModelRegistryMappingsByModelId({
+        path: { modelId: targetModelId },
+        body: {
+          registryModelId: result.id,
+          matchType: 'alias',
+        },
+      }).catch(() => {
+        // Non-blocking: local label/caps still updated; mapping can be fixed in Settings.
+      })
     }
 
   const startEnrich = (modelId: string) => {

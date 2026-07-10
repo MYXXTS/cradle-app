@@ -19,6 +19,7 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Spinner } from '~/components/ui/spinner'
 import { toastManager } from '~/components/ui/toast'
+import { AGENT_MODELS_QUERY_KEY } from '~/features/agent-runtime/use-agent-models'
 import { cn } from '~/lib/cn'
 import { formatTokenCount } from '~/lib/number-format'
 
@@ -169,6 +170,7 @@ export function ModelRegistrySettings() {
     onSuccess: () => {
       toastManager.add({ type: 'success', title: t('registry.status.deleted' as SettingsKey) })
       void queryClient.invalidateQueries({ queryKey: getModelRegistryMappingsQueryKey() })
+      void queryClient.invalidateQueries({ queryKey: AGENT_MODELS_QUERY_KEY })
     },
     onError: (error) => {
       toastManager.add({

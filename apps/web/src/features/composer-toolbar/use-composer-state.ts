@@ -110,6 +110,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
   const lastModelByProfile = useNewChatStore(s => s.lastModelByProfile)
   const lastThinkingEffort = useNewChatStore(s => s.lastThinkingEffort)
   const setLastThinkingEffort = useNewChatStore(s => s.setLastThinkingEffort)
+  const reconcileProfiles = useNewChatStore(s => s.reconcileProfiles)
 
   // Data — remote execution uses the remote host catalog; local stays on /provider-targets.
   const { agents, isLoading: isLoadingAgents } = useAgents()
@@ -314,6 +315,13 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     () => listSelectableComposerProfiles({ profiles: providerOptions, runtimeKind, runtimes }),
     [providerOptions, runtimeKind, runtimes],
   )
+
+  useEffect(() => {
+    if (selectableProfiles.length === 0) {
+      return
+    }
+    reconcileProfiles(selectableProfiles.map(profile => profile.id))
+  }, [reconcileProfiles, selectableProfiles])
 
   const selectedAgentThinkingEffort = selectedNewChatAgent
     ? readComposerThinkingEffort(selectedNewChatAgent.thinkingEffort)
