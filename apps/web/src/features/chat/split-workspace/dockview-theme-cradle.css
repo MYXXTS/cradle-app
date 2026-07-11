@@ -48,20 +48,7 @@
 }
 
 .dockview-theme-cradle .dv-tabs-and-actions-container {
-  border-bottom: 1px solid var(--border);
-}
-
-/*
- * `dockview` automatically toggles `.dv-single-tab` on a group's tab strip
- * whenever it holds exactly one panel. That's the exact signal we need to
- * tell apart the two states that otherwise look identical: a pane that's
- * simply one column of a split (single tab, left alone) versus a pane that
- * has multiple sessions merged into it as tabs (2+ tabs, accented) — so
- * dropping a session "as a tab" vs "as a split" is visually unambiguous.
- */
-.dockview-theme-cradle .dv-tabs-and-actions-container:not(.dv-single-tab) {
-  background-color: color-mix(in srgb, var(--primary) 6%, var(--sidebar));
-  border-bottom-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  display: none;
 }
 
 .dockview-theme-cradle .dv-groupview {

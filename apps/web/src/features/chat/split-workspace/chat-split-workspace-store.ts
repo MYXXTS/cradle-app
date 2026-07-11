@@ -10,7 +10,7 @@ import { persistStorage } from '~/store/persist-storage'
  * into this store, so the split-workspace *state* stays decoupled from the
  * dockview *rendering* layer that consumes it.
  */
-export type ChatSplitDirection = 'left' | 'right' | 'above' | 'below' | 'within'
+export type ChatSplitDirection = 'left' | 'right' | 'above' | 'below'
 
 /**
  * VSCode-style split view state for a single chat surface. `primarySessionId`

@@ -25,12 +25,11 @@ import type { ReactNode } from 'react'
 import { useState } from 'react'
 
 import { Button } from '~/components/ui/button'
+import { ColorPalette } from '~/components/ui/color-palette'
 import { Input } from '~/components/ui/input'
 import { cn } from '~/lib/cn'
 import type { BrowserAnnotationDesignChange, BrowserAnnotationElement } from '~/store/browser-panel'
 import { useBrowserPanelStore } from '~/store/browser-panel'
-
-import { BrowserColorPalette } from './browser-color-palette'
 
 type DesignKey = Exclude<keyof BrowserAnnotationDesignChange, 'comment'>
 type InspectorTab = 'design' | 'css'
@@ -320,7 +319,7 @@ function DesignInput({ field, value, originalValue, onChange, onReset }: DesignI
     <InspectorRow label={field.label} changed={changed} onReset={onReset}>
       <span className="flex min-w-0 items-center gap-1">
         {field.swatch && (
-          <BrowserColorPalette
+          <ColorPalette
             value={effectiveValue}
             label={field.label}
             onChange={onChange}

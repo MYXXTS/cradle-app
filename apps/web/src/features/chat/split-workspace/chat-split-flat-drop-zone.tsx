@@ -15,7 +15,7 @@ const DIRECTION_OVERLAY_CLASSES: Record<FlatSplitDirection, string> = {
   below: 'inset-x-0 bottom-0 h-1/2',
 }
 
-function ChatSplitDropIndicator({ direction }: { direction: FlatSplitDirection }) {
+export function ChatSplitDropIndicator({ direction }: { direction: FlatSplitDirection }) {
   return (
     <div
       aria-hidden="true"
@@ -90,6 +90,8 @@ export function ChatSplitFlatDropZone({
   return (
     <div
       ref={containerRef}
+      data-chat-split-drop-surface-id={surfaceId}
+      data-chat-split-primary-session-id={primarySessionId}
       className="dockview-theme-cradle relative h-full w-full min-h-0 min-w-0"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

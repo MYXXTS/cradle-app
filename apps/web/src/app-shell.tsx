@@ -14,6 +14,7 @@ import { useDesktopTrayActionBridge } from '~/features/desktop-tray/use-desktop-
 import { CredentialSetupDialog } from '~/features/onboarding/credential-setup-dialog'
 import { useOnboardingStore } from '~/features/onboarding/onboarding-store'
 import { useGlobalSearchStore } from '~/features/search/global-search-store'
+import { PaletteSkeleton } from '~/features/search/palette/palette-skeleton'
 import { useKeyBindingsOverlayStore } from '~/features/shortcuts/key-bindings-overlay-store'
 import { useUnreadSessionIds } from '~/features/workspace/use-session'
 import { isWorkspaceFileShortcutScopeEvent } from '~/features/workspace/workspace-file-shortcuts'
@@ -358,6 +359,19 @@ function GlobalCommandPaletteHost() {
   const setOpen = useGlobalSearchStore(s => s.setOpen)
   useSuppressNativeBrowserSurface(open)
 
+  // Warm the lazy dialog chunk before the user ever hits ⌘K, so the first open
+  // is instant instead of waiting on a network round-trip.
+  useEffect(() => {
+    const load = () => { void loadGlobalSearchDialog() }
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
+    if (ric) {
+      const id = ric(load)
+      return () => (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(id)
+    }
+    const id = window.setTimeout(load, 1500)
+    return () => window.clearTimeout(id)
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) {
@@ -376,7 +390,7 @@ function GlobalCommandPaletteHost() {
         }
         event.preventDefault()
         void loadGlobalSearchDialog()
-        useGlobalSearchStore.getState().openPalette('>')
+        useGlobalSearchStore.getState().openPalette(event.shiftKey ? '>' : '')
         return
       }
 
@@ -396,7 +410,7 @@ function GlobalCommandPaletteHost() {
   }
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PaletteSkeleton />}>
       <GlobalSearchDialog open={open} initialQuery={initialQuery} onOpenChange={setOpen} />
     </Suspense>
   )

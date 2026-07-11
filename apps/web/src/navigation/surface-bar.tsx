@@ -9,6 +9,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { shallow } from 'zustand/shallow'
 
+import { dropChatSurfaceAtPoint, publishChatSurfaceDrag } from '~/features/chat/split-workspace/chat-split-surface-drop'
 import { useRunningSessionIds, useUnreadSessionIds } from '~/features/workspace/use-session'
 import { cn } from '~/lib/cn'
 import { nativeIpc, subscribePointerOutsideWindow } from '~/lib/electron'
@@ -255,6 +256,7 @@ export const SurfaceBar = memo(({
     dragStartPointerRef.current = null
     dragReleasePointerRef.current = null
     dragReleaseClientPointerRef.current = null
+    publishChatSurfaceDrag({ clientX: null, clientY: null, sessionId: null })
   }, [])
 
   const handleActivate = useCallback((surfaceId: string) => {
@@ -387,9 +389,24 @@ export const SurfaceBar = memo(({
     dragReleaseClientPointerRef.current = startClientPointer
     dragCleanupRef.current?.()
 
+    const draggedSurface = event.operation.source
+      ? useSurfaceStore.getState().surfaces.find(surface => surface.id === event.operation.source?.id)
+      : null
+    const draggedSessionId = draggedSurface ? readChatSessionId(draggedSurface) : null
+
+    const publishPointer = (pointer: ClientCoordinates | null) => {
+      publishChatSurfaceDrag({
+        clientX: pointer?.clientX ?? null,
+        clientY: pointer?.clientY ?? null,
+        sessionId: draggedSessionId,
+      })
+    }
+    publishPointer(startClientPointer)
+
     const updateReleasePointer = (pointerEvent: MouseEvent | PointerEvent | TouchEvent) => {
       dragReleasePointerRef.current = getEventScreenCoordinates(pointerEvent, window)
       dragReleaseClientPointerRef.current = getEventClientCoordinates(pointerEvent)
+      publishPointer(dragReleaseClientPointerRef.current)
     }
 
     window.addEventListener('mousemove', updateReleasePointer, true)
@@ -432,7 +449,20 @@ export const SurfaceBar = memo(({
       return
     }
     // No pill drop target → released on the content area or in place (no-op).
-    if (!target || source.id === target.id) {
+    if (!target) {
+      const sourceSurface = useSurfaceStore.getState().surfaces.find(surface => surface.id === source.id)
+      const sessionId = sourceSurface ? readChatSessionId(sourceSurface) : null
+      const releasePointer = dragReleaseClientPointerRef.current
+      if (sessionId && releasePointer) {
+        dropChatSurfaceAtPoint({
+          ...releasePointer,
+          sessionId,
+        })
+      }
+      releaseCurrentDrag()
+      return
+    }
+    if (source.id === target.id) {
       releaseCurrentDrag()
       return
     }

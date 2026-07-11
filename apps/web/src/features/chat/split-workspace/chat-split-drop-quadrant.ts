@@ -1,13 +1,6 @@
 import type { ChatSplitDirection } from './chat-split-workspace-store'
 
-/**
- * Direction a flat (pre-split) drop can resolve to. Unlike `dockview`'s own
- * group drop-overlay — which reserves a center zone for "merge as tab" —
- * there is no existing tab strip to merge into yet, so `'within'` is
- * intentionally excluded: every drop on the flat pane must produce a real
- * split.
- */
-export type FlatSplitDirection = Exclude<ChatSplitDirection, 'within'>
+export type FlatSplitDirection = ChatSplitDirection
 
 /**
  * Resolves a raw pointer position into a split direction by partitioning the

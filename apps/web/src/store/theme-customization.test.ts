@@ -1,12 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { getAppTerminalTheme } from '~/features/tui/app-theme'
 
 import {
   cloneThemeProfile,
+  DEFAULT_ACTIVE_PROFILE_IDS,
   DEFAULT_THEME_PROFILES,
   parseThemeImport,
   resolveThemePreview,
+  useThemeCustomizationStore,
 } from './theme-customization'
 import { applyThemeProfile } from './theme-customization-runtime'
 
@@ -110,5 +112,105 @@ describe('theme customization', () => {
     })
 
     removeProfile()
+  })
+})
+
+describe('theme customization store', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    window.localStorage.clear()
+    useThemeCustomizationStore.setState({
+      profiles: DEFAULT_THEME_PROFILES.map(profile => ({
+        ...profile,
+        overrides: { ...profile.overrides },
+      })),
+      activeProfileIds: { ...DEFAULT_ACTIVE_PROFILE_IDS },
+    })
+  })
+
+  it('resetOverrides clears every override back to the Cradle defaults', () => {
+    const store = useThemeCustomizationStore
+    store.setState({
+      profiles: [
+        {
+          id: 'cradle-light',
+          name: 'Cradle Light',
+          variant: 'light',
+          overrides: {
+            accentColor: '#ff0000',
+            backgroundColor: '#eeeeee',
+            foregroundColor: '#111111',
+            uiFont: 'Inter, sans-serif',
+            codeFont: 'Mono, monospace',
+            translucentSidebar: true,
+            contrast: 80,
+          },
+        },
+      ],
+      activeProfileIds: { light: 'cradle-light', dark: 'cradle-dark' },
+    })
+
+    store.getState().resetOverrides('cradle-light')
+
+    const profile = store.getState().profiles.find(p => p.id === 'cradle-light')!
+    expect(profile.overrides).toEqual({
+      accentColor: null,
+      backgroundColor: null,
+      foregroundColor: null,
+      uiFont: null,
+      codeFont: null,
+      translucentSidebar: null,
+      contrast: null,
+    })
+
+    const preview = resolveThemePreview(profile)
+    expect(preview.accentColor).toBe('#262626')
+    expect(preview.backgroundColor).toBe('#fafafa')
+    expect(preview.contrast).toBe(50)
+    expect(preview.translucentSidebar).toBe(false)
+
+    const removeProfile = applyThemeProfile(profile, 'light')
+    expect(document.documentElement.style.getPropertyValue('--background')).toBe('')
+    expect(document.documentElement.style.getPropertyValue('--primary')).toBe('')
+    removeProfile()
+  })
+
+  it('resetOverrides only touches the targeted profile', () => {
+    const store = useThemeCustomizationStore
+    store.setState({
+      profiles: [
+        {
+          id: 'cradle-light',
+          name: 'Cradle Light',
+          variant: 'light',
+          overrides: { ...DEFAULT_THEME_PROFILES[0]!.overrides },
+        },
+        {
+          id: 'cradle-dark',
+          name: 'Cradle Dark',
+          variant: 'dark',
+          overrides: {
+            accentColor: '#00ff00',
+            backgroundColor: null,
+            foregroundColor: null,
+            uiFont: null,
+            codeFont: null,
+            translucentSidebar: null,
+            contrast: null,
+          },
+        },
+      ],
+      activeProfileIds: { light: 'cradle-light', dark: 'cradle-dark' },
+    })
+
+    store.getState().resetOverrides('cradle-dark')
+
+    const light = store.getState().profiles.find(p => p.id === 'cradle-light')!
+    const dark = store.getState().profiles.find(p => p.id === 'cradle-dark')!
+    expect(light.overrides.accentColor).toBeNull()
+    expect(dark.overrides.accentColor).toBeNull()
   })
 })

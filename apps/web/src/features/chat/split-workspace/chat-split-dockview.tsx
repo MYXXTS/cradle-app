@@ -4,11 +4,10 @@ import type {
   DockviewDndOverlayEvent,
   DockviewPanelApi,
   DockviewReadyEvent,
-  IDockviewPanelHeaderProps,
   IDockviewPanelProps,
   SerializedDockview,
 } from 'dockview-react'
-import { DockviewDefaultTab, DockviewReact, positionToDirection } from 'dockview-react'
+import { DockviewReact, positionToDirection } from 'dockview-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { CHAT_SESSION_FALLBACK_LABEL } from '~/features/chat/session/chat-session-label'
@@ -62,10 +61,6 @@ function useDockviewPanelGroupActive(api: DockviewPanelApi): boolean {
   return groupActive
 }
 
-function ChatSplitPanelTab(props: IDockviewPanelHeaderProps<ChatSplitPanelParams>) {
-  return <DockviewDefaultTab {...props} hideClose={props.params.isPrimary} />
-}
-
 function ChatSplitPanelContent({ api, params }: IDockviewPanelProps<ChatSplitPanelParams>) {
   const isVisible = useDockviewPanelVisible(api)
   const isGroupActive = useDockviewPanelGroupActive(api)
@@ -76,7 +71,7 @@ function ChatSplitPanelContent({ api, params }: IDockviewPanelProps<ChatSplitPan
       <div
         className={cn(
           'h-full w-full transition-opacity duration-[var(--duration-quick)] ease-[var(--ease-standard)]',
-          !isGroupActive && 'opacity-80',
+          !isGroupActive && 'opacity-50',
         )}
       >
         <ChatSessionRouteContent sessionId={params.sessionId} onTitleChange={handleTitleChange} />
@@ -86,7 +81,6 @@ function ChatSplitPanelContent({ api, params }: IDockviewPanelProps<ChatSplitPan
 }
 
 const dockviewComponents = { chatSession: ChatSplitPanelContent }
-const dockviewTabComponents = { chatSession: ChatSplitPanelTab }
 
 function isSessionDragOverlayEvent(event: DockviewDndOverlayEvent): boolean {
   return event.nativeEvent instanceof DragEvent && isSessionDragOverlayDataTransfer(event.nativeEvent.dataTransfer)
@@ -98,6 +92,14 @@ function isSessionDragOverlayDataTransfer(dataTransfer: DataTransfer | null): bo
 
 function panelParamsFor(sessionId: string, primarySessionId: string): ChatSplitPanelParams {
   return { sessionId, isPrimary: sessionId === primarySessionId }
+}
+
+function lockGroupsToSplitOnly(api: DockviewApi): void {
+  for (const group of api.groups) {
+    // A locked group still accepts edge drops that create a split, but rejects
+    // center drops that would stack another panel as an internal tab.
+    group.api.locked = true
+  }
 }
 
 export function ChatSplitDockview({
@@ -113,13 +115,6 @@ export function ChatSplitDockview({
   paneSessionIdsRef.current = paneSessionIds
   const [dockviewApi, setDockviewApi] = useState<DockviewApi | null>(null)
 
-  useEffect(() => {
-    if (!dockviewApi) {
-      return
-    }
-    return registerChatSplitDockviewApi(surfaceId, dockviewApi)
-  }, [surfaceId, dockviewApi])
-
   const setFocusedSession = useChatSplitWorkspaceStore(state => state.setFocusedSession)
   const setLayout = useChatSplitWorkspaceStore(state => state.setLayout)
   const removePane = useChatSplitWorkspaceStore(state => state.removePane)
@@ -129,25 +124,51 @@ export function ChatSplitDockview({
     setLayout(surfaceId, api.toJSON())
   }, [setLayout, surfaceId])
 
-  const addSessionPanel = useCallback((api: DockviewApi, sessionId: string, event: Pick<DockviewDidDropEvent, 'position' | 'group'>) => {
+  const addSessionPanel = useCallback((
+    api: DockviewApi,
+    sessionId: string,
+    direction: Exclude<ReturnType<typeof positionToDirection>, 'within'>,
+    referenceGroup?: DockviewDidDropEvent['group'],
+  ) => {
     const existingPanel = api.getPanel(sessionId)
     if (existingPanel) {
       existingPanel.api.setActive()
       return
     }
 
-    const direction = positionToDirection(event.position)
     api.addPanel({
       id: sessionId,
       component: 'chatSession',
       title: CHAT_SESSION_FALLBACK_LABEL,
       params: panelParamsFor(sessionId, primarySessionId),
-      position: event.group
-        ? { direction, referenceGroup: event.group }
-        : { direction: direction === 'within' ? 'right' : direction },
+      position: referenceGroup
+        ? { direction, referenceGroup }
+        : { direction },
     })
+    lockGroupsToSplitOnly(api)
     addPane(surfaceId, sessionId)
   }, [addPane, primarySessionId, surfaceId])
+
+  useEffect(() => {
+    if (!dockviewApi) {
+      return
+    }
+    return registerChatSplitDockviewApi(surfaceId, {
+      api: dockviewApi,
+      addSession: (sessionId, direction) => {
+        if (dockviewApi.getPanel(sessionId)) {
+          dockviewApi.getPanel(sessionId)?.api.setActive()
+          return false
+        }
+        const referenceGroup = dockviewApi.activeGroup ?? dockviewApi.groups[0]
+        if (!referenceGroup) {
+          return false
+        }
+        addSessionPanel(dockviewApi, sessionId, direction, referenceGroup)
+        return true
+      },
+    })
+  }, [addSessionPanel, dockviewApi, surfaceId])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const { api } = event
@@ -160,12 +181,17 @@ export function ChatSplitDockview({
     if (persistedLayout) {
       try {
         api.fromJSON(persistedLayout)
-        restored = api.panels.length > 0
+        restored = api.panels.length > 0 && api.groups.every(group => group.panels.length === 1)
+        if (!restored) {
+          api.clear()
+        }
       }
       catch {
         api.clear()
       }
     }
+
+    lockGroupsToSplitOnly(api)
 
     if (!restored) {
       for (const sessionId of paneSessionIdsRef.current) {
@@ -217,7 +243,11 @@ export function ChatSplitDockview({
       if (!sessionId) {
         return
       }
-      addSessionPanel(api, sessionId, dropEvent)
+      const direction = positionToDirection(dropEvent.position)
+      if (direction === 'within') {
+        return
+      }
+      addSessionPanel(api, sessionId, direction, dropEvent.group)
     })
   }, [addSessionPanel, persistLayout, primarySessionId, removePane, setFocusedSession, surfaceId])
 
@@ -226,7 +256,6 @@ export function ChatSplitDockview({
       className="dockview-theme-cradle h-full w-full"
       theme={themeCradle}
       components={dockviewComponents}
-      tabComponents={dockviewTabComponents}
       onReady={handleReady}
       noPanelsOverlay="emptyGroup"
     />

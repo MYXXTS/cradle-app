@@ -66,13 +66,13 @@ function CommandInput({
   return (
     <div
       data-slot="command-input-wrapper"
-      className="flex h-12 items-center gap-2 border-b border-border/70 px-3"
+      className="flex h-12 items-center gap-2.5 px-4"
     >
-      <SearchIcon className="size-4 shrink-0 !text-muted-foreground/60" aria-hidden="true" />
+      <SearchIcon className="size-[17px] shrink-0 text-muted-foreground/45" aria-hidden="true" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          'h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/45 disabled:cursor-not-allowed disabled:opacity-50',
+          'h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/40 disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         {...props}
@@ -89,7 +89,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        'no-scrollbar max-h-[min(26rem,calc(100vh-12rem))] scroll-py-2 overflow-x-hidden overflow-y-auto p-1.5 outline-none',
+        'no-scrollbar max-h-[min(440px,calc(100vh-22rem))] scroll-py-1 overflow-x-hidden overflow-y-auto p-1.5 outline-none',
         className,
       )}
       {...props}
@@ -155,7 +155,7 @@ function CommandItem({
       data-slot="command-item"
       data-checked={checked ? 'true' : undefined}
       className={cn(
-        'group/command-item relative flex min-h-9 cursor-default select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-[background-color,color] duration-100 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-muted data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-4',
+        'group/command-item relative flex min-h-[30px] cursor-default select-none items-center gap-2.5 rounded-lg px-2.5 py-1 text-[13px] outline-none transition-[background-color,color] duration-150 data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-muted/50 data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-4',
         className,
       )}
       {...props}
@@ -176,7 +176,7 @@ function CommandShortcut({
     <span
       data-slot="command-shortcut"
       className={cn(
-        'ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums group-data-[selected=true]/command-item:text-foreground/70',
+        'ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/60 tabular-nums group-data-[selected=true]/command-item:text-foreground/70',
         className,
       )}
       {...props}

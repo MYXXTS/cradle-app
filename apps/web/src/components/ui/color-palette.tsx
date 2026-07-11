@@ -1,6 +1,8 @@
-// FILE: browser-color-palette.tsx
-// Purpose: Animated, full-featured color palette/picker used by the browser annotation inspector swatches.
-// Layer: Browser feature UI
+// FILE: color-palette.tsx
+// Purpose: Animated, full-featured color palette/picker popover. Shared UI
+// primitive used wherever users pick a color (theme settings, browser
+// annotation inspector, etc.).
+// Layer: Shared UI
 // Depends on: ui/popover primitive, motion
 
 import { CheckLine as CheckIcon, ColorPickerLine as PipetteIcon } from '@mingcute/react'
@@ -311,16 +313,31 @@ function DragSurface({
 // Color palette
 // ---------------------------------------------------------------------------
 
-export interface BrowserColorPaletteProps {
+export interface ColorPaletteProps {
   value: string
   onChange: (value: string) => void
   label?: string
   className?: string
+  /**
+   * Hide the opacity slider and force fully opaque colors. Use this for tokens
+   * that must stay opaque (e.g. theme background/foreground/accent) so the
+   * alpha control is not shown as a non-functional affordance.
+   */
+  disableAlpha?: boolean
 }
 
-export function BrowserColorPalette({ value, onChange, label = 'Color', className }: BrowserColorPaletteProps) {
+export function ColorPalette({
+  value,
+  onChange,
+  label = 'Color',
+  className,
+  disableAlpha = false,
+}: ColorPaletteProps) {
   const [open, setOpen] = useState(false)
-  const [hsva, setHsva] = useState<Hsva>(() => rgbToHsv(parseColor(value) ?? { r: 0, g: 0, b: 0, a: 1 }))
+  const [hsva, setHsva] = useState<Hsva>(() => {
+    const parsed = rgbToHsv(parseColor(value) ?? { r: 0, g: 0, b: 0, a: 1 })
+    return disableAlpha ? { ...parsed, a: 1 } : parsed
+  })
   const [controlledValue, setControlledValue] = useState(value)
   const [hexDraft, setHexDraft] = useState(() => {
     const initialRgba = hsvToRgb(rgbToHsv(parseColor(value) ?? { r: 0, g: 0, b: 0, a: 1 }))
@@ -335,7 +352,8 @@ export function BrowserColorPalette({ value, onChange, label = 'Color', classNam
     setControlledValue(value)
     const parsed = parseColor(value)
     if (parsed && !rgbaEqual(parsed, hsvToRgb(hsva))) {
-      setHsva(rgbToHsv(parsed))
+      const next = rgbToHsv(parsed)
+      setHsva(disableAlpha ? { ...next, a: 1 } : next)
     }
   }
 
@@ -354,8 +372,9 @@ export function BrowserColorPalette({ value, onChange, label = 'Color', classNam
   }, [])
 
   const commit = (next: Hsva) => {
-    setHsva(next)
-    onChange(formatColor(next))
+    const resolved = disableAlpha ? { ...next, a: 1 } : next
+    setHsva(resolved)
+    onChange(formatColor(resolved))
   }
 
   const handleHexChange = (raw: string) => {
@@ -388,7 +407,7 @@ export function BrowserColorPalette({ value, onChange, label = 'Color', classNam
       releaseController()
     }
     catch {
-      // User dismissed the eyedropper — nothing to do.
+      // User dismissed the eyedropper - nothing to do.
       releaseController()
     }
   }
@@ -510,22 +529,24 @@ export function BrowserColorPalette({ value, onChange, label = 'Color', classNam
               >
                 <SliderThumb position={hsva.h / 360} color={`hsl(${hsva.h}, 100%, 50%)`} />
               </DragSurface>
-              <DragSurface
-                ariaLabel={`${label} opacity`}
-                ariaValueNow={Math.round(hsva.a * 100)}
-                ariaValueText={`Opacity ${Math.round(hsva.a * 100)}%`}
-                className="relative h-3.5 w-full cursor-pointer overflow-hidden rounded-full ring-1 ring-foreground/10 focus-visible:ring-2 focus-visible:ring-primary/60"
-                style={CHECKERBOARD_STYLE}
-                onKeyDown={alphaKeyStep}
-                onPick={x => commit({ ...hsva, a: x })}
-              >
-                <span
-                  className="absolute inset-0 rounded-full"
-                  style={{ backgroundImage: `linear-gradient(to right, ${toCssRgb(rgba, 0)}, ${toCssRgb(rgba, 1)})` }}
-                  aria-hidden="true"
-                />
-                <SliderThumb position={hsva.a} color={displayColor} />
-              </DragSurface>
+              {!disableAlpha && (
+                <DragSurface
+                  ariaLabel={`${label} opacity`}
+                  ariaValueNow={Math.round(hsva.a * 100)}
+                  ariaValueText={`Opacity ${Math.round(hsva.a * 100)}%`}
+                  className="relative h-3.5 w-full cursor-pointer overflow-hidden rounded-full ring-1 ring-foreground/10 focus-visible:ring-2 focus-visible:ring-primary/60"
+                  style={CHECKERBOARD_STYLE}
+                  onKeyDown={alphaKeyStep}
+                  onPick={x => commit({ ...hsva, a: x })}
+                >
+                  <span
+                    className="absolute inset-0 rounded-full"
+                    style={{ backgroundImage: `linear-gradient(to right, ${toCssRgb(rgba, 0)}, ${toCssRgb(rgba, 1)})` }}
+                    aria-hidden="true"
+                  />
+                  <SliderThumb position={hsva.a} color={displayColor} />
+                </DragSurface>
+              )}
             </div>
           </div>
 
@@ -543,18 +564,20 @@ export function BrowserColorPalette({ value, onChange, label = 'Color', classNam
                 onChange={event => handleHexChange(event.target.value)}
               />
             </div>
-            <div className="flex h-8 w-14 items-center gap-0.5 rounded-lg bg-foreground/5 px-2 ring-1 ring-foreground/10 focus-within:ring-primary/55 dark:bg-white/6">
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={Math.round(hsva.a * 100)}
-                aria-label={`${label} opacity percent`}
-                className="h-auto min-w-0 flex-1 border-0 bg-transparent px-0 py-0 font-mono text-[11px] tabular-nums shadow-none [appearance:textfield] focus-visible:ring-0 md:text-[11px] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                onChange={event => commit({ ...hsva, a: clamp(Number(event.target.value) / 100, 0, 1) })}
-              />
-              <span className="text-[11px] text-muted-foreground">%</span>
-            </div>
+            {!disableAlpha && (
+              <div className="flex h-8 w-14 items-center gap-0.5 rounded-lg bg-foreground/5 px-2 ring-1 ring-foreground/10 focus-within:ring-primary/55 dark:bg-white/6">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={Math.round(hsva.a * 100)}
+                  aria-label={`${label} opacity percent`}
+                  className="h-auto min-w-0 flex-1 border-0 bg-transparent px-0 py-0 font-mono text-[11px] tabular-nums shadow-none [appearance:textfield] focus-visible:ring-0 md:text-[11px] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  onChange={event => commit({ ...hsva, a: clamp(Number(event.target.value) / 100, 0, 1) })}
+                />
+                <span className="text-[11px] text-muted-foreground">%</span>
+              </div>
+            )}
             {supportsEyeDropper && (
               <Button
                 type="button"
