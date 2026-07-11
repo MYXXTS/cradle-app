@@ -3,6 +3,11 @@
 interface ImportMetaEnv {
   readonly PACKAGE_VERSION?: string
   readonly CRADLE_E2E?: string
+  readonly VITE_POSTHOG_AUDIENCE?: 'external' | 'internal'
+  readonly VITE_POSTHOG_BUILD_CHANNEL?: string
+  readonly VITE_POSTHOG_HOST?: string
+  readonly VITE_POSTHOG_INTERNAL_ACTOR?: string
+  readonly VITE_POSTHOG_PROJECT_TOKEN?: string
   readonly VITE_SERVER_URL?: string
 }
 

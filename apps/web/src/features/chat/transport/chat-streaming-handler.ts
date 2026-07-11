@@ -1,6 +1,8 @@
 import type { UIMessage, UIMessageChunk } from 'ai'
 import { readUIMessageStream } from 'ai'
 
+import type { ProductAnalyticsTaskTimer } from '~/features/product-analytics/client'
+import { trackProductTaskFinished, trackProductTaskStarted } from '~/features/product-analytics/client'
 import type { MessageReconcileChange } from '~/store/chat'
 import { useChatStore } from '~/store/chat'
 
@@ -30,6 +32,7 @@ export class ChatStreamingHandler {
   private settled = false
   private currentChunkReplay = false
   private replayBatchOpen = false
+  private analyticsTask: ProductAnalyticsTaskTimer | null = null
 
   constructor(
     sessionId: string,
@@ -62,6 +65,11 @@ export class ChatStreamingHandler {
       })
       return
     }
+    this.analyticsTask = trackProductTaskStarted({
+      feature_domain: 'chat',
+      task_kind: 'agent_run',
+      task_variant: null,
+    }, this.requestStartedAtMs)
     this.appendLocalPlaceholder()
     store.startGeneration(this.sessionId, this.messageId, controller)
   }
@@ -88,7 +96,7 @@ export class ChatStreamingHandler {
     this.flushPendingMessages()
   }
 
-  finish(): void {
+  finish(status: 'complete' | 'aborted' = 'complete'): void {
     this.flushPendingMessages()
     if (this.terminated) {
       return
@@ -97,14 +105,14 @@ export class ChatStreamingHandler {
     const messageId = this.activeMessageId ?? this.messageId
     const store = this.store.getState()
     if (this.mode === 'passive') {
-      this.emitSettled(messageId, 'complete')
+      this.emitSettled(messageId, status)
       return
     }
     store.finishGeneration(messageId)
     if (this.activeMessageId === null) {
       store.removeMessage(this.sessionId, this.messageId)
     }
-    this.emitSettled(messageId, 'complete')
+    this.emitSettled(messageId, status)
   }
 
   fail(error: string): void {
@@ -284,11 +292,20 @@ export class ChatStreamingHandler {
     this.activeMessageId = messageId
   }
 
-  private emitSettled(messageId: string | null, status: 'complete' | 'error'): void {
+  private emitSettled(messageId: string | null, status: 'complete' | 'aborted' | 'error'): void {
     if (this.settled) {
       return
     }
     this.settled = true
+    if (this.mode === 'local') {
+      const analyticsTask = this.analyticsTask
+      if (analyticsTask) {
+        trackProductTaskFinished(
+          analyticsTask,
+          status === 'complete' ? 'success' : status === 'aborted' ? 'cancelled' : 'failed',
+        )
+      }
+    }
     if (!this.emitSettledEvents) {
       return
     }

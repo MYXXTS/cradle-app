@@ -13,6 +13,7 @@ import {
 } from '~/api-gen/@tanstack/react-query.gen'
 import type { PostWorkspacesData, PostWorkspacesInspectDirectoryResponse } from '~/api-gen/types.gen'
 import { useDirectoryPicker } from '~/features/filesystem/directory-picker-provider'
+import { trackProductTaskFinished, trackProductTaskStarted } from '~/features/product-analytics/client'
 import { useAppPreferencesQuery, useUpdateAppPreferencesMutation } from '~/features/settings/use-app-preferences'
 
 export const WORKSPACES_QUERY_KEY = getWorkspacesQueryKey()
@@ -75,12 +76,24 @@ export function useAddWorkspace() {
         setRecognition({ path: dirPath, inspection })
         return
       }
-      await addFromDirectory.mutateAsync({ body: { path: dirPath } })
+      const analyticsTask = trackProductTaskStarted({
+        feature_domain: 'workspace',
+        task_kind: 'workspace_add',
+        task_variant: 'local',
+      })
+      try {
+        await addFromDirectory.mutateAsync({ body: { path: dirPath } })
+        trackProductTaskFinished(analyticsTask, 'success')
+      }
+      catch (error) {
+        trackProductTaskFinished(analyticsTask, 'failed')
+        throw error
+      }
     }
     finally {
       setAdding(false)
     }
-  }, [addFromDirectory, inspectDirectory, selectDirectory])
+  }, [addFromDirectory, inspectDirectory, selectDirectory, t])
 
   const dismissRecognition = useCallback(() => {
     setRecognition(null)
@@ -96,6 +109,11 @@ export function useAddWorkspace() {
     }
     const { path, inspection } = recognition
     setAdding(true)
+    const analyticsTask = trackProductTaskStarted({
+      feature_domain: 'workspace',
+      task_kind: 'workspace_add',
+      task_variant: 'local',
+    })
     try {
       if (!inspection.featureFlagEnabled) {
         await savePreferences({
@@ -107,7 +125,12 @@ export function useAddWorkspace() {
         })
       }
       await addFromDirectory.mutateAsync({ body: { path } })
+      trackProductTaskFinished(analyticsTask, 'success')
       setRecognition(null)
+    }
+    catch (error) {
+      trackProductTaskFinished(analyticsTask, 'failed')
+      throw error
     }
     finally {
       setAdding(false)
@@ -123,10 +146,20 @@ export function useAddWorkspace() {
     }
     const { path } = recognition
     setAdding(true)
+    const analyticsTask = trackProductTaskStarted({
+      feature_domain: 'workspace',
+      task_kind: 'workspace_add',
+      task_variant: 'local',
+    })
     try {
       const name = path.split('/').filter(Boolean).pop() ?? path
       await createWorkspace.mutateAsync({ body: { name, locator: { hostId: 'local', path } } })
+      trackProductTaskFinished(analyticsTask, 'success')
       setRecognition(null)
+    }
+    catch (error) {
+      trackProductTaskFinished(analyticsTask, 'failed')
+      throw error
     }
     finally {
       setAdding(false)
@@ -135,8 +168,19 @@ export function useAddWorkspace() {
 
   const createFromLocator = useCallback(async (input: CreateWorkspaceInput) => {
     setAdding(true)
+    const taskVariant = input.locator.hostId === 'local' ? 'local' : 'remote'
+    const analyticsTask = trackProductTaskStarted({
+      feature_domain: 'workspace',
+      task_kind: 'workspace_add',
+      task_variant: taskVariant,
+    })
     try {
       await createWorkspace.mutateAsync({ body: input })
+      trackProductTaskFinished(analyticsTask, 'success')
+    }
+    catch (error) {
+      trackProductTaskFinished(analyticsTask, 'failed')
+      throw error
     }
     finally {
       setAdding(false)

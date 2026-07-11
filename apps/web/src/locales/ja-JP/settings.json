@@ -1,4 +1,8 @@
 {
+  "about.analytics.description": "匿名の使用データを共有して、Cradle の改善にご協力ください。",
+  "about.analytics.share.description": "手動で定義したナビゲーションと機能結果のみを共有します。Prompt、応答、コード、ファイルパス、リソース ID、生のエラー、画面録画は含みません。",
+  "about.analytics.share.label": "匿名のプロダクト利用状況を共有",
+  "about.analytics.title": "プロダクト分析",
   "about.badge.local": "Local-first",
   "about.external.agentActions.description": "承認した agent や tool action は、その action が対象とするローカルパスを読み書きすることがあります。",
   "about.external.agentActions.label": "承認済み agent action",

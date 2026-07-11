@@ -33,7 +33,7 @@ export function reportComposerSubmitError(error: unknown) {
     type: 'error',
     title: 'Message submit failed',
     description: describeChatExecutionError(error)
-      ?? (error instanceof Error ? error.message : 'Unknown submit error.'),
+      ?? ((error as Error)?.message ? (error as Error).message : 'Unknown submit error.'),
   })
 }
 

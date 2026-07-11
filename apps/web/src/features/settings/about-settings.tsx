@@ -9,6 +9,8 @@ import {
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Switch } from '~/components/ui/switch'
+import { useProductAnalyticsStore } from '~/features/product-analytics/store'
 import { isElectron, nativeIpc } from '~/lib/electron'
 
 import { SettingsGroup, SettingsPage } from './settings-container'
@@ -76,6 +78,8 @@ const EXTERNAL_ACCESS_ROWS: Array<{
 export function AboutSettings() {
   const { t } = useTranslation('settings')
   const [paths, setPaths] = useState<CradleDataPaths | null>(null)
+  const analyticsEnabled = useProductAnalyticsStore(state => state.enabled)
+  const setAnalyticsEnabled = useProductAnalyticsStore(state => state.setEnabled)
 
   useEffect(() => {
     if (!isElectron || !nativeIpc) {
@@ -138,6 +142,24 @@ export function AboutSettings() {
           description={t('about.readOnly.description')}
         >
           <span className="text-[12px] text-muted-foreground">{t('about.readOnly.value')}</span>
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup
+        label={t('about.analytics.title')}
+        description={t('about.analytics.description')}
+      >
+        <SettingsRow
+          label={t('about.analytics.share.label')}
+          description={t('about.analytics.share.description')}
+        >
+          <Switch
+            size="sm"
+            checked={analyticsEnabled}
+            onCheckedChange={setAnalyticsEnabled}
+            aria-label={t('about.analytics.share.label')}
+            data-testid="product-analytics-enabled"
+          />
         </SettingsRow>
       </SettingsGroup>
 

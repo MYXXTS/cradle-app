@@ -1,6 +1,7 @@
 import { RouterProvider } from '@tanstack/react-router'
 
 import { AppEnvironmentProviders } from '~/app-providers'
+import { ProductAnalyticsRuntime } from '~/features/product-analytics/product-analytics-runtime'
 import { router } from '~/router'
 
 export function App() {
@@ -8,6 +9,7 @@ export function App() {
 
   return (
     <AppEnvironmentProviders>
+      <ProductAnalyticsRuntime />
       <RouterProvider router={router} />
     </AppEnvironmentProviders>
   )

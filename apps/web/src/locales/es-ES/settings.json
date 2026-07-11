@@ -1,4 +1,8 @@
 {
+  "about.analytics.description": "Comparte datos de uso anónimos para ayudar a mejorar Cradle.",
+  "about.analytics.share.description": "Comparte solo navegación y resultados de funciones definidos manualmente. Cradle nunca incluye prompts, respuestas, código, rutas de archivos, IDs de recursos, errores sin procesar ni grabaciones de pantalla.",
+  "about.analytics.share.label": "Compartir uso anónimo del producto",
+  "about.analytics.title": "Analítica de producto",
   "about.badge.local": "Local-first",
   "about.external.agentActions.description": "Las acciones aprobadas de agentes y herramientas pueden leer o escribir las rutas locales cubiertas por esa acción.",
   "about.external.agentActions.label": "Acciones de agente aprobadas",

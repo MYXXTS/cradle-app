@@ -1,6 +1,7 @@
 import type { UIMessageChunk } from 'ai'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ProductAnalyticsTask } from '~/features/product-analytics/event-model'
 import { chatSelectors, useChatStore } from '~/store/chat'
 import { useRendererChatStore } from '~/store/renderer-chat'
 
@@ -8,6 +9,13 @@ import type { ChatStreamChunk } from './chat-stream-types'
 import { liveChatStreamChunk, replayChatStreamChunk } from './chat-stream-types'
 import { ChatStreamingHandler } from './chat-streaming-handler'
 import { buildUIMessageChunkStreamFromResponse, disposeChatRunBroadcast, onChatRunSettled } from './sse-chat-transport'
+
+const productAnalyticsMocks = vi.hoisted(() => ({
+  trackProductTaskFinished: vi.fn(),
+  trackProductTaskStarted: vi.fn((task: ProductAnalyticsTask) => ({ task, startedAtMs: 0 })),
+}))
+
+vi.mock('~/features/product-analytics/client', () => productAnalyticsMocks)
 
 function resetChatStore(store: typeof useChatStore): void {
   store.setState(state => ({
@@ -47,6 +55,7 @@ describe('chat streaming handler store boundary', () => {
     resetChatStore(useChatStore)
     resetChatStore(useRendererChatStore)
     disposeChatRunBroadcast()
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
@@ -93,6 +102,32 @@ describe('chat streaming handler store boundary', () => {
       messageId: 'assistant-1',
       status: 'complete',
     }])
+  })
+
+  it('finishes local analytics tasks when UI settled broadcasts are disabled', () => {
+    const handler = new ChatStreamingHandler('side:conversation-1', 'assistant-1', 0, {
+      store: useRendererChatStore,
+      emitSettledEvents: false,
+    })
+
+    handler.start(new AbortController())
+    handler.finish()
+
+    expect(productAnalyticsMocks.trackProductTaskStarted).toHaveBeenCalledWith({
+      feature_domain: 'chat',
+      task_kind: 'agent_run',
+      task_variant: null,
+    }, 0)
+    expect(productAnalyticsMocks.trackProductTaskFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: {
+          feature_domain: 'chat',
+          task_kind: 'agent_run',
+          task_variant: null,
+        },
+      }),
+      'success',
+    )
   })
 
   it('applies replay chunks as a single store update when replay catches up', async () => {

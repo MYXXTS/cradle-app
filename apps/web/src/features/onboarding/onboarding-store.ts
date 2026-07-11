@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+import { trackProductEvent } from '~/features/product-analytics/client'
 import { persistStorage } from '~/store/persist-storage'
 
 export const ONBOARDING_TOTAL_STEPS = 5
@@ -17,7 +18,7 @@ interface OnboardingState {
 
 export const useOnboardingStore = create<OnboardingState>()(
   persist(
-    set => ({
+    (set, get) => ({
       completed: false,
       step: 0,
 
@@ -34,7 +35,13 @@ export const useOnboardingStore = create<OnboardingState>()(
       goToStep: (step: number) =>
         set({ step: Math.max(0, Math.min(step, ONBOARDING_TOTAL_STEPS - 1)) }),
 
-      complete: () => set({ completed: true }),
+      complete: () => {
+        if (get().completed) {
+          return
+        }
+        trackProductEvent('onboarding_completed', {})
+        set({ completed: true })
+      },
 
       reset: () => set({ completed: false, step: 0 }),
     }),

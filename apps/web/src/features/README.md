@@ -23,6 +23,7 @@ only decrease.
 - **search/**: Global thread search — command-palette dialog backed by jieba tokenization on the main process
 - **profile/**: Global user profile assembled from Usage-owned analytics data
 - **desktop-tray/**: Electron native tray action bridge and await projection helpers
+- **product-analytics/**: Privacy-bounded, opt-out-aware PostHog event transport and normalized product surface tracking
 - **settings/**: Application settings — theme switching, user preferences dialog
 - **skills/**: Filesystem-backed skills management — shared inventory/editor UIs for global settings, workspace detail, and per-agent selection
 - **ipc-devtool/**: Developer-only IPC observability panel rendered in the second (`/devtool`) BrowserWindow

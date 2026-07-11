@@ -10,6 +10,7 @@ import { Button } from '~/components/ui/button'
 import { Spinner } from '~/components/ui/spinner'
 import { toastManager } from '~/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
+import { trackProductTaskFinished, trackProductTaskStarted } from '~/features/product-analytics/client'
 import { useMarkSessionPullRequestReady } from '~/features/session/use-session-pull-request'
 import { apiErrorMessage } from '~/lib/api-error'
 
@@ -60,10 +61,18 @@ export function WorkHeaderChrome({ workId }: { workId: string }) {
   }
 
   const handleSubmit = async () => {
+    const action = pr ? 'update_draft' : 'create_draft'
+    const analyticsTask = trackProductTaskStarted({
+      feature_domain: 'work',
+      task_kind: 'draft_submit',
+      task_variant: action,
+    })
     try {
       await submitWork.mutateAsync({ path: { id: workId }, body: {} })
+      trackProductTaskFinished(analyticsTask, 'success')
     }
     catch (error) {
+      trackProductTaskFinished(analyticsTask, 'failed')
       toastManager.add({
         type: 'error',
         title: t('aside.submitFailed'),
@@ -76,12 +85,18 @@ export function WorkHeaderChrome({ workId }: { workId: string }) {
     if (!pr) {
       return
     }
+    const analyticsTask = trackProductTaskStarted({
+      feature_domain: 'work',
+      task_kind: 'mark_ready',
+      task_variant: null,
+    })
     try {
       const pullRequest = await markReady.mutateAsync(detail.primaryThread.id)
       queryClient.setQueryData<WorkDetail>(
         getWorksByIdQueryKey({ path: { id: workId } }),
         current => current ? { ...current, pullRequest } : current,
       )
+      trackProductTaskFinished(analyticsTask, 'success')
       toastManager.add({
         type: 'success',
         title: t('aside.markReadySuccessTitle'),
@@ -89,6 +104,7 @@ export function WorkHeaderChrome({ workId }: { workId: string }) {
       })
     }
     catch (error) {
+      trackProductTaskFinished(analyticsTask, 'failed')
       toastManager.add({
         type: 'error',
         title: t('aside.markReadyFailed'),

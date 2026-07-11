@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { builtinModules } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +11,9 @@ import { defineConfig } from 'electron-vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const webRoot = resolve(__dirname, '../web')
+const packageJson: { version: string } = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8'))
 const desktopUpdateUrl = process.env.CRADLE_DESKTOP_UPDATE_URL ?? ''
+const isE2E = process.env.CRADLE_E2E === '1'
 const nodeRuntimeExternals = [
   ...builtinModules,
   ...builtinModules.map(moduleName => `node:${moduleName}`),
@@ -59,6 +62,11 @@ export default defineConfig({
   },
   renderer: {
     root: webRoot,
+    envDir: webRoot,
+    define: {
+      'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
+      'import.meta.env.CRADLE_E2E': JSON.stringify(isE2E ? '1' : '0'),
+    },
     plugins: [
       tailwindcss(),
       tanstackRouter({

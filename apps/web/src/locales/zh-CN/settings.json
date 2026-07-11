@@ -1,4 +1,8 @@
 {
+  "about.analytics.description": "分享匿名使用数据，帮助我们改进 Cradle。",
+  "about.analytics.share.description": "只分享手动定义的导航和功能结果。Cradle 绝不会包含 prompt、回复、代码、文件路径、资源 ID、原始错误或屏幕录像。",
+  "about.analytics.share.label": "分享匿名产品使用情况",
+  "about.analytics.title": "产品分析",
   "about.badge.local": "本地优先",
   "about.external.agentActions.description": "你批准 agent 或 tool action 后，它可能读取或写入该 action 覆盖的本地路径。",
   "about.external.agentActions.label": "已批准的 agent action",

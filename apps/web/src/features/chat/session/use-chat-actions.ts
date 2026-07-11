@@ -282,7 +282,7 @@ export function useChatActions(input: UseChatActionsInput) {
       }
       catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
-          handler.finish()
+          handler.finish('aborted')
         }
         else if (!acceptedByServer) {
           const store = useChatStore.getState()
@@ -506,7 +506,7 @@ export function useChatActions(input: UseChatActionsInput) {
     }
     catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        handler.finish()
+        handler.finish('aborted')
       }
       else {
         handler.fail(err instanceof Error ? err.message : 'Approval continuation failed')

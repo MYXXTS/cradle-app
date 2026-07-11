@@ -130,7 +130,7 @@ export function startOptimisticChatResponse({
     }
     catch (error) {
       if (isAbortError(error)) {
-        handler.finish()
+        handler.finish('aborted')
       }
       else {
         status = 'error'
