@@ -832,6 +832,9 @@ function readTokenUsage(message: OpencodeAssistantMessage): TokenUsage {
     promptTokens: message.tokens.input,
     completionTokens: message.tokens.output + message.tokens.reasoning,
     totalTokens: message.tokens.input + message.tokens.output + message.tokens.reasoning,
+    cachedInputTokens: message.tokens.cache.read,
+    cacheWriteInputTokens: message.tokens.cache.write,
+    reasoningOutputTokens: message.tokens.reasoning,
   }
 }
 
@@ -842,10 +845,15 @@ function readStepTokenUsage(tokens: OpencodeSessionNextStepEndedEvent['propertie
   const promptTokens = tokens.input ?? 0
   const outputTokens = tokens.output ?? 0
   const reasoningTokens = tokens.reasoning ?? 0
+  const cachedInputTokens = tokens.cache?.read ?? 0
+  const cacheWriteInputTokens = tokens.cache?.write ?? 0
   return {
     promptTokens,
     completionTokens: outputTokens + reasoningTokens,
     totalTokens: promptTokens + outputTokens + reasoningTokens,
+    cachedInputTokens,
+    cacheWriteInputTokens,
+    reasoningOutputTokens: reasoningTokens,
   }
 }
 

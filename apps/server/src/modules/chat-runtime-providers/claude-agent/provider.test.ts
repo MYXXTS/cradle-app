@@ -16,7 +16,7 @@ import type {
   RuntimeToolApprovalRequest,
   RuntimeUserInputRequest,
 } from '../../chat-runtime/runtime-provider-types'
-import { ClaudeAgentProvider, setClaudeTurnFirstMessageTimeoutForTests } from './provider'
+import { ClaudeAgentProvider } from './provider'
 
 const sdkMocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -414,7 +414,6 @@ function createBangResultMessage(input: {
 
 describe.sequential('claudeAgentProvider MCP integration', () => {
   afterEach(() => {
-    setClaudeTurnFirstMessageTimeoutForTests(null)
     removeHostMcpServer('browser-use')
     removeHostMcpServer('nowledge-mem')
     sdkMocks.query.mockReset()
@@ -3521,27 +3520,6 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       queueItemId: 'queue-dead-1',
       message: createUserMessage('Should fail'),
     })).rejects.toThrow(/no live query/i)
-
-    await provider.dispose()
-  })
-
-  it('fails the turn when the SDK never accepts the appended user message', async () => {
-    setClaudeTurnFirstMessageTimeoutForTests(30)
-    const activeQuery = createPendingQuery()
-    sdkMocks.query.mockReturnValue(activeQuery)
-
-    const provider = new ClaudeAgentProvider({
-      readSecret: () => 'sk-ant-test',
-    })
-    const runtimeSession = createRuntimeSession()
-
-    await expect(provider.streamTurn({
-      runId: 'run-claude-agent-zombie',
-      runtimeSession,
-      profile: createProfile(),
-      message: createUserMessage('Ghost prompt'),
-      workspaceId: 'workspace-1',
-    }).next()).rejects.toThrow(/did not accept the user message/i)
 
     await provider.dispose()
   })

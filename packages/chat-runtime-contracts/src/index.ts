@@ -1424,6 +1424,9 @@ export interface TokenUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cachedInputTokens?: number
+  cacheWriteInputTokens?: number
+  reasoningOutputTokens?: number
 }
 
 export interface RuntimeStepUsage {

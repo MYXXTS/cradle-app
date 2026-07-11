@@ -560,10 +560,12 @@ function mapAssistant(msg: SDKAssistantMessage, state: ClaudeAgentChunkMapperSta
   flushTextSegment(pendingText)
 
   const usage = msg.message.usage
-    ? {
+      ? {
         promptTokens: msg.message.usage.input_tokens ?? 0,
         completionTokens: msg.message.usage.output_tokens ?? 0,
         totalTokens: (msg.message.usage.input_tokens ?? 0) + (msg.message.usage.output_tokens ?? 0),
+        cachedInputTokens: msg.message.usage.cache_read_input_tokens ?? 0,
+        cacheWriteInputTokens: msg.message.usage.cache_creation_input_tokens ?? 0,
       }
     : null
 
@@ -879,10 +881,12 @@ function isTerminalClaudeStopReason(stopReason: string): boolean {
 
 function mapResult(msg: SDKResultMessage, state: ClaudeAgentChunkMapperState): ClaudeAgentChunkMapperResult {
   const usage = msg.usage
-    ? {
+      ? {
         promptTokens: msg.usage.input_tokens ?? 0,
         completionTokens: msg.usage.output_tokens ?? 0,
         totalTokens: (msg.usage.input_tokens ?? 0) + (msg.usage.output_tokens ?? 0),
+        cachedInputTokens: msg.usage.cache_read_input_tokens ?? 0,
+        cacheWriteInputTokens: msg.usage.cache_creation_input_tokens ?? 0,
       }
     : null
 

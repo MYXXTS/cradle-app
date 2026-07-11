@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 
+import { jsonrepair } from 'jsonrepair'
+
 import type { ManagedChildProcess } from '../../../../infra/managed-process'
 import { spawnManagedProcess } from '../../../../infra/managed-process'
 import type { ClientInfo } from '../app-server-protocol/ClientInfo'
@@ -223,16 +225,31 @@ export class CodexAppServerClient {
   }
 
   private handleLine(line: string): void {
-    if (!line.trim()) {
+    if (this.closed || !line.trim()) {
       return
     }
     let message: CodexAppServerMessage
     try {
       message = JSON.parse(line) as CodexAppServerMessage
     }
-    catch (error) {
-      this.failAll(error instanceof Error ? error : new Error(String(error)))
-      return
+    catch {
+      // First parse failed — the line may be truncated (e.g. process killed mid-write).
+      // Attempt to repair the JSON (close unterminated strings, add missing brackets).
+      try {
+        message = JSON.parse(jsonrepair(line)) as CodexAppServerMessage
+      }
+      catch (repairError) {
+        const msg = repairError instanceof Error ? repairError.message : String(repairError)
+        this.pushNotification({
+          method: 'error',
+          params: {
+            message: `Malformed JSON from codex app-server (repair failed): ${msg}`,
+            lineLength: line.length,
+            linePreview: line.length > 200 ? `${line.slice(0, 200)}…` : line,
+          },
+        })
+        return
+      }
     }
 
     if (message.id !== undefined && message.method) {

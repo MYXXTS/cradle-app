@@ -16,6 +16,9 @@ export interface TokenUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cachedInputTokens?: number
+  cacheWriteInputTokens?: number
+  reasoningOutputTokens?: number
 }
 
 export interface AiSdkEngineInput {
@@ -124,6 +127,9 @@ function createAiSdkStreamResult(input: AiSdkEngineInput): {
             promptTokens: step.usage.inputTokens ?? 0,
             completionTokens: step.usage.outputTokens ?? 0,
             totalTokens: step.usage.totalTokens ?? (step.usage.inputTokens ?? 0) + (step.usage.outputTokens ?? 0),
+            cachedInputTokens: step.usage.inputTokenDetails.cacheReadTokens ?? 0,
+            cacheWriteInputTokens: step.usage.inputTokenDetails.cacheWriteTokens ?? 0,
+            reasoningOutputTokens: step.usage.outputTokenDetails.reasoningTokens ?? 0,
           },
         })
       }
@@ -238,6 +244,9 @@ function toTokenUsage(usage: LanguageModelUsage): TokenUsage {
     promptTokens: usage.inputTokens ?? 0,
     completionTokens: usage.outputTokens ?? 0,
     totalTokens: usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+    cachedInputTokens: usage.inputTokenDetails.cacheReadTokens ?? 0,
+    cacheWriteInputTokens: usage.inputTokenDetails.cacheWriteTokens ?? 0,
+    reasoningOutputTokens: usage.outputTokenDetails.reasoningTokens ?? 0,
   }
 }
 

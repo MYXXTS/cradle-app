@@ -158,9 +158,6 @@ type ActiveClaudeTurn = {
   shouldGenerateTitle: boolean
   outputTextCollector: ReturnType<typeof createBoundedTextCollector>
   endGeneration: (error?: unknown) => void
-  /** True until the pump delivers the first SDK message for this Cradle turn after append. */
-  awaitingFirstSdkMessage: boolean
-  firstSdkMessageWatchdog: ReturnType<typeof setTimeout> | null
 }
 
 type ActiveClaudeSyntheticTurn = {
@@ -182,15 +179,6 @@ type ContextUsageRuntimeInput = Pick<GetContextUsageInput, 'runtimeSession'>
 const COMPACT_SLOT_CONTEXT_USAGE_TTL_MS = 15_000
 const DEFAULT_PROVIDER_THREAD_LIMIT = 50
 const CLAUDE_SUBAGENT_SOURCE_KIND = 'subAgent'
-/** Fail a turn that appended to the SDK but never received any session message (zombie query). */
-export const CLAUDE_TURN_FIRST_MESSAGE_TIMEOUT_MS = 60_000
-
-let claudeTurnFirstMessageTimeoutMs = CLAUDE_TURN_FIRST_MESSAGE_TIMEOUT_MS
-
-/** Test-only override for the first-SDK-message watchdog. */
-export function setClaudeTurnFirstMessageTimeoutForTests(timeoutMs: number | null): void {
-  claudeTurnFirstMessageTimeoutMs = timeoutMs ?? CLAUDE_TURN_FIRST_MESSAGE_TIMEOUT_MS
-}
 
 type ClaudeTranscriptContentBlock = {
   type: string
@@ -665,8 +653,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
       shouldGenerateTitle,
       outputTextCollector,
       endGeneration,
-      awaitingFirstSdkMessage: true,
-      firstSdkMessageWatchdog: null,
     }
     activeEntry.currentTurn = turn
 
@@ -690,7 +676,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
       const queueItemId = input.queueItemId?.trim() || null
       const adoptNative = queueItemId ? this.claimNativeFollowUp(sessionId, queueItemId) : false
       if (adoptNative) {
-        turn.awaitingFirstSdkMessage = activeEntry.preAdoptBuffer.length === 0
         const buffered = activeEntry.preAdoptBuffer.splice(0, activeEntry.preAdoptBuffer.length)
         for (const bufferedMessage of buffered) {
           await this.handleClaudeSessionMessage(activeEntry, bufferedMessage)
@@ -698,27 +683,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
       }
       else {
         activeEntry.inputStream.push(userContent, { priority: 'next' })
-      }
-
-      if (turn.awaitingFirstSdkMessage) {
-        const timeoutMs = claudeTurnFirstMessageTimeoutMs
-        turn.firstSdkMessageWatchdog = setTimeout(() => {
-          if (activeEntry.currentTurn !== turn || !turn.awaitingFirstSdkMessage || activeEntry.closed) {
-            return
-          }
-          const failure = new ProviderRuntimeError(
-            ProviderErrors.requestFailed(
-              this.runtimeKind,
-              'streamTurn',
-              `Claude Agent did not accept the user message within ${timeoutMs}ms (query may be stuck)`,
-            ),
-          )
-          turn.awaitingFirstSdkMessage = false
-          this.clearClaudeTurnWatchdog(turn)
-          turn.endGeneration(failure)
-          turn.queue.fail(failure)
-          this.closeSessionQuery(sessionId, activeEntry)
-        }, timeoutMs)
       }
 
       while (true) {
@@ -734,7 +698,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
     catch (error) {
       endGeneration(error)
       if (activeEntry.currentTurn === turn) {
-        this.clearClaudeTurnWatchdog(turn)
         activeEntry.currentTurn = null
       }
       this.closeSessionQuery(sessionId, activeEntry)
@@ -743,7 +706,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
     finally {
       endGeneration()
       if (activeEntry.currentTurn === turn) {
-        this.clearClaudeTurnWatchdog(turn)
         this.completeClaudeProviderThreadTurns(activeEntry, turn)
         activeEntry.currentTurn = null
         turn.queue.close()
@@ -764,7 +726,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
     catch (error) {
       const turn = entry.currentTurn
       if (turn) {
-        this.clearClaudeTurnWatchdog(turn)
         const enriched = entry.stderrSink.enrichError(error)
         const failure = enriched instanceof Error ? enriched : new Error(String(enriched))
         turn.endGeneration(failure)
@@ -775,7 +736,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
       entry.pumpRunning = false
       const turn = entry.currentTurn
       if (turn) {
-        this.clearClaudeTurnWatchdog(turn)
         this.completeClaudeProviderThreadTurns(entry, turn)
         turn.endGeneration()
         turn.queue.close()
@@ -795,11 +755,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
     if (!turn && entry.nativeFollowUps.size > 0) {
       entry.preAdoptBuffer.push(message)
       return
-    }
-
-    if (turn?.awaitingFirstSdkMessage) {
-      turn.awaitingFirstSdkMessage = false
-      this.clearClaudeTurnWatchdog(turn)
     }
 
     if (turn && isChatStreamTraceEnabled()) {
@@ -886,7 +841,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
 
     if (message.type === 'result' && !readClaudeMessageParentToolUseId(message)) {
       if (turn) {
-        this.clearClaudeTurnWatchdog(turn)
         this.completeClaudeProviderThreadTurns(entry, turn)
         await this.refreshCompactState({ runtimeSession: entry.runtimeSession }).catch(() => undefined)
         turn.endGeneration()
@@ -1189,6 +1143,9 @@ export class ClaudeAgentProvider implements ChatRuntime {
         promptTokens: this._totalUsage.promptTokens + usage.promptTokens,
         completionTokens: this._totalUsage.completionTokens + usage.completionTokens,
         totalTokens: this._totalUsage.totalTokens + usage.totalTokens,
+        cachedInputTokens: (this._totalUsage.cachedInputTokens ?? 0) + (usage.cachedInputTokens ?? 0),
+        cacheWriteInputTokens: (this._totalUsage.cacheWriteInputTokens ?? 0) + (usage.cacheWriteInputTokens ?? 0),
+        reasoningOutputTokens: (this._totalUsage.reasoningOutputTokens ?? 0) + (usage.reasoningOutputTokens ?? 0),
       }
       return
     }
@@ -1202,7 +1159,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
     entry.closed = true
     entry.pumpRunning = false
     if (entry.currentTurn) {
-      this.clearClaudeTurnWatchdog(entry.currentTurn)
       this.completeClaudeProviderThreadTurns(entry, entry.currentTurn)
     }
     entry.nativeFollowUps.clear()
@@ -1213,13 +1169,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
     entry.currentTurn?.queue.close()
     entry.currentTurn = null
     this.releaseQuery(sessionId, entry)
-  }
-
-  private clearClaudeTurnWatchdog(turn: ActiveClaudeTurn): void {
-    if (turn.firstSdkMessageWatchdog) {
-      clearTimeout(turn.firstSdkMessageWatchdog)
-      turn.firstSdkMessageWatchdog = null
-    }
   }
 
   private enqueueNativeFollowUp(sessionId: string, queueItemId: string, message: UIMessage): void {

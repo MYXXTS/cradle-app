@@ -1482,6 +1482,8 @@ export function readCodexLastTokenUsage(value: CodexThreadTokenUsage | undefined
     promptTokens: last.inputTokens,
     completionTokens: last.outputTokens,
     totalTokens: last.totalTokens || last.inputTokens + last.outputTokens,
+    cachedInputTokens: last.cachedInputTokens,
+    reasoningOutputTokens: last.reasoningOutputTokens,
   }
 }
 

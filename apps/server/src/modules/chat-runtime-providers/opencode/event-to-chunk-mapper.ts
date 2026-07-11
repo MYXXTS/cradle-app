@@ -31,6 +31,9 @@ export function mapOpencodePromptResultToChunks(input: {
       promptTokens: input.info.tokens.input,
       completionTokens: input.info.tokens.output + input.info.tokens.reasoning,
       totalTokens: input.info.tokens.input + input.info.tokens.output + input.info.tokens.reasoning,
+      cachedInputTokens: input.info.tokens.cache.read,
+      cacheWriteInputTokens: input.info.tokens.cache.write,
+      reasoningOutputTokens: input.info.tokens.reasoning,
     },
   }
 }
