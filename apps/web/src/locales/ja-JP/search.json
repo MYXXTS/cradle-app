@@ -52,7 +52,6 @@
   "state.fileSearchMissingWorkspace": "ファイル検索には、ワークスペースを選択した新規チャット、チャットセッション、またはワークスペース詳細を開いてください。",
   "state.fileSearchUnsupportedTab": "ファイル Quick Open は新規チャット、チャットセッション、ワークスペース詳細タブで利用できます。",
   "state.idle": "キーワードを入力して検索を開始",
-  "state.loading": "検索中...",
   "state.modeUnavailable": "この Quick Open モードはパレットに接続済みですが、現在のワークスペースビューにはまだ結果プロバイダーがありません。",
   "state.noResults": "一致する結果が見つかりません",
   "thread.match.titleOnly": "タイトルのみ一致",

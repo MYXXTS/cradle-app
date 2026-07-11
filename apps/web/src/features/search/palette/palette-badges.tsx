@@ -35,9 +35,9 @@ export function PaletteFilterBadges({ activeMode, counts, onSelect }: PaletteFil
             onClick={() => onSelect(mode.id)}
             aria-pressed={active}
             className={cn(
-              'flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium whitespace-nowrap transition-[background-color,color] duration-150',
+              'flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium whitespace-nowrap',
               active
-                ? 'bg-foreground/[0.06] text-foreground'
+                ? 'bg-foreground/[0.10] text-foreground'
                 : 'text-muted-foreground/55 hover:bg-foreground/[0.04] hover:text-foreground',
             )}
           >

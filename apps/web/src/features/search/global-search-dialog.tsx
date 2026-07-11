@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -27,7 +27,7 @@ import {
   WorkspaceRow,
 } from './palette/palette-rows'
 import type { CommandAction, PaletteModeId } from './palette/types'
-import { usePaletteData, writeCommandHistory } from './palette/use-palette-data'
+import { usePaletteData, usePaletteLandingData, writeCommandHistory } from './palette/use-palette-data'
 
 interface GlobalSearchDialogProps {
   open: boolean
@@ -36,66 +36,56 @@ interface GlobalSearchDialogProps {
 }
 
 export const GlobalSearchDialog = ({ open, initialQuery = '>', onOpenChange }: GlobalSearchDialogProps) => {
+  usePaletteLandingData(!open)
+
   if (!open) {
     return null
   }
 
   return (
     <GlobalSearchDialogContent
-      open={open}
+      key={initialQuery}
       initialQuery={initialQuery}
       onOpenChange={onOpenChange}
     />
   )
 }
 
-const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: GlobalSearchDialogProps) => {
+const GlobalSearchDialogContent = ({
+  initialQuery = '>',
+  onOpenChange,
+}: Omit<GlobalSearchDialogProps, 'open'>) => {
   const { t } = useTranslation('search')
   const close = useCallback(() => onOpenChange(false), [onOpenChange])
   const openWorkspaceFile = useBrowserPanelStore(s => s.openWorkspaceFileTab)
   const setBrowserPanelOpen = useLayoutStore(s => s.setBrowserPanelOpen)
-  const [query, setQuery] = useState('')
-  const [mode, setMode] = useState<PaletteModeId>('all')
+  const [{ mode: initialMode, query: initialQueryText }] = useState(() => parseInitialQuery(initialQuery))
+  const [query, setQuery] = useState(initialQueryText)
+  const [mode, setMode] = useState<PaletteModeId>(initialMode)
   const panelRef = useRef<HTMLDivElement>(null)
-  const closeFromEscape = useEffectEvent(() => {
-    onOpenChange(false)
-  })
 
   useLayoutEffect(() => {
-    if (!open) {
-      setQuery('')
-      setMode('all')
-      return
-    }
-
-    const { mode: initialMode, query: initialQueryText } = parseInitialQuery(initialQuery)
-    setMode(initialMode)
-    setQuery(initialQueryText)
     requestAnimationFrame(() => {
       const input = panelRef.current?.querySelector<HTMLInputElement>('[data-slot="command-input"]')
       input?.focus()
       const end = input?.value.length ?? 0
       input?.setSelectionRange(end, end)
     })
-  }, [initialQuery, open])
+  }, [])
 
   useEffect(() => {
-    if (!open) {
-      return
-    }
-
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        closeFromEscape()
+        close()
       }
     }
 
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [open])
+  }, [close])
 
-  const data = usePaletteData({ open, mode, query, close })
+  const data = usePaletteData({ mode, query, close })
 
   const handleSelectCommand = useCallback((command: CommandAction) => {
     writeCommandHistory(command.id)
@@ -213,13 +203,17 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
 
   // Recent conversations are a landing section for `all` and `threads` only.
   const showRecent = (mode === 'all' || mode === 'threads') && !hasQuery
+  const showFiles = mode === 'all' || mode === 'files'
+  const showThreads = mode === 'all' || mode === 'threads'
+  const showIssues = mode === 'all' || mode === 'issues'
+  const showWorkspaces = mode === 'all' || mode === 'workspaces'
 
   const hasAnyResults = (showRecent && data.recentConversations.length > 0)
     || commandsToShow.length > 0
-    || data.files.length > 0
-    || (hasQuery && data.threads.length > 0)
-    || (hasQuery && data.issues.length > 0)
-    || data.workspaces.length > 0
+    || (showFiles && data.files.length > 0)
+    || (showThreads && hasQuery && data.threads.length > 0)
+    || (showIssues && hasQuery && data.issues.length > 0)
+    || (showWorkspaces && data.workspaces.length > 0)
 
   return createPortal(
     <div
@@ -227,7 +221,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
       className="fixed inset-0 isolate z-50 flex items-start justify-center px-4 pt-[16vh]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
-          onOpenChange(false)
+          close()
         }
       }}
     >
@@ -236,7 +230,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
         role="dialog"
         aria-modal="true"
         aria-label={t('aria.dialog')}
-        className="relative w-full max-w-[640px] animate-in fade-in-0 zoom-in-95 overflow-hidden rounded-2xl bg-popover/92 text-popover-foreground shadow-[0_20px_70px_-16px_rgba(0,0,0,0.22),0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-foreground/[0.06] backdrop-blur-xl duration-150 dark:shadow-[0_20px_70px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
+        className="relative w-full max-w-[640px] overflow-hidden rounded-2xl bg-popover/92 text-popover-foreground shadow-[0_20px_70px_-16px_rgba(0,0,0,0.22),0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-foreground/[0.06] backdrop-blur-xl dark:shadow-[0_20px_70px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.06)]"
       >
         <Command shouldFilter={false} data-testid="global-search-dialog">
           <div className="relative">
@@ -258,7 +252,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
             <PaletteFilterBadges activeMode={mode} counts={counts} onSelect={handleBadgeSelect} />
           </div>
 
-          <CommandList>
+          <CommandList aria-busy={data.isPending}>
             {showRecent && data.recentConversations.length > 0 && (
               <CommandGroup>
                 <GroupHeader
@@ -287,7 +281,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
               </CommandGroup>
             )}
 
-            {data.files.length > 0 && (
+            {showFiles && data.files.length > 0 && (
               <CommandGroup>
                 <GroupHeader
                   label={t('group.files')}
@@ -299,7 +293,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
               </CommandGroup>
             )}
 
-            {data.hasQuery && data.threads.length > 0 && (
+            {showThreads && data.hasQuery && data.threads.length > 0 && (
               <CommandGroup>
                 <GroupHeader
                   label={t('group.threads')}
@@ -311,7 +305,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
               </CommandGroup>
             )}
 
-            {data.hasQuery && data.issues.length > 0 && (
+            {showIssues && data.hasQuery && data.issues.length > 0 && (
               <CommandGroup>
                 <GroupHeader
                   label={t('group.issues')}
@@ -323,7 +317,7 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
               </CommandGroup>
             )}
 
-            {data.workspaces.length > 0 && (
+            {showWorkspaces && data.workspaces.length > 0 && (
               <CommandGroup>
                 <GroupHeader
                   label={t('group.workspaces')}
@@ -335,13 +329,11 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
               </CommandGroup>
             )}
 
-            {!hasAnyResults && (
+            {!hasAnyResults && !data.isPending && (
               <CommandEmpty className="py-12">
-                {data.isPending
-                  ? <LoadingState />
-                  : hasQuery
-                    ? <NoResults />
-                    : <span className="text-xs text-muted-foreground/60">{t('state.idle')}</span>}
+                {hasQuery
+                  ? <NoResults />
+                  : <span className="text-xs text-muted-foreground/60">{t('state.idle')}</span>}
               </CommandEmpty>
             )}
           </CommandList>
@@ -349,17 +341,6 @@ const GlobalSearchDialogContent = ({ open, initialQuery = '>', onOpenChange }: G
       </div>
     </div>,
     document.body,
-  )
-}
-
-function LoadingState() {
-  const { t } = useTranslation('search')
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <DelayedSpinner active className="size-4" />
-      <span className="text-xs text-muted-foreground">{t('state.loading')}</span>
-    </div>
   )
 }
 

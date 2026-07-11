@@ -52,7 +52,6 @@
   "state.fileSearchMissingWorkspace": "Abre un nuevo chat, una sesión de chat o un workspace con un workspace seleccionado para buscar archivos.",
   "state.fileSearchUnsupportedTab": "Quick Open de archivos está disponible desde Nuevo chat, sesiones de chat y pestañas de detalle del workspace.",
   "state.idle": "Escribe una palabra clave para empezar a buscar",
-  "state.loading": "Buscando...",
   "state.modeUnavailable": "Este modo Quick Open ya está en la paleta, pero la vista actual del workspace todavía no expone un proveedor de resultados.",
   "state.noResults": "No se encontraron resultados coincidentes",
   "thread.match.titleOnly": "Solo coincide el título",

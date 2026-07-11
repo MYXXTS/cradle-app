@@ -357,6 +357,19 @@ export interface PaletteData {
   hasQuery: boolean
 }
 
+/** Keep the palette's landing data warm while its UI is closed. */
+export function usePaletteLandingData(enabled: boolean): void {
+  const fileSearchWorkspace = useActiveFileSearchWorkspaceId(enabled)
+
+  useFileSearch(
+    '',
+    enabled && fileSearchWorkspace.availability === 'available',
+    fileSearchWorkspace.workspaceId,
+  )
+  useWorkspaceSearch('', enabled)
+  useRecentConversations(enabled)
+}
+
 /**
  * Aggregate every search source the palette needs. `mode` is explicit state
  * (decoupled from the input) and `query` is already a clean search term with
@@ -364,13 +377,12 @@ export interface PaletteData {
  * debounced here.
  */
 export function usePaletteData(params: {
-  open: boolean
   mode: PaletteModeId
   query: string
   close: () => void
 }): PaletteData {
-  const { open, mode, query, close } = params
-  const fileSearchWorkspace = useActiveFileSearchWorkspaceId(open)
+  const { mode, query, close } = params
+  const fileSearchWorkspace = useActiveFileSearchWorkspaceId(true)
   const commands = useCommands(close)
 
   const hasQuery = query.length > 0
@@ -384,29 +396,29 @@ export function usePaletteData(params: {
 
   const { files, workspaceId: fileWorkspaceId, isPending: filesPending } = useFileSearch(
     query,
-    open && searchFiles && fileSearchWorkspace.availability === 'available',
+    searchFiles && fileSearchWorkspace.availability === 'available',
     fileSearchWorkspace.workspaceId,
   )
 
   const { hits: threads, isPending: threadsPending } = useThreadSearch({
     query,
-    enabled: open && searchThreads,
+    enabled: searchThreads,
   })
 
   const { workspaces, isPending: workspacesPending } = useWorkspaceSearch(
     query,
-    open && searchWorkspaces,
+    searchWorkspaces,
   )
 
   const { issues, isPending: issuesPending, boardId } = useIssueSearch(
     debouncedIssueQuery,
-    open && searchIssues,
+    searchIssues,
   )
 
   // Recent conversations populate the "all" and "threads" landing states so
   // the palette is useful before the user types anything. Global (not
   // workspace-scoped) so it shows even without an active workspace.
-  const recentConversations = useRecentConversations(open && (mode === 'all' || mode === 'threads'))
+  const recentConversations = useRecentConversations(mode === 'all' || mode === 'threads')
 
   // Recency-sorted commands shown as suggestions when there is no query, in
   // any mode. This keeps the palette non-empty on open.
@@ -452,7 +464,7 @@ export function usePaletteData(params: {
     recentConversations,
     files,
     workspaces,
-    threads,
+    threads: searchThreads ? threads : [],
     issues,
     fileWorkspaceId,
     fileAvailability: fileSearchWorkspace.availability,

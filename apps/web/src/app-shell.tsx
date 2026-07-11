@@ -13,8 +13,8 @@ import { useChatSplitFocusedSessionId, useChatSplitWorkspaceStore } from '~/feat
 import { useDesktopTrayActionBridge } from '~/features/desktop-tray/use-desktop-tray-action-bridge'
 import { CredentialSetupDialog } from '~/features/onboarding/credential-setup-dialog'
 import { useOnboardingStore } from '~/features/onboarding/onboarding-store'
+import { GlobalSearchDialog } from '~/features/search/global-search-dialog'
 import { useGlobalSearchStore } from '~/features/search/global-search-store'
-import { PaletteSkeleton } from '~/features/search/palette/palette-skeleton'
 import { useKeyBindingsOverlayStore } from '~/features/shortcuts/key-bindings-overlay-store'
 import { useUnreadSessionIds } from '~/features/workspace/use-session'
 import { isWorkspaceFileShortcutScopeEvent } from '~/features/workspace/workspace-file-shortcuts'
@@ -27,13 +27,6 @@ import { installSurfaceResourceLifecycle } from '~/navigation/surface-resource-l
 import { useSurfaceStore } from '~/navigation/surface-store'
 import { installTearoffSurfaceRestore } from '~/navigation/tearoff-surfaces'
 import { chatSelectors, useChatStore } from '~/store/chat'
-
-const loadGlobalSearchDialog = () =>
-  import('~/features/search/global-search-dialog').then(module => ({
-    default: module.GlobalSearchDialog,
-  }))
-
-const GlobalSearchDialog = lazy(loadGlobalSearchDialog)
 
 const loadKeyBindingsOverlay = () =>
   import('~/features/shortcuts/key-bindings-overlay').then(module => ({
@@ -270,7 +263,6 @@ function MainAppRuntime() {
   useSyncLayoutSlotScope(activeSlotId, validSlotIds)
 
   const openGlobalSearch = useCallback(() => {
-    void loadGlobalSearchDialog()
     useGlobalSearchStore.getState().openSearch()
   }, [])
   const openSidebarSheet = useCallback(() => {
@@ -359,19 +351,6 @@ function GlobalCommandPaletteHost() {
   const setOpen = useGlobalSearchStore(s => s.setOpen)
   useSuppressNativeBrowserSurface(open)
 
-  // Warm the lazy dialog chunk before the user ever hits ⌘K, so the first open
-  // is instant instead of waiting on a network round-trip.
-  useEffect(() => {
-    const load = () => { void loadGlobalSearchDialog() }
-    const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
-    if (ric) {
-      const id = ric(load)
-      return () => (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(id)
-    }
-    const id = window.setTimeout(load, 1500)
-    return () => window.clearTimeout(id)
-  }, [])
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) {
@@ -389,14 +368,12 @@ function GlobalCommandPaletteHost() {
           return
         }
         event.preventDefault()
-        void loadGlobalSearchDialog()
         useGlobalSearchStore.getState().openPalette(event.shiftKey ? '>' : '')
         return
       }
 
       if (key === 'p') {
         event.preventDefault()
-        void loadGlobalSearchDialog()
         useGlobalSearchStore.getState().openPalette(event.shiftKey ? '>' : '')
       }
     }
@@ -405,15 +382,7 @@ function GlobalCommandPaletteHost() {
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true })
   }, [])
 
-  if (!open) {
-    return null
-  }
-
-  return (
-    <Suspense fallback={<PaletteSkeleton />}>
-      <GlobalSearchDialog open={open} initialQuery={initialQuery} onOpenChange={setOpen} />
-    </Suspense>
-  )
+  return <GlobalSearchDialog open={open} initialQuery={initialQuery} onOpenChange={setOpen} />
 }
 
 function KeyBindingsOverlayHost() {

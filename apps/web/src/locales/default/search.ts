@@ -52,7 +52,6 @@ export default {
   'state.fileSearchMissingWorkspace': 'Open a new chat, chat session, or workspace with a selected workspace to search files.',
   'state.fileSearchUnsupportedTab': 'File quick open is available from New Chat, chat sessions, and workspace detail tabs.',
   'state.idle': 'Type a keyword to start searching',
-  'state.loading': 'Searching...',
   'state.modeUnavailable': 'This quick-open mode is ready in the palette, but the current workspace view does not expose a result provider yet.',
   'state.noResults': 'No matching results found',
   'thread.match.titleOnly': 'Title match only',

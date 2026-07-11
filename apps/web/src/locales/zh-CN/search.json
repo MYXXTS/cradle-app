@@ -52,7 +52,6 @@
   "state.fileSearchMissingWorkspace": "打开已选择工作区的新建对话、对话会话或工作区详情后才能搜索文件。",
   "state.fileSearchUnsupportedTab": "文件 Quick Open 只在新建对话、对话会话和工作区详情页可用。",
   "state.idle": "输入关键词开始搜索",
-  "state.loading": "搜索中...",
   "state.modeUnavailable": "这个 Quick Open 模式已经接入命令面板，但当前工作区视图还没有提供结果源。",
   "state.noResults": "没有找到匹配的结果",
   "thread.match.titleOnly": "仅标题匹配",
