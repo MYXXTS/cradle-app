@@ -57,6 +57,14 @@ interface EncryptedCredentialEnvelope {
   tagPart: string
 }
 
+interface ActiveCredentialKey {
+  database: ReturnType<typeof db>
+  secret: string
+  version: number
+}
+
+let activeCredentialKey: ActiveCredentialKey | null = null
+
 export interface RotateEncryptionKeyInput {
   from: string
   to: string
@@ -73,7 +81,10 @@ function getCredentialSecret(): string | null {
 }
 
 function isConfigured(): boolean {
-  return Boolean(getCredentialSecret())
+  return Boolean(
+    (activeCredentialKey?.database === db() ? activeCredentialKey.secret : null)
+    ?? getCredentialSecret(),
+  )
 }
 
 function deriveKey(secret: string): Buffer {
@@ -84,7 +95,7 @@ function readCredentialKeyVersion(secret: Pick<CredentialRow, 'keyVersion'>): nu
   return secret.keyVersion ?? LEGACY_KEY_VERSION
 }
 
-function readActiveKeyVersion(database: ReturnType<typeof db> = db()): number {
+function readStoredKeyVersion(database: ReturnType<typeof db> = db()): number {
   const versions = database
     .select({ keyVersion: agentCredentials.keyVersion })
     .from(agentCredentials)
@@ -92,6 +103,29 @@ function readActiveKeyVersion(database: ReturnType<typeof db> = db()): number {
     .map(row => row.keyVersion ?? LEGACY_KEY_VERSION)
 
   return Math.max(LEGACY_KEY_VERSION, ...versions)
+}
+
+function readActiveCredentialKey(database: ReturnType<typeof db> = db()): ActiveCredentialKey {
+  if (activeCredentialKey?.database === database) {
+    return activeCredentialKey
+  }
+  const secret = getCredentialSecret()
+  if (!secret) {
+    throw new Error('CRADLE_CREDENTIAL_SECRET is not configured')
+  }
+  activeCredentialKey = {
+    database,
+    secret,
+    version: readStoredKeyVersion(database),
+  }
+  return activeCredentialKey
+}
+
+export function resetCredentialKeyringForTests(): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('Credential keyring reset is test-only')
+  }
+  activeCredentialKey = null
 }
 
 function encryptWithSecret(plainText: string, secret: string, keyVersion: number): string {
@@ -103,12 +137,9 @@ function encryptWithSecret(plainText: string, secret: string, keyVersion: number
   return `v${keyVersion}:${iv.toString('base64')}:${encrypted.toString('base64')}:${tag.toString('base64')}`
 }
 
-function encrypt(plainText: string, keyVersion = readActiveKeyVersion()): string {
-  const secret = getCredentialSecret()
-  if (!secret) {
-    throw new Error('CRADLE_CREDENTIAL_SECRET is not configured')
-  }
-  return encryptWithSecret(plainText, secret, keyVersion)
+function encrypt(plainText: string, database: ReturnType<typeof db> = db()): string {
+  const activeKey = readActiveCredentialKey(database)
+  return encryptWithSecret(plainText, activeKey.secret, activeKey.version)
 }
 
 function parseEncryptedCredential(encryptedText: string): EncryptedCredentialEnvelope {
@@ -164,11 +195,8 @@ function decryptWithSecret(encryptedText: string, secret: string, expectedVersio
 }
 
 function decryptCredential(secret: CredentialRow): string {
-  const credentialSecret = getCredentialSecret()
-  if (!credentialSecret) {
-    throw new Error('CRADLE_CREDENTIAL_SECRET is not configured')
-  }
-  return decryptWithSecret(secret.encryptedSecret, credentialSecret, readCredentialKeyVersion(secret))
+  const activeKey = readActiveCredentialKey()
+  return decryptWithSecret(secret.encryptedSecret, activeKey.secret, readCredentialKeyVersion(secret))
 }
 
 function maskSecret(secret: string): string {
@@ -203,8 +231,8 @@ export function saveSecret(input: SaveSecretInput): SecretMetadata {
   ensureConfigured()
   const now = Math.floor(Date.now() / 1000)
   const id = randomUUID()
-  const keyVersion = readActiveKeyVersion()
-  const encryptedSecret = encrypt(input.secret, keyVersion)
+  const keyVersion = readActiveCredentialKey().version
+  const encryptedSecret = encrypt(input.secret)
 
   db().insert(agentCredentials).values({
     id,
@@ -235,7 +263,7 @@ export function upsertSecretInDb(database: ReturnType<typeof db>, input: UpsertS
   const existing = database.select().from(agentCredentials).where(eq(agentCredentials.id, input.id)).get()
   let encryptedSecret: string
   let existingDecrypted: string | null = null
-  const keyVersion = readActiveKeyVersion(database)
+  const keyVersion = readActiveCredentialKey(database).version
 
   if (existing) {
     try {
@@ -251,7 +279,7 @@ export function upsertSecretInDb(database: ReturnType<typeof db>, input: UpsertS
     encryptedSecret = existing.encryptedSecret
   }
   else {
-    encryptedSecret = encrypt(input.secret, keyVersion)
+    encryptedSecret = encrypt(input.secret, database)
   }
 
   database.insert(agentCredentials).values({
@@ -290,8 +318,8 @@ export function upsertSecret(input: UpsertSecretInput): SecretMetadata {
 
 export function updateSecretValue(id: string, secret: string): void {
   ensureConfigured()
-  const keyVersion = readActiveKeyVersion()
-  const encryptedSecret = encrypt(secret, keyVersion)
+  const keyVersion = readActiveCredentialKey().version
+  const encryptedSecret = encrypt(secret)
   const result = db().update(agentCredentials).set({
       encryptedSecret,
       keyVersion,
@@ -398,21 +426,27 @@ export function rotateEncryptionKey(input: RotateEncryptionKeyInput): RotateEncr
     })
   }
 
-  return db().transaction((tx) => {
+  const currentKey = readActiveCredentialKey()
+  if (from !== currentKey.secret) {
+    throw new AppError({
+      code: 'invalid_secret_rotation_input',
+      status: 400,
+      message: 'Source credential secret does not match the active runtime key',
+    })
+  }
+
+  const result = db().transaction((tx) => {
     const rows = tx
       .select()
       .from(agentCredentials)
       .orderBy(asc(agentCredentials.label), asc(agentCredentials.id))
       .all()
-    const fromVersion = rows.reduce(
-      (version, row) => Math.max(version, readCredentialKeyVersion(row)),
-      LEGACY_KEY_VERSION,
-    )
+    const fromVersion = currentKey.version
     const toVersion = fromVersion + 1
     const now = Math.floor(Date.now() / 1000)
 
     for (const row of rows) {
-      const plainText = decryptWithSecret(row.encryptedSecret, from, readCredentialKeyVersion(row))
+      const plainText = decryptWithSecret(row.encryptedSecret, currentKey.secret, readCredentialKeyVersion(row))
       tx.update(agentCredentials)
         .set({
           encryptedSecret: encryptWithSecret(plainText, to, toVersion),
@@ -429,6 +463,8 @@ export function rotateEncryptionKey(input: RotateEncryptionKeyInput): RotateEncr
       toVersion,
     }
   })
+  activeCredentialKey = { database: db(), secret: to, version: result.toVersion }
+  return result
 }
 
 function readChatgptCredentialSummary(rawSecret: string): ChatgptCredentialSummary | null {

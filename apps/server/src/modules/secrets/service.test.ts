@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../infra'
 import {
   readSecret,
+  resetCredentialKeyringForTests,
   rotateEncryptionKey,
   saveSecret,
 } from './service'
@@ -35,11 +36,13 @@ function readCredentialRow(id: string) {
 describe('secrets encryption', () => {
   beforeEach(() => {
     process.env.CRADLE_CREDENTIAL_SECRET = 'old-secret'
+    resetCredentialKeyringForTests()
     db().delete(agentCredentials).run()
   })
 
   afterEach(() => {
     db().delete(agentCredentials).run()
+    resetCredentialKeyringForTests()
     if (originalCredentialSecret === undefined) {
       delete process.env.CRADLE_CREDENTIAL_SECRET
       return
@@ -94,9 +97,6 @@ describe('secrets encryption', () => {
       fromVersion: 1,
       toVersion: 2,
     })
-    expect(() => readSecret(first.id)).toThrow()
-
-    process.env.CRADLE_CREDENTIAL_SECRET = 'new-secret'
     expect(readSecret(first.id)).toBe('first-secret')
     expect(readSecret(second.id)).toBe('second-secret')
 
