@@ -2,7 +2,7 @@ export default {
   'surface.new': 'New Work',
   'surface.work': 'Work',
   'new.title': 'New Work',
-  'new.description': 'The Agent can work and commit inside an isolated Worktree. Nothing is pushed to GitHub until you choose Create Draft PR.',
+  'new.description': 'Let\'s give the agent something to finish',
   'new.start': 'Start Work',
   'new.workspace': 'Workspace',
   'new.workspaceRequired': 'Choose a local Git workspace to start Work.',

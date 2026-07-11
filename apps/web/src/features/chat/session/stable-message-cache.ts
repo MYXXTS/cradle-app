@@ -1,19 +1,23 @@
 import type { ChatSessionMessageRow } from './use-chat-session'
 
 const DB_NAME = 'cradle-chat-stable-message-cache'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'stable-message-rows'
 const CACHED_SESSION_LIMIT = 80
+const CACHE_SCHEMA_VERSION = 2
 
-interface StableMessageCacheRecord {
+export interface StableMessageCacheSnapshot {
   sessionId: string
+  schemaVersion: typeof CACHE_SCHEMA_VERSION
+  revision: number
+  snapshotState: 'present' | 'empty'
   cachedAt: number
   rows: ChatSessionMessageRow[]
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
-export async function readStableMessageRows(sessionId: string): Promise<ChatSessionMessageRow[] | null> {
+export async function readStableMessageRows(sessionId: string): Promise<StableMessageCacheSnapshot | null> {
   if (!canUseIndexedDb()) {
     return null
   }
@@ -24,13 +28,17 @@ export async function readStableMessageRows(sessionId: string): Promise<ChatSess
     const request = transaction.objectStore(STORE_NAME).get(sessionId)
     request.onerror = () => reject(request.error ?? new Error('Failed to read stable chat message cache'))
     request.onsuccess = () => {
-      const record = readCacheRecord(request.result)
-      resolve(record?.rows ?? null)
+      const record = parseStableMessageCacheRecord(request.result)
+      resolve(record)
     }
   })
 }
 
-export async function writeStableMessageRows(sessionId: string, rows: ChatSessionMessageRow[]): Promise<void> {
+export async function writeStableMessageRows(
+  sessionId: string,
+  revision: number,
+  rows: ChatSessionMessageRow[],
+): Promise<void> {
   if (!canUseIndexedDb()) {
     return
   }
@@ -38,6 +46,9 @@ export async function writeStableMessageRows(sessionId: string, rows: ChatSessio
   const db = await openStableMessageCacheDb()
   await writeCacheRecord(db, {
     sessionId,
+    schemaVersion: CACHE_SCHEMA_VERSION,
+    revision,
+    snapshotState: rows.length === 0 ? 'empty' : 'present',
     cachedAt: Date.now(),
     rows,
   })
@@ -89,20 +100,34 @@ function openStableMessageCacheDb(): Promise<IDBDatabase> {
   return guardedPromise
 }
 
-function readCacheRecord(value: unknown): StableMessageCacheRecord | null {
+export function parseStableMessageCacheRecord(value: unknown): StableMessageCacheSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null
   }
-  const record = value as Partial<StableMessageCacheRecord>
-  if (typeof record.sessionId !== 'string' || typeof record.cachedAt !== 'number') {
+  const record = value as Partial<StableMessageCacheSnapshot>
+  if (
+    record.schemaVersion !== CACHE_SCHEMA_VERSION
+    || typeof record.sessionId !== 'string'
+    || typeof record.revision !== 'number'
+    || !Number.isSafeInteger(record.revision)
+    || record.revision < 0
+    || (record.snapshotState !== 'present' && record.snapshotState !== 'empty')
+    || typeof record.cachedAt !== 'number'
+  ) {
     return null
   }
   const rows = readMessageRows(record.rows)
   if (!rows) {
     return null
   }
+  if ((record.snapshotState === 'empty') !== (rows.length === 0)) {
+    return null
+  }
   return {
     sessionId: record.sessionId,
+    schemaVersion: CACHE_SCHEMA_VERSION,
+    revision: record.revision,
+    snapshotState: record.snapshotState,
     cachedAt: record.cachedAt,
     rows,
   }
@@ -143,7 +168,7 @@ function isMessageRow(value: unknown): value is ChatSessionMessageRow {
   )
 }
 
-function writeCacheRecord(db: IDBDatabase, record: StableMessageCacheRecord): Promise<void> {
+function writeCacheRecord(db: IDBDatabase, record: StableMessageCacheSnapshot): Promise<void> {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')
     transaction.oncomplete = () => resolve()

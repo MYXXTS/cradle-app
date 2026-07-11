@@ -2,11 +2,11 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { FileUIPart, UIMessage } from 'ai'
 
 import {
-  getChatSessionsBySessionIdMessagesQueryKey,
   getSessionsByIdQueryKey,
 } from '~/api-gen/@tanstack/react-query.gen'
 import { useChatStore } from '~/store/chat'
 
+import { chatMessageSnapshotQueryKey } from '../api/messages'
 import { runtimeUiSlotStatesQueryKey } from '../capabilities/chat-capabilities'
 import type { ChatResponseRequestBody, ChatRuntimeSettingsPatch } from '../commands/chat-response-command'
 import { runtimeSettingsQueryKey } from '../commands/runtime-settings-command'
@@ -175,7 +175,7 @@ function refreshChatResponseQueries(queryClient: QueryClient | undefined, sessio
     return
   }
   void queryClient.invalidateQueries({
-    queryKey: getChatSessionsBySessionIdMessagesQueryKey({ path: { sessionId } }),
+    queryKey: chatMessageSnapshotQueryKey(sessionId),
   })
   void queryClient.invalidateQueries({
     queryKey: getSessionsByIdQueryKey({ path: { id: sessionId } }),

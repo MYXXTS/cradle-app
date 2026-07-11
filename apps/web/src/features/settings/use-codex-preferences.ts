@@ -2,8 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import { getPreferencesCodexOptions, getPreferencesCodexQueryKey } from '~/api-gen/@tanstack/react-query.gen'
-import { putPreferencesCodex } from '~/api-gen/sdk.gen'
+import { preferencesGateway } from './api/preferences'
 
 export interface CodexPreferences {
   useCradleUserAgent: boolean
@@ -13,11 +12,11 @@ const CodexPreferencesSchema = z.object({
   useCradleUserAgent: z.boolean().default(true),
 })
 
-export const CODEX_PREFS_QUERY_KEY = getPreferencesCodexQueryKey()
+export const CODEX_PREFS_QUERY_KEY = preferencesGateway.codex.queryKey
 
 export function useCodexPreferencesQuery() {
   return useQuery({
-    ...getPreferencesCodexOptions(),
+    ...preferencesGateway.codex.queryOptions(),
     select: data => CodexPreferencesSchema.parse(data) satisfies CodexPreferences,
   })
 }
@@ -33,7 +32,7 @@ export function useUpdateCodexPreferencesMutation() {
       }
 
       const next = { ...current, ...updates }
-      await putPreferencesCodex({ body: next, throwOnError: true })
+      await preferencesGateway.codex.update(next)
 
       return next
     },

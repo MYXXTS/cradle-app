@@ -109,16 +109,10 @@ export function useGuideStreamingOutput(sessionId: string | null, active: boolea
     () => getChatSessionsBySessionIdMessagesOptions({ path: { sessionId: sessionId ?? '' } }),
     [sessionId],
   )
-  const messagesQuery = useQuery<
-    unknown,
-    Error,
-    ChatSessionMessageRow[],
-    ReturnType<typeof getChatSessionsBySessionIdMessagesOptions>['queryKey']
-  >({
-    queryKey: sessionMessagesOptions.queryKey,
-    queryFn: sessionMessagesOptions.queryFn,
+  const messagesQuery = useQuery({
+    ...sessionMessagesOptions,
     enabled: Boolean(sessionId),
-    select: data => data as ChatSessionMessageRow[],
+    select: data => data.rows as ChatSessionMessageRow[],
     refetchInterval: active ? 1_500 : false,
   })
   return useMemo(() => {

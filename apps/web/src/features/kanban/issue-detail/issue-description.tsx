@@ -190,7 +190,7 @@ export function IssueDescription({ issue, onUpdate, readOnly = false }: IssueDes
         const { data } = await getChatSessionsBySessionIdMessages({
           path: { sessionId: session.id },
         })
-        return SessionMessageListSchema.parse(data).length
+        return SessionMessageListSchema.parse(data?.rows).length
       },
       staleTime: 30_000,
     })),

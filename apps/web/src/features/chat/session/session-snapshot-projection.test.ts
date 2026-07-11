@@ -106,6 +106,27 @@ describe('session snapshot projection', () => {
     })
   })
 
+  it('treats an authoritative empty snapshot as clearing provisional rows', () => {
+    const projection = deriveSessionSnapshotProjection({
+      rows: [],
+      runState: idleRunState,
+      existingMessageCount: 2,
+      runtimeStatusKnown: true,
+      runtimeIdle: true,
+      runtimeActiveRunMessageId: null,
+    })
+
+    expect(projection).toMatchObject({
+      messages: [],
+      passiveRunState: {
+        messageIds: [],
+        allowMissingMessage: false,
+        cancelling: false,
+        status: 'idle',
+      },
+    })
+  })
+
   it('uses the active run message id as the passive streaming identity even before it appears in the snapshot', () => {
     const projection = deriveSessionSnapshotProjection({
       rows: [

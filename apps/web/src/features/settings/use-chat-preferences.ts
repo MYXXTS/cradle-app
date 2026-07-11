@@ -2,8 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import { getPreferencesChatOptions, getPreferencesChatQueryKey } from '~/api-gen/@tanstack/react-query.gen'
-import { putPreferencesChat } from '~/api-gen/sdk.gen'
+import { preferencesGateway } from './api/preferences'
 
 export type ContinuationBehavior = 'queue' | 'steer'
 export type TitleGenerationThinkingEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
@@ -40,11 +39,11 @@ const ChatPreferencesSchema = z.object({
   }),
 })
 
-export const CHAT_PREFS_QUERY_KEY = getPreferencesChatQueryKey()
+export const CHAT_PREFS_QUERY_KEY = preferencesGateway.chat.queryKey
 
 export function useChatPreferencesQuery() {
   return useQuery({
-    ...getPreferencesChatOptions(),
+    ...preferencesGateway.chat.queryOptions(),
     select: data => ChatPreferencesSchema.parse(data) satisfies ChatPreferences,
   })
 }
@@ -67,7 +66,7 @@ export function useUpdateChatPreferencesMutation() {
           ? { ...current.titleGeneration, ...updates.titleGeneration }
           : current.titleGeneration,
       }
-      await putPreferencesChat({ body: next, throwOnError: true })
+      await preferencesGateway.chat.update(next)
 
       return next
     },

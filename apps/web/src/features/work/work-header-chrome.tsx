@@ -77,15 +77,15 @@ export function WorkHeaderChrome({ workId }: { workId: string }) {
       return
     }
     try {
-      const result = await markReady.mutateAsync({ path: { id: detail.primaryThread.id } })
+      const pullRequest = await markReady.mutateAsync(detail.primaryThread.id)
       queryClient.setQueryData<WorkDetail>(
         getWorksByIdQueryKey({ path: { id: workId } }),
-        current => current ? { ...current, pullRequest: result.pullRequest } : current,
+        current => current ? { ...current, pullRequest } : current,
       )
       toastManager.add({
         type: 'success',
         title: t('aside.markReadySuccessTitle'),
-        description: t('aside.markReadySuccessDescription', { number: result.pullRequest.number }),
+        description: t('aside.markReadySuccessDescription', { number: pullRequest.number }),
       })
     }
     catch (error) {

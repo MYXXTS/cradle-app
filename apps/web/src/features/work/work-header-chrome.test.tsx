@@ -88,10 +88,8 @@ describe('work header chrome delivery actions', () => {
   beforeEach(() => {
     mocks.submit.mockReset().mockResolvedValue(undefined)
     mocks.markReady.mockReset().mockResolvedValue({
-      pullRequest: {
-        ...createWorkDetail({ submitted: true }).pullRequest,
-        isDraft: false,
-      },
+      ...createWorkDetail({ submitted: true }).pullRequest,
+      isDraft: false,
     })
     mocks.getWorkDetail.mockReset().mockReturnValue(createWorkDetail())
     mocks.toast.mockReset()
@@ -125,9 +123,7 @@ describe('work header chrome delivery actions', () => {
 
     fireEvent.click(screen.getByTestId('work-mark-ready'))
 
-    await waitFor(() => expect(mocks.markReady).toHaveBeenCalledWith({
-      path: { id: 'session-1' },
-    }))
+    await waitFor(() => expect(mocks.markReady).toHaveBeenCalledWith('session-1'))
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'success',
       title: 'aside.markReadySuccessTitle',

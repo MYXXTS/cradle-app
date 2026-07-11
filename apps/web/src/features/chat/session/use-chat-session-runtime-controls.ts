@@ -2,17 +2,17 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import {
-  getChatSessionsBySessionIdMessagesQueryKey,
   getSessionsByIdQueryKey,
 } from '~/api-gen/@tanstack/react-query.gen'
 import { isSessionsQueryKey } from '~/features/workspace/use-session'
 
+import { chatMessageSnapshotQueryKey } from '../api/messages'
 import { runtimeUiSlotStatesQueryKey } from '../capabilities/chat-capabilities'
 import { SNAPSHOT_SYNC_DEBOUNCE_MS } from './use-chat-session-types'
 
 export interface ChatSessionRuntimeControls {
   queryClient: ReturnType<typeof useQueryClient>
-  snapshotRowsQueryKey: ReturnType<typeof getChatSessionsBySessionIdMessagesQueryKey> | null
+  snapshotRowsQueryKey: ReturnType<typeof chatMessageSnapshotQueryKey> | null
   sessionBindingQueryKey: ReturnType<typeof getSessionsByIdQueryKey> | null
   queueQueryKey: readonly ['chat', 'session-queue', string]
   scheduleSnapshotRefresh: (delay?: number) => void
@@ -29,7 +29,7 @@ export function useChatSessionRuntimeControls(chatSessionId: string | null): Cha
 
   const snapshotRowsQueryKey = useMemo(
     () => chatSessionId
-      ? getChatSessionsBySessionIdMessagesQueryKey({ path: { sessionId: chatSessionId } })
+      ? chatMessageSnapshotQueryKey(chatSessionId)
       : null,
     [chatSessionId],
   )

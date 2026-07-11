@@ -37,7 +37,7 @@ export function SessionPullRequestChrome({ sessionId }: SessionPullRequestChrome
 
   const handleMarkReady = async () => {
     try {
-      await markReady.mutateAsync({ path: { id: sessionId } })
+      await markReady.mutateAsync(sessionId)
       toastManager.add({
         type: 'success',
         title: t('chrome.readySuccessTitle'),

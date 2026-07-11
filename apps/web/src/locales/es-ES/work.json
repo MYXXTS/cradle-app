@@ -34,7 +34,7 @@
   "new.addProject": "Añadir proyecto",
   "new.addingProject": "Añadiendo...",
   "new.createFailed": "No se pudo crear el Work.",
-  "new.description": "El Agent puede trabajar y hacer commits en un Worktree aislado. Nada se envía a GitHub hasta que elijas crear un Draft PR.",
+  "new.description": "Démosle al agente algo que terminar",
   "new.dirtyDescription": "El nuevo Work comienza desde un commit limpio para evitar omitir o mezclar cambios.",
   "new.dirtyTitle": "El checkout de origen tiene cambios sin confirmar.",
   "new.noLocalWorkspace": "No hay ningún espacio de trabajo local disponible.",

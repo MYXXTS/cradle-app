@@ -2,9 +2,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import { getPreferencesDesktopOptions, getPreferencesDesktopQueryKey } from '~/api-gen/@tanstack/react-query.gen'
-import { putPreferencesDesktop } from '~/api-gen/sdk.gen'
 import type { MacInputBareModifier } from '~/lib/electron'
+
+import { preferencesGateway } from './api/preferences'
 
 export interface DesktopPreferences {
   requireDoubleCommandQToQuit: boolean
@@ -26,11 +26,11 @@ const DesktopPreferencesSchema = z.object({
   externalTerminalApp: z.string().nullable().default(null),
 })
 
-export const DESKTOP_PREFS_QUERY_KEY = getPreferencesDesktopQueryKey()
+export const DESKTOP_PREFS_QUERY_KEY = preferencesGateway.desktop.queryKey
 
 export function useDesktopPreferencesQuery() {
   return useQuery({
-    ...getPreferencesDesktopOptions(),
+    ...preferencesGateway.desktop.queryOptions(),
     select: data => DesktopPreferencesSchema.parse(data) satisfies DesktopPreferences,
   })
 }
@@ -46,7 +46,7 @@ export function useUpdateDesktopPreferencesMutation() {
       }
 
       const next = { ...current, ...updates }
-      await putPreferencesDesktop({ body: next, throwOnError: true })
+      await preferencesGateway.desktop.update(next)
 
       return next
     },

@@ -34,7 +34,7 @@
   "new.addProject": "プロジェクトを追加",
   "new.addingProject": "追加中...",
   "new.createFailed": "Work を作成できませんでした。",
-  "new.description": "Agent は分離された Worktree 内で作業してコミットできます。Draft PR の作成を選ぶまで GitHub にはプッシュされません。",
+  "new.description": "エージェントに、やり切る仕事をひとつ渡しましょう",
   "new.dirtyDescription": "新しい Work はクリーンなコミットから開始し、変更の漏れや混在を防ぎます。",
   "new.dirtyTitle": "元のチェックアウトに未コミットの変更があります。",
   "new.noLocalWorkspace": "利用可能なローカルワークスペースがありません。",

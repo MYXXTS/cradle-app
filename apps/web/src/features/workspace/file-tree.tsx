@@ -7,7 +7,7 @@ import {
 import { prepareFileTreeInput } from '@pierre/trees'
 import { FileTree as PierreFileTree, useFileTree, useFileTreeSelection } from '@pierre/trees/react'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { z } from 'zod'
 
@@ -17,12 +17,14 @@ import { toastManager } from '~/components/ui/toast'
 import type { GitFileStatus } from '~/features/git/types'
 import { useGitRepositories } from '~/features/git/use-git'
 import { useWorkspaceFiles } from '~/features/workspace/use-workspace-files'
-import { getServerUrl, isElectron, nativeIpc, platform } from '~/lib/electron'
+import { getAuthenticatedEventSourceUrl, getServerUrl, isElectron, nativeIpc, platform } from '~/lib/electron'
 import { queryRefreshPolicies } from '~/lib/query-refresh-policy'
 import { serializeWorkspaceFileDragPayload, writeWorkspaceFileDragData } from '~/lib/workspace-drag-data'
 import { useBrowserPanelStore } from '~/store/browser-panel'
 import { useLayoutStore } from '~/store/layout'
 
+import type { WorkspaceFileEntry } from './api/files'
+import { listWorkspaceFileChildren } from './api/files'
 import {
   CreateWorkspaceFileDialog,
   createWorkspaceFileEntry,
@@ -41,11 +43,6 @@ import {
 // ── Git status mapper ─────────────────────────────────────────────────────────
 
 type TreeGitStatus = { path: string, status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'ignored' }
-const WorkspaceFileListSchema = z.array(z.object({
-  type: z.enum(['file', 'directory']),
-  name: z.string(),
-  path: z.string(),
-})).default([])
 const WorkspaceFileEventSchema = z.object({
   type: z.enum(['ready', 'directory-changed']),
   workspaceId: z.string(),
@@ -56,7 +53,6 @@ const WorkspaceFileEventSchema = z.object({
 
 const ROOT_DIRECTORY_KEY = ''
 
-type WorkspaceFileEntry = z.infer<typeof WorkspaceFileListSchema>[number]
 type WorkspaceFileEvent = z.infer<typeof WorkspaceFileEventSchema>
 const EMPTY_WORKSPACE_FILE_ENTRIES: WorkspaceFileEntry[] = []
 
@@ -105,7 +101,7 @@ function getTreeItemFromEvent(event: Event): { path: string, kind: 'file' | 'dir
   return null
 }
 
-function getFileTreeInputPaths(entries: z.infer<typeof WorkspaceFileListSchema>): string[] {
+function getFileTreeInputPaths(entries: WorkspaceFileEntry[]): string[] {
   return entries.map(entry => entry.type === 'directory' ? `${entry.path}/` : entry.path)
 }
 
@@ -201,18 +197,6 @@ function expandFileTreeDirectories(model: ReturnType<typeof useFileTree>['model'
   }
 }
 
-async function fetchWorkspaceFileChildren(workspaceId: string, path: string): Promise<WorkspaceFileEntry[]> {
-  const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/files/children`, getServerUrl())
-  if (path.length > 0) {
-    url.searchParams.set('path', path)
-  }
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Workspace file children request failed with status ${response.status}.`)
-  }
-  return WorkspaceFileListSchema.parse(await response.json())
-}
-
 function buildWorkspaceFileEventsUrl(workspaceId: string): string {
   return new URL(`/workspaces/${encodeURIComponent(workspaceId)}/files/events`, getServerUrl()).toString()
 }
@@ -236,7 +220,7 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
   const loadingDirectoriesRef = useRef<Set<string>>(new Set())
   const rootChildrenQuery = useQuery({
     queryKey: ['workspace-file-children', workspaceId, ROOT_DIRECTORY_KEY],
-    queryFn: async () => fetchWorkspaceFileChildren(workspaceId!, ROOT_DIRECTORY_KEY),
+    queryFn: async () => listWorkspaceFileChildren(workspaceId!, ROOT_DIRECTORY_KEY),
     enabled: !!workspaceId,
     ...queryRefreshPolicies.active,
   })
@@ -294,11 +278,11 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
     const directories = [...loadedDirectoriesRef.current]
     const updates = await Promise.all(directories.map(async directoryPath => [
       directoryPath,
-      await fetchWorkspaceFileChildren(workspaceId, directoryPath),
+      await listWorkspaceFileChildren(workspaceId, directoryPath),
     ] as const))
     setChildrenByDirectory(new Map(updates))
   }
-  const loadDirectoryChildren = async (directoryPath: string, force = false) => {
+  const loadDirectoryChildren = useCallback(async (directoryPath: string, force = false) => {
     if (!workspaceId) {
       return
     }
@@ -312,7 +296,7 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
 
     loadingDirectoriesRef.current.add(normalizedPath)
     try {
-      const children = await fetchWorkspaceFileChildren(workspaceId, normalizedPath)
+      const children = await listWorkspaceFileChildren(workspaceId, normalizedPath)
       loadedDirectoriesRef.current.add(normalizedPath)
       setChildrenByDirectory((current) => {
         const next = new Map(current)
@@ -330,7 +314,7 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
     finally {
       loadingDirectoriesRef.current.delete(normalizedPath)
     }
-  }
+  }, [t, workspaceId])
   useEffect(() => {
     if (!searchEnabled || searchPending || searchFiles.length === 0) {
       return
@@ -344,9 +328,15 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
       return
     }
 
-    const eventSource = new EventSource(buildWorkspaceFileEventsUrl(workspaceId))
+    let eventSource: EventSource | null = null
+    let cancelled = false
     let malformedFrameReported = false
-    eventSource.onmessage = (event) => {
+    void getAuthenticatedEventSourceUrl(buildWorkspaceFileEventsUrl(workspaceId)).then((url) => {
+      if (cancelled) {
+        return
+      }
+      eventSource = new EventSource(url)
+      eventSource.onmessage = (event) => {
       let message: WorkspaceFileEvent
       try {
         message = WorkspaceFileEventSchema.parse(JSON.parse(event.data))
@@ -366,12 +356,14 @@ export function FileTree({ workspaceId, workspacePath }: FileTreeProps) {
         return
       }
       void loadDirectoryChildren(path, true)
-    }
-    eventSource.onerror = () => {
-      // EventSource reconnects automatically.
-    }
+      }
+      eventSource.onerror = () => {
+        // EventSource reconnects automatically while the short-lived ticket remains attached.
+      }
+    }).catch(error => console.warn('[file-tree] failed to open workspace file events', error))
     return () => {
-      eventSource.close()
+      cancelled = true
+      eventSource?.close()
     }
   }, [loadDirectoryChildren, workspaceId])
   const commitCreate = async (input: { kind: 'file' | 'folder', parentPath: string, name: string }) => {

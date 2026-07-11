@@ -2,13 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import {
-  getPreferencesNetworkOptions,
-  getPreferencesNetworkQueryKey,
-  getPreferencesNetworkStatusOptions,
-  getPreferencesNetworkStatusQueryKey,
-} from '~/api-gen/@tanstack/react-query.gen'
-import { putPreferencesNetwork } from '~/api-gen/sdk.gen'
+import { preferencesGateway } from './api/preferences'
 
 export type NetworkProxyMode = 'system' | 'custom' | 'environment'
 export type NetworkProxyStatusMode = NetworkProxyMode | 'off'
@@ -61,19 +55,19 @@ const NetworkProxyStatusSchema = z.object({
   checkedAt: z.string(),
 })
 
-export const NETWORK_PREFS_QUERY_KEY = getPreferencesNetworkQueryKey()
-export const NETWORK_PROXY_STATUS_QUERY_KEY = getPreferencesNetworkStatusQueryKey()
+export const NETWORK_PREFS_QUERY_KEY = preferencesGateway.network.queryKey
+export const NETWORK_PROXY_STATUS_QUERY_KEY = preferencesGateway.network.statusQueryKey
 
 export function useNetworkPreferencesQuery() {
   return useQuery({
-    ...getPreferencesNetworkOptions(),
+    ...preferencesGateway.network.queryOptions(),
     select: data => NetworkPreferencesSchema.parse(data) satisfies NetworkPreferences,
   })
 }
 
 export function useNetworkProxyStatusQuery() {
   return useQuery({
-    ...getPreferencesNetworkStatusOptions(),
+    ...preferencesGateway.network.statusQueryOptions(),
     select: data => NetworkProxyStatusSchema.parse(data) satisfies NetworkProxyStatus,
   })
 }
@@ -82,14 +76,21 @@ export function useUpdateNetworkPreferencesMutation() {
   const queryClient = useQueryClient()
 
   return useMutation<NetworkPreferences | null, Error, Partial<NetworkPreferences>>({
+    scope: { id: 'network-preferences' },
     mutationFn: async (updates) => {
       const current = queryClient.getQueryData<NetworkPreferences>(NETWORK_PREFS_QUERY_KEY)
       if (!current) {
         return null
       }
 
-      const next = NetworkPreferencesSchema.parse({ ...current, ...updates })
-      await putPreferencesNetwork({ body: next, throwOnError: true })
+      const next = NetworkPreferencesSchema.parse({
+        ...current,
+        ...updates,
+        inbound: updates.inbound
+          ? { ...current.inbound, ...updates.inbound }
+          : current.inbound,
+      })
+      await preferencesGateway.network.update(next)
 
       return next
     },

@@ -34,7 +34,7 @@
   "new.addProject": "添加项目",
   "new.addingProject": "正在添加...",
   "new.createFailed": "无法创建 Work。",
-  "new.description": "Agent 可以在隔离的 Worktree 中工作并提交。只有你选择创建 Draft PR 后，内容才会推送到 GitHub。",
+  "new.description": "让我们给 Agent 一件要完成的事",
   "new.dirtyDescription": "新 Work 会从干净的提交开始，避免遗漏或混入其他变更。",
   "new.dirtyTitle": "源检出目录存在未提交的变更。",
   "new.noLocalWorkspace": "没有可用的本地工作区。",

@@ -2,8 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 
-import { getPreferencesAppOptions, getPreferencesAppQueryKey } from '~/api-gen/@tanstack/react-query.gen'
-import { putPreferencesApp } from '~/api-gen/sdk.gen'
+import { preferencesGateway } from './api/preferences'
 
 export interface AppPreferences {
   featureFlags: {
@@ -44,11 +43,11 @@ const AppPreferencesSchema = z.object({
   }),
 })
 
-export const APP_PREFS_QUERY_KEY = getPreferencesAppQueryKey()
+export const APP_PREFS_QUERY_KEY = preferencesGateway.app.queryKey
 
 export function useAppPreferencesQuery() {
   return useQuery({
-    ...getPreferencesAppOptions(),
+    ...preferencesGateway.app.queryOptions(),
     select: data => AppPreferencesSchema.parse(data) satisfies AppPreferences,
   })
 }
@@ -57,6 +56,7 @@ export function useUpdateAppPreferencesMutation() {
   const queryClient = useQueryClient()
 
   return useMutation<AppPreferences | null, Error, Partial<AppPreferences>>({
+    scope: { id: 'app-preferences' },
     mutationFn: async (updates) => {
       const current = queryClient.getQueryData<AppPreferences>(APP_PREFS_QUERY_KEY)
       if (!current) {
@@ -75,7 +75,7 @@ export function useUpdateAppPreferencesMutation() {
           ...updates.worktreeCleanup,
         },
       }
-      await putPreferencesApp({ body: next, throwOnError: true })
+      await preferencesGateway.app.update(next)
 
       return next
     },

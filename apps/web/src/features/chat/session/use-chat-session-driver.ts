@@ -1,13 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 
-import {
-  getChatSessionsBySessionIdMessagesOptions,
-} from '~/api-gen/@tanstack/react-query.gen'
 import { toastManager } from '~/components/ui/toast'
 import { getServerUrl } from '~/lib/electron'
 import { chatSelectors, useChatStore } from '~/store/chat'
 
+import { chatMessageSnapshotQueryOptions } from '../api/messages'
 import type { RuntimeSessionRunStatus } from '../commands/runtime-session-status-command'
 import { runtimeSessionStatusQueryKey } from '../commands/runtime-session-status-command'
 import { useRuntimeSessionStatus } from '../runtime/use-runtime-session-status'
@@ -38,27 +36,23 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
   controlsRef.current = controls
   const driverEnabled = active && !!chatSessionId
   const generatedSnapshotRowsOptions = useMemo(
-    () => getChatSessionsBySessionIdMessagesOptions({ path: { sessionId: chatSessionId ?? '' } }),
+    () => chatMessageSnapshotQueryOptions(chatSessionId ?? ''),
     [chatSessionId],
   )
-  const snapshotRowsQuery = useQuery<
-    unknown,
-    Error,
-    ChatSessionMessageRow[],
-    ReturnType<typeof getChatSessionsBySessionIdMessagesOptions>['queryKey']
-  >({
-    queryKey: generatedSnapshotRowsOptions.queryKey,
-    queryFn: generatedSnapshotRowsOptions.queryFn,
+  const snapshotRowsQuery = useQuery({
+    ...generatedSnapshotRowsOptions,
     enabled: driverEnabled,
-    select: data => data as ChatSessionMessageRow[],
   })
   const runtimeStatusQuery = useRuntimeSessionStatus(driverEnabled ? chatSessionId : null, driverEnabled, {
     refetchInterval: false,
   })
-  const snapshotRows = snapshotRowsQuery.data
+  const snapshotRevision = snapshotRowsQuery.data?.revision
+  const snapshotRows = snapshotRowsQuery.data?.rows as ChatSessionMessageRow[] | undefined
   const runtimeStatus = runtimeStatusQuery.data
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reset freshness baseline when the session identity changes
   const mountedAtMs = useMemo(() => Date.now(), [chatSessionId])
   const snapshotDataUpdatedAtRef = useRef(snapshotRowsQuery.dataUpdatedAt)
+  const authoritativeSnapshotObservedRef = useRef(false)
   const runtimeActiveRun = runtimeStatus?.activeRun ?? null
   const runtimeActiveRunMessageId = runtimeStatus?.activeRun?.messageId ?? null
   const runtimeStatusKnown = Boolean(runtimeStatus)
@@ -83,8 +77,18 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
     snapshotDataUpdatedAtRef.current = snapshotRowsQuery.dataUpdatedAt
   }, [snapshotRowsQuery.dataUpdatedAt])
 
+  useLayoutEffect(() => {
+    authoritativeSnapshotObservedRef.current = false
+  }, [chatSessionId])
+
+  useLayoutEffect(() => {
+    if (snapshotRows !== undefined) {
+      authoritativeSnapshotObservedRef.current = true
+    }
+  }, [snapshotRows])
+
   useEffect(() => {
-    if (!driverEnabled || !chatSessionId) {
+    if (!driverEnabled || !chatSessionId || snapshotRevision === undefined) {
       return
     }
 
@@ -92,6 +96,7 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
     const engine = new SessionSyncEngine({
       sessionId: chatSessionId,
       serverBaseUrl: getServerUrl(),
+      afterVersion: snapshotRevision,
       eventSourceFactory: createChatSessionEventSource,
       passiveStreamFactory: request => openPassiveSessionStream({
         request,
@@ -126,6 +131,7 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
         },
         onSnapshotRequired: () => {
           controlsRef.current.refreshSessionLists()
+          controlsRef.current.scheduleSnapshotRefresh(0)
         },
         onError: (error) => {
           console.warn('[session-sync-engine] event tail error', error)
@@ -153,6 +159,7 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
   }, [
     chatSessionId,
     driverEnabled,
+    snapshotRevision,
   ])
 
   useEffect(() => {
@@ -166,16 +173,19 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
         console.warn('[useChatSession] failed to read stable message cache', error)
         return null
       })
-      if (cancelled || !cachedRows) {
+      if (cancelled || !cachedRows || authoritativeSnapshotObservedRef.current) {
         return
       }
-      const stableRows = readStableSnapshotRows(cachedRows)
+      const stableRows = readStableSnapshotRows(cachedRows.rows)
       if (!stableRows) {
         return
       }
 
       const store = useChatStore.getState()
-      if ((store.messagesMap.get(chatSessionId)?.length ?? 0) > 0) {
+      if (
+        authoritativeSnapshotObservedRef.current
+        || (store.messagesMap.get(chatSessionId)?.length ?? 0) > 0
+      ) {
         return
       }
 
@@ -266,17 +276,23 @@ export function useChatSessionDriver(chatSessionId: string | null, active = true
   }, [chatSessionId, driverEnabled, refreshQueue, runtimeActiveRunMessageId, runtimeIdle, runtimeStatusKnown, scheduleSnapshotRefresh, snapshotRows, snapshotRowsQuery.dataUpdatedAt, snapshotRowsQuery.isFetching])
 
   useEffect(() => {
-    if (!driverEnabled || !chatSessionId || !snapshotRows || runtimeActiveRunMessageId) {
+    if (
+      !driverEnabled
+      || !chatSessionId
+      || snapshotRevision === undefined
+      || !snapshotRows
+      || runtimeActiveRunMessageId
+    ) {
       return
     }
     const stableRows = readStableSnapshotRows(snapshotRows)
     if (!stableRows) {
       return
     }
-    void writeStableMessageRows(chatSessionId, stableRows).catch((error: unknown) => {
+    void writeStableMessageRows(chatSessionId, snapshotRevision, stableRows).catch((error: unknown) => {
       console.warn('[useChatSession] failed to write stable message cache', error)
     })
-  }, [chatSessionId, driverEnabled, runtimeActiveRunMessageId, snapshotRows])
+  }, [chatSessionId, driverEnabled, runtimeActiveRunMessageId, snapshotRevision, snapshotRows])
 
   useEffect(() => {
     if (!driverEnabled || !chatSessionId || !snapshotRowsQuery.isError) {
