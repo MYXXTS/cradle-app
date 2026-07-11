@@ -34,9 +34,9 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 018  | Code-split heavy panels and routes                       | P2       | M      | —          | BLOCKED (drift check: settings/chat feature files changed since ac47f3b)               |
 | 019  | Rewrite apps/server/AGENTS.md to match Elysia            | P2       | S      | —          | DONE                                                                                   |
 | 022  | Characterization tests for untested web paths            | P2       | M      | 013        | BLOCKED (test seams: driver hook and file-tree live sync require large mocks/refactor) |
-| 020  | Split the largest god files                              | P3       | L      | 022        | BLOCKED (depends on blocked Plan 022 characterization tests)                           |
-| 021  | Restore server dependency direction (infra≠modules)      | P3       | M      | 019        | BLOCKED (import graph has additional http/plugins -> modules deps beyond plan scope)   |
-| 023  | Consolidate web data-fetching onto generated hooks       | P3       | L      | 022        | BLOCKED (depends on blocked Plan 022 characterization tests)                           |
+| 020  | Split the largest god files                              | P3       | L      | 022        | REJECTED (superseded by ownership-first Plan 041)                                      |
+| 021  | Restore server dependency direction (infra≠modules)      | P3       | M      | 019        | REJECTED (superseded by enforced domain boundaries in Plan 041)                        |
+| 023  | Consolidate web data-fetching onto generated hooks       | P3       | L      | 022        | REJECTED (superseded by feature gateways in Plan 040)                                  |
 | 024  | Rebuild the chat core on native Event Sourcing           | P2       | XL     | —          | DONE                                                                                   |
 | 025  | Authoritative usage fields per runtime provider          | P1       | M      | —          | TODO                                                                                   |
 | 026  | Publish plugin SDK + open marketplace to any repo        | P2       | M      | —          | DONE                                                                                   |
@@ -51,6 +51,10 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 034  | Web remote-execution UX for projected sessions           | P1       | M      | 032, 033   | DONE                                                                                   |
 | 035  | Unify model Inventory / Enrichment / Visibility / Selection | P1    | XL     | —          | IN PROGRESS (M0–M6 core done; polish/orphan UI copy optional)                          |
 | 036  | User-controlled local Work: isolated task to Draft PR    | P1       | XL     | —          | DONE                                                                                   |
+| 038  | Close control-plane trust boundary                      | P0       | L      | —          | DONE                                                                                   |
+| 039  | Replace secret rotation with runtime keyring             | P0       | M      | 038        | DONE                                                                                   |
+| 040  | Establish web state authority                            | P1       | L      | 038        | DONE                                                                                  |
+| 041  | Enforce domain and lifecycle ownership                   | P1       | XL     | 038, 040   | DONE                                                                                  |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
@@ -98,8 +102,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
   Session `execution` helpers, remote catalog via Upstream Gateway, connect gate +
   Connect CTA, header/sidebar remote badges, and error mapping for remote codes.
   Also completed the deferred linked-session catch-all proxy from 033.
+- 2026-07-11, Plans 040/041 completed: chat snapshots/cache/sync now use authoritative server revisions and explicit empty state; touched session, settings, and workspace access goes through feature-owned gateways and the generated authenticated client. The web boundary ratchet holds at 186 legacy non-gateway generated imports and 23 approved raw-fetch transport/external/binary calls; the full web suite passes at 88 files / 399 tests. Preference writes have a deferred two-writer regression test. Server runtime resources have one ordered lifecycle owner, remote connections cannot resurrect after cancellation/deletion, remote session writes are atomic, migration dry-run/rollback behavior is proven, and owner-aligned local-tunnel/security capabilities reduce the largest runtime-domain SCC from 22 to 21. Plan-scoped server tests, the module graph checker, focused lint, and diff hygiene pass. Concurrent repository changes leave the full server baseline red: legacy HTTP tests receive `401` after authentication changes, while Claude Agent provider `steerTurn`/UUID typing changes block server typecheck; these are recorded as external to Plans 040/041 rather than keeping completed ownership work open.
 
 ## Recommended sequencing
+
+### 2026-07-11 architecture track
+
+Execute `038 → 039`, then `040`, then `041`. Plan 038 closes the transport and
+credential boundary used by every later gateway. Plan 039 replaces the unsafe
+runtime rotation path. Plan 040 establishes client-side authority before Plan
+041 removes server cycles and centralizes runtime lifecycle. Do not begin bundle
+splitting until this track is stable.
 
 1. **Security first** (002 → 003, 004, 006; 005 in parallel): the relay feature makes
    the "local-only, no-auth" assumption false. 002 is the keystone; 003/004/006 build on it.
@@ -114,6 +127,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
    this track makes remote workspaces actually runnable. Do not start 033/034 before 032.
 
 ## Dependency notes
+
+- 039 requires 038 so secret administration is not exposed through the old optional-auth boundary.
+- 040 requires 038 because all feature gateways must consume the shared authenticated transport.
+- 041 requires 038 and 040 so server domain boundaries and web projection boundaries converge on one API contract.
+- 040 supersedes blocked Plan 023: generated clients remain transport infrastructure, while feature-owned gateways own query/error/invalidation semantics.
+- 041 supersedes blocked Plans 020 and 021: dependency enforcement and lifecycle ownership precede god-file extraction.
 
 - 003 requires 002 (relay tokens layer on the base auth boundary).
 - 004 and 006 assume 002's auth boundary as the primary protection (they are defense-in-depth / info-leak fixes on top).
@@ -176,6 +195,8 @@ A scoped Effect.TS experiment inside a _new, isolated_ subsystem (e.g. a future 
 orchestration layer) would be reasonable; a whole-codebase migration is negative-value.
 
 ## Findings considered and rejected (so they aren't re-audited)
+
+- **Workspace symlinks escaping the lexical workspace root** — rejected as a vulnerability on 2026-07-11. Multi-folder workspaces intentionally use top-level symlinks to explicitly configured external project directories, and Workspace Explorer intentionally follows resolvable symlinks. Future hardening must preserve this capability and instead validate the authorized resolved-root set, expose resolved write targets, and require the existing non-Cradle-owned write consent.
 
 - **Expand RemoteCradleClient method-per-API for full remote chat** — rejected 2026-07-09; use transparent upstream gateway (plan 032) instead. Typed client is debt.
 - **UI/browser P2P direct to tunnel `localBaseUrl` as primary architecture** — rejected as default; keys/pairing/lifecycle stay on local server. Optional desktop optimization only, not required for 032–034.
