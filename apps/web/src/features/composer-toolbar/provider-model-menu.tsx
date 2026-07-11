@@ -189,11 +189,11 @@ function ProviderTargetGroup<TThinking extends string | null>({
   const preset = presetForProviderKind(providerTarget.providerKind)
 
   return (
-    <MenuSub onOpenChange={open => open && onRequestProviderTargetModels?.(providerTarget.id, { refresh: true })}>
+    <MenuSub onOpenChange={open => open && onRequestProviderTargetModels?.(providerTarget.id)}>
       <MenuSubTrigger
         data-testid={`provider-target-option-${providerTarget.id}`}
         onClick={() => {
-          onRequestProviderTargetModels?.(providerTarget.id, { refresh: true })
+          onRequestProviderTargetModels?.(providerTarget.id)
           if (!isProviderTargetSelectionDisabled) {
             onSelectProviderTarget(providerTarget.id)
           }

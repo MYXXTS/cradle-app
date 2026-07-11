@@ -6,6 +6,7 @@ import {
   AGENT_MODELS_QUERY_KEY,
   agentModelsQueryKey,
   providerTargetModelsQueryKey,
+  shouldLiveRefreshModelInventory,
   shouldRefreshProviderTargetModelsOnCacheMiss,
 } from './use-agent-models'
 
@@ -61,6 +62,40 @@ describe('shouldRefreshProviderTargetModelsOnCacheMiss', () => {
     expect(shouldRefreshProviderTargetModelsOnCacheMiss({
       id: 'manual-provider',
       sourceKey: 'external-source:local-agent-config',
+    })).toBe(false)
+  })
+})
+
+describe('shouldLiveRefreshModelInventory', () => {
+  it('live-refreshes when the server cache is missing', () => {
+    expect(shouldLiveRefreshModelInventory({
+      cached: false,
+      stale: false,
+      models: [],
+    })).toBe(true)
+  })
+
+  it('live-refreshes when the server cache is empty', () => {
+    expect(shouldLiveRefreshModelInventory({
+      cached: true,
+      stale: false,
+      models: [],
+    })).toBe(true)
+  })
+
+  it('live-refreshes when the server cache is stale', () => {
+    expect(shouldLiveRefreshModelInventory({
+      cached: true,
+      stale: true,
+      models: [{ id: 'model-1' }],
+    })).toBe(true)
+  })
+
+  it('keeps a warm non-empty cache without live refresh', () => {
+    expect(shouldLiveRefreshModelInventory({
+      cached: true,
+      stale: false,
+      models: [{ id: 'model-1' }],
     })).toBe(false)
   })
 })

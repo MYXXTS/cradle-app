@@ -100,7 +100,8 @@ export function ProviderModelPicker<TThinking extends string | null>({
     if (!open || !selectedProviderTargetId) {
       return
     }
-    onRequestProviderTargetModels?.(selectedProviderTargetId, { refresh: true })
+    // Cache-first paint; live refresh only when server cache is missing/stale.
+    onRequestProviderTargetModels?.(selectedProviderTargetId)
   }
 
   return (

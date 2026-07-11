@@ -140,6 +140,45 @@ export function shouldRefreshProviderTargetModelsOnCacheMiss(
     || target.sourceKey?.startsWith(RUNTIME_OWNED_PROVIDER_TARGET_PREFIX) === true
 }
 
+/** Live-fetch when server inventory is missing/empty or past the soft TTL. */
+export function shouldLiveRefreshModelInventory(cache: {
+  cached: boolean
+  stale: boolean
+  models: readonly unknown[]
+}): boolean {
+  return !cache.cached || cache.models.length === 0 || cache.stale
+}
+
+const inFlightProviderTargetModelRefreshes = new Map<string, Promise<ModelDescriptor[]>>()
+
+function providerTargetModelRefreshKey(
+  target: Pick<ProviderTarget, 'id'>,
+  options?: ProviderTargetModelFetchOptions,
+): string {
+  return [
+    target.id,
+    options?.workspaceId ?? '',
+    options?.hostId ?? '',
+  ].join('\0')
+}
+
+async function refreshProviderTargetModelsDeduped(
+  target: ProviderTargetModelRequestTarget,
+  options?: ProviderTargetModelFetchOptions,
+): Promise<ModelDescriptor[]> {
+  const key = providerTargetModelRefreshKey(target, options)
+  const existing = inFlightProviderTargetModelRefreshes.get(key)
+  if (existing) {
+    return existing
+  }
+
+  const pending = refreshProviderTargetModels(target, options).finally(() => {
+    inFlightProviderTargetModelRefreshes.delete(key)
+  })
+  inFlightProviderTargetModelRefreshes.set(key, pending)
+  return pending
+}
+
 async function fetchCachedVisibleModelsForProfile(
   profile: AgentProfile,
 ): Promise<ModelDescriptor[]> {
@@ -236,8 +275,11 @@ async function refreshProviderTargetModels(
 /**
  * Shared inventory read policy for full provider-target records:
  * - `refresh: true` always live-fetches (even when cache is warm)
- * - cache hit with models → return filtered cache (server re-enriches on read)
+ * - cache hit with models → return filtered cache immediately (including stale)
  * - cache miss / empty → live-fetch for enabled API provider kinds
+ *
+ * Stale soft-TTL refresh is owned by `useProviderTargetModelMap` so the UI can
+ * paint cached models first, then replace them when a background live fetch finishes.
  */
 async function fetchVisibleModelsForProviderTarget(
   target: ProviderTargetModelRequestTarget,
@@ -253,7 +295,7 @@ async function fetchVisibleModelsForProviderTarget(
       }
       return []
     }
-    const liveModels = await refreshProviderTargetModels(target, options)
+    const liveModels = await refreshProviderTargetModelsDeduped(target, options)
     return filterVisibleModels(liveModels, visibility)
   }
 
@@ -265,7 +307,7 @@ async function fetchVisibleModelsForProviderTarget(
     return []
   }
 
-  const liveModels = await refreshProviderTargetModels(target, options)
+  const liveModels = await refreshProviderTargetModelsDeduped(target, options)
   return filterVisibleModels(liveModels, visibility)
 }
 
@@ -462,22 +504,8 @@ export function useProviderTargetModelMap(
     })
   }, [queries, requestedTargets, t])
 
-  const requestProviderTargetModels = useCallback((targetId: string, options?: { refresh?: boolean }) => {
-    setRequestedProviderTargetIds((current) => {
-      if (current.has(targetId)) {
-        return current
-      }
-      const next = new Set(current)
-      next.add(targetId)
-      return next
-    })
-
-    if (!options?.refresh) {
-      return
-    }
-
-    const target = providerTargets.find(candidate => candidate.id === targetId)
-    if (!target?.enabled) {
+  const liveRefreshProviderTargetModels = useCallback((target: ProviderTargetModelRequestTarget) => {
+    if (!target.enabled || !isApiProviderKind(target.providerKind)) {
       return
     }
 
@@ -505,7 +533,77 @@ export function useProviderTargetModelMap(
     void refresh.catch(() => []).finally(() => {
       refreshesRef.current.delete(target.id)
     })
-  }, [hookOptions.hostId, hookOptions.workspaceId, providerTargets, queryClient])
+  }, [hookOptions.hostId, hookOptions.workspaceId, queryClient])
+
+  const ensureProviderTargetModelsFresh = useCallback((target: ProviderTargetModelRequestTarget) => {
+    if (!target.enabled || !isApiProviderKind(target.providerKind)) {
+      return
+    }
+    if (refreshesRef.current.has(target.id)) {
+      return
+    }
+
+    void (async () => {
+      try {
+        const { cache } = await readProviderTargetModelInventory(target, {
+          workspaceId: hookOptions.workspaceId,
+          hostId: hookOptions.hostId,
+        })
+        if (!shouldLiveRefreshModelInventory(cache)) {
+          return
+        }
+        liveRefreshProviderTargetModels(target)
+      }
+      catch {
+        // Leave queryFn / explicit refresh to surface inventory errors.
+      }
+    })()
+  }, [hookOptions.hostId, hookOptions.workspaceId, liveRefreshProviderTargetModels])
+
+  const inventorySyncKey = requestedTargets
+    .map((target, index) => {
+      const query = queries[index]
+      return `${target.id}:${query?.status ?? 'idle'}:${query?.dataUpdatedAt ?? 0}`
+    })
+    .join('|')
+
+  const requestedTargetsRef = useRef(requestedTargets)
+  const queriesRef = useRef(queries)
+  requestedTargetsRef.current = requestedTargets
+  queriesRef.current = queries
+
+  // After cache-first paint, soft-refresh only when server cache is missing or stale.
+  useEffect(() => {
+    requestedTargetsRef.current.forEach((target, index) => {
+      if (!queriesRef.current[index]?.isSuccess) {
+        return
+      }
+      ensureProviderTargetModelsFresh(target)
+    })
+  }, [ensureProviderTargetModelsFresh, inventorySyncKey])
+
+  const requestProviderTargetModels = useCallback((targetId: string, options?: { refresh?: boolean }) => {
+    setRequestedProviderTargetIds((current) => {
+      if (current.has(targetId)) {
+        return current
+      }
+      const next = new Set(current)
+      next.add(targetId)
+      return next
+    })
+
+    const target = providerTargets.find(candidate => candidate.id === targetId)
+    if (!target?.enabled) {
+      return
+    }
+
+    if (options?.refresh) {
+      liveRefreshProviderTargetModels(target)
+      return
+    }
+
+    ensureProviderTargetModelsFresh(target)
+  }, [ensureProviderTargetModelsFresh, liveRefreshProviderTargetModels, providerTargets])
 
   const modelsByProviderTargetId: Record<string, ModelDescriptor[]> = {}
   const loadingProviderTargetIds = new Set<string>()
