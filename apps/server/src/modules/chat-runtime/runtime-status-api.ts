@@ -9,6 +9,7 @@ import type { RuntimeKind } from '../provider-contracts/types'
 import { readReusableDurableProviderRuntimeBinding } from '../provider-runtime/service'
 import * as SessionService from '../session/service'
 import { getRuntimeRegistry } from './chat-runtime-provider-registry'
+import { hasPendingRuntimeToolApproval } from './pending-tool-approval'
 import { listPendingRuntimeUserInputSummaries } from './pending-user-input'
 import type { RuntimeGoalContinuationScheduleInput } from './run/runtime-goal-continuation'
 import {
@@ -58,6 +59,7 @@ export type RuntimeSessionStatusKind
     | 'pending'
     | 'streaming'
     | 'waitingForUserInput'
+    | 'waitingForToolApproval'
     | 'cancelling'
 
 export interface RuntimeSessionRunDto {
@@ -210,6 +212,9 @@ export async function getRuntimeSessionStatus(
   const pendingUserInputs = activeRun
     ? listPendingRuntimeUserInputSummaries({ sessionId, runId: activeRun.runId })
     : []
+  const pendingToolApproval = activeRun
+    ? hasPendingRuntimeToolApproval(sessionId, { runId: activeRun.runId })
+    : false
   const providerTargetAvailable = activeRun ? true : isProviderTargetAvailable(providerTargetId)
   const goalContinuationOptions = deps.readRuntimeGoalContinuationOptions()
   const runtime = binding ? getRuntimeRegistry().get(binding.runtimeKind) : undefined
@@ -224,7 +229,9 @@ export async function getRuntimeSessionStatus(
       ? 'cancelling'
       : pendingUserInputs.length > 0
         ? 'waitingForUserInput'
-        : 'streaming'
+        : pendingToolApproval
+          ? 'waitingForToolApproval'
+          : 'streaming'
     : pendingState
       ? 'pending'
       : 'idle'

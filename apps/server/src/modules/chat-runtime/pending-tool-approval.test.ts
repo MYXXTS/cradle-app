@@ -7,6 +7,7 @@ import {
   setRuntimeInteractionEventRecorder,
 } from './interaction/event-recorder'
 import {
+  hasPendingRuntimeToolApproval,
   requestRuntimeToolApproval,
   submitRuntimeToolApproval,
   submitRuntimeToolApprovalIfPending,
@@ -107,5 +108,36 @@ describe('pending runtime tool approval', () => {
         status: 404,
       })
     }
+  })
+
+  it('reports pending approvals for the matching session and run', async () => {
+    const pending = requestRuntimeToolApproval({
+      sessionId: 'session-pending-tool-approval-3',
+      runId: 'run-pending-tool-approval-3',
+      providerRequestId: 'request-3',
+      providerKind: 'openai-compatible',
+      runtimeKind: 'codex',
+      providerMethod: 'applyPatchApproval',
+      toolCallId: 'server-request-request-3',
+      metadata: { files: ['README.md'] },
+    })
+
+    expect(hasPendingRuntimeToolApproval('session-pending-tool-approval-3')).toBe(true)
+    expect(hasPendingRuntimeToolApproval('session-pending-tool-approval-3', {
+      runId: 'run-pending-tool-approval-3',
+    })).toBe(true)
+    expect(hasPendingRuntimeToolApproval('session-pending-tool-approval-3', {
+      runId: 'other-run',
+    })).toBe(false)
+    expect(hasPendingRuntimeToolApproval('other-session')).toBe(false)
+
+    await submitRuntimeToolApproval({
+      sessionId: 'session-pending-tool-approval-3',
+      requestId: 'request-3',
+      approved: false,
+    })
+    await pending
+
+    expect(hasPendingRuntimeToolApproval('session-pending-tool-approval-3')).toBe(false)
   })
 })

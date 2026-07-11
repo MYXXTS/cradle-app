@@ -1173,6 +1173,8 @@ export interface StreamTurnInput {
   transcript?: CradleTurnTranscript
   originalMessages?: UIMessage[]
   responseMessageId?: string
+  /** When set, the turn was drained from a Cradle queue item (may already be native-enqueued). */
+  queueItemId?: string | null
   modelId?: string | null
   workspaceId?: string | null
   workspacePath?: string

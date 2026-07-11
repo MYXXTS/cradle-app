@@ -75,6 +75,7 @@ export default {
   'session.aria.pinned': 'Pinned',
   'session.aria.running': 'Session running',
   'session.aria.waitingForUserInput': 'Waiting for your input',
+  'session.aria.waitingForToolApproval': 'Waiting for tool approval',
   'session.empty': 'No sessions yet',
   'session.fallbackTitle': 'Untitled',
   'session.relative.days': '{{count}}d',

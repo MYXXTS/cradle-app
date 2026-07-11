@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { chatSessionQueueItems } from '@cradle/db'
+import type { FileUIPart } from 'ai'
 import { and, eq } from 'drizzle-orm'
 
 import { AppError } from '../../../errors/app-error'
@@ -8,6 +9,7 @@ import { currentUnixSeconds } from '../../../helpers/time'
 import { db } from '../../../infra'
 import { runtimeOwnsProviderTarget } from '../../provider-contracts/runtime-compatibility'
 import type { RuntimeKind } from '../../provider-contracts/types'
+import type { ChatContextPart } from '../context-parts'
 import {
   cancelQueuedSessionItem,
   commitSessionEvents,
@@ -15,6 +17,7 @@ import {
   recordQueuePositions,
 } from '../es/commands'
 import { runRegistry } from '../run-registry'
+import { liveRuntimeSessionRegistry } from '../runtime-live-session-registry'
 import {
   assertRunnableSession,
   assertRuntimeCompatibleTarget,
@@ -25,6 +28,7 @@ import {
   readSessionRuntimeSettings,
   resolveRunRuntimeSettings,
 } from '../runtime-settings'
+import { createUserMessage } from '../ui-message'
 import type {
   ChatSessionQueueItemDto,
   EnqueueSessionQueueItemInput,
@@ -141,6 +145,38 @@ export async function enqueueSessionQueueItem(
     createdAt: now,
     updatedAt: now,
   }
+
+  // When the provider query is alive during an active run, append into the native SDK queue
+  // before committing the Cradle queue row. Failure must surface — never pretend delivery.
+  const live = liveRuntimeSessionRegistry.read(input.sessionId)
+  const hasActiveRun = Boolean(runRegistry.getActiveRunIdForSession(input.sessionId))
+  if (hasActiveRun && live?.enqueueNativeFollowUp) {
+    const followUpMessage = createUserMessage(
+      row.id,
+      text,
+      files as FileUIPart[],
+      contextParts as ChatContextPart[],
+    )
+    try {
+      await live.enqueueNativeFollowUp({
+        queueItemId: row.id,
+        message: followUpMessage,
+      })
+    }
+    catch (error) {
+      throw new AppError({
+        code: 'chat_queue_native_enqueue_failed',
+        status: 409,
+        message: 'Live runtime rejected native queue append; message was not delivered',
+        details: {
+          sessionId: input.sessionId,
+          queueItemId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      })
+    }
+  }
+
   await commitSessionEvents(input.sessionId, [
     {
       type: 'QueueItemEnqueued',
@@ -206,6 +242,10 @@ export async function cancelSessionQueueItem(
       message: 'Only pending chat queue items can be cancelled',
       details: { sessionId, queueItemId, status: current?.status ?? 'missing' },
     })
+  }
+  const live = liveRuntimeSessionRegistry.read(sessionId)
+  if (live?.cancelNativeFollowUp) {
+    await live.cancelNativeFollowUp(queueItemId).catch(() => false)
   }
   await normalizeSessionQueuePositions(sessionId)
   return toQueueItemDto(runtimeKind, updated)

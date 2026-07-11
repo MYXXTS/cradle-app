@@ -184,6 +184,7 @@ async function pumpRuntimeStream(
       profile: input.profile,
       message: input.message,
       responseMessageId: activeRun.messageId,
+      queueItemId: activeRun.queueItemId ?? null,
       modelId: input.modelId,
       transcript: input.transcript,
       workspaceId: input.workspaceId,

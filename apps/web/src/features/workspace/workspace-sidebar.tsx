@@ -26,6 +26,7 @@ import {
   PinLine as PinOffIcon,
   PlusLine as PlusIcon,
   Refresh1Line as RefreshCwIcon,
+  SafeShieldLine as SafeShieldIcon,
   SearchLine as SearchIcon,
   ServerLine as ServerIcon,
   Settings2Line as SettingsIcon,
@@ -268,10 +269,12 @@ function isSessionRunning(
   return session.status === 'streaming' || locallyStreamingSessionIds.has(session.id)
 }
 
-function useWaitingForUserInputSessionIds(
+type SessionAttentionKind = 'userInput' | 'toolApproval'
+
+function useSessionAttentionBySessionId(
   sessions: readonly WorkspaceSession[],
   locallyStreamingSessionIds: Set<string>,
-): Set<string> {
+): Map<string, SessionAttentionKind> {
   const activeSessionIds = useMemo(
     () => sessions
       .filter(session => isSessionRunning(session, locallyStreamingSessionIds))
@@ -288,16 +291,21 @@ function useWaitingForUserInputSessionIds(
   })
 
   return useMemo(() => {
-    const waitingSessionIds = new Set<string>()
+    const attentionBySessionId = new Map<string, SessionAttentionKind>()
     statusQueries.forEach((query, index) => {
+      const sessionId = activeSessionIds[index]
+      if (!sessionId) {
+        return
+      }
       if (query.data?.status === 'waitingForUserInput') {
-        const sessionId = activeSessionIds[index]
-        if (sessionId) {
-          waitingSessionIds.add(sessionId)
-        }
+        attentionBySessionId.set(sessionId, 'userInput')
+        return
+      }
+      if (query.data?.status === 'waitingForToolApproval') {
+        attentionBySessionId.set(sessionId, 'toolApproval')
       }
     })
-    return waitingSessionIds
+    return attentionBySessionId
   }, [activeSessionIds, statusQueries])
 }
 
@@ -1647,7 +1655,7 @@ const SessionItem = memo(
   ({
     session,
     isStreaming,
-    isWaitingForUserInput,
+    attentionKind,
     hasError,
     isRenaming,
     runtimeIcon,
@@ -1660,7 +1668,7 @@ const SessionItem = memo(
   }: {
     session: WorkspaceSession
     isStreaming: boolean
-    isWaitingForUserInput: boolean
+    attentionKind: SessionAttentionKind | null
     hasError: boolean
     isRenaming: boolean
     runtimeIcon: RuntimeIconDescriptor | undefined
@@ -1687,7 +1695,7 @@ const SessionItem = memo(
     const dragWasTornOffRef = useRef(false)
     const sessionTitle = session.title ?? t('session.fallbackTitle')
     const trailingIndicator = isStreaming
-      ? isWaitingForUserInput
+      ? attentionKind === 'userInput'
         ? (
             <span
               className="grid size-3.5 shrink-0 place-items-center text-amber-500/85 [contain:layout_paint]"
@@ -1698,16 +1706,27 @@ const SessionItem = memo(
               <UserQuestionIcon className="size-3.5" aria-hidden="true" />
             </span>
           )
-        : (
-            <span
-              className="grid size-3.5 shrink-0 animate-spin place-items-center text-muted-foreground/70 [contain:layout_paint] [will-change:transform] motion-reduce:animate-none"
-              aria-label={t('session.aria.running')}
-              role="status"
-              data-testid={`session-running-indicator-${session.id}`}
-            >
-              <LoadingLine className="size-3.5" aria-hidden="true" />
-            </span>
-          )
+        : attentionKind === 'toolApproval'
+          ? (
+              <span
+                className="grid size-3.5 shrink-0 place-items-center text-amber-500/85 [contain:layout_paint]"
+                aria-label={t('session.aria.waitingForToolApproval')}
+                role="status"
+                data-testid={`session-waiting-tool-approval-indicator-${session.id}`}
+              >
+                <SafeShieldIcon className="size-3.5" aria-hidden="true" />
+              </span>
+            )
+          : (
+              <span
+                className="grid size-3.5 shrink-0 animate-spin place-items-center text-muted-foreground/70 [contain:layout_paint] [will-change:transform] motion-reduce:animate-none"
+                aria-label={t('session.aria.running')}
+                role="status"
+                data-testid={`session-running-indicator-${session.id}`}
+              >
+                <LoadingLine className="size-3.5" aria-hidden="true" />
+              </span>
+            )
       : (
           <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
             {formatRelativeTime(session.listActivityAt, t)}
@@ -2019,7 +2038,7 @@ interface SessionListProps {
   sessions: WorkspaceSession[]
   renamingSessionId: string | null
   locallyStreamingSessionIds: Set<string>
-  waitingForUserInputSessionIds: Set<string>
+  sessionAttentionBySessionId: Map<string, SessionAttentionKind>
   locallyErroredSessionIds: Set<string>
   runtimeIconByKind: RuntimeIconByKind
   t: WorkspaceTranslation
@@ -2035,7 +2054,7 @@ const SessionListRows = memo(
     sessions,
     renamingSessionId,
     locallyStreamingSessionIds,
-    waitingForUserInputSessionIds,
+    sessionAttentionBySessionId,
     locallyErroredSessionIds,
     runtimeIconByKind,
     t,
@@ -2054,7 +2073,7 @@ const SessionListRows = memo(
               key={session.id}
               session={session}
               isStreaming={isStreaming}
-              isWaitingForUserInput={waitingForUserInputSessionIds.has(session.id)}
+              attentionKind={sessionAttentionBySessionId.get(session.id) ?? null}
               hasError={
                 !isStreaming
                 && (session.status === 'error' || locallyErroredSessionIds.has(session.id))
@@ -2189,7 +2208,7 @@ function WorkspaceSessionListSection({
   renamingSessionId,
   retainedSessionIds,
   locallyStreamingSessionIds,
-  waitingForUserInputSessionIds,
+  sessionAttentionBySessionId,
   locallyErroredSessionIds,
   runtimeIconByKind,
   t,
@@ -2204,7 +2223,7 @@ function WorkspaceSessionListSection({
   renamingSessionId: string | null
   retainedSessionIds: Set<string>
   locallyStreamingSessionIds: Set<string>
-  waitingForUserInputSessionIds: Set<string>
+  sessionAttentionBySessionId: Map<string, SessionAttentionKind>
   locallyErroredSessionIds: Set<string>
   runtimeIconByKind: RuntimeIconByKind
   t: WorkspaceTranslation
@@ -2302,7 +2321,7 @@ function WorkspaceSessionListSection({
           sessions={visibleSessions}
           renamingSessionId={renamingSessionId}
           locallyStreamingSessionIds={locallyStreamingSessionIds}
-          waitingForUserInputSessionIds={waitingForUserInputSessionIds}
+          sessionAttentionBySessionId={sessionAttentionBySessionId}
           locallyErroredSessionIds={locallyErroredSessionIds}
           runtimeIconByKind={runtimeIconByKind}
           t={t}
@@ -2394,7 +2413,7 @@ const WorkspaceGroup = memo(
       ),
       shallow,
     )
-    const waitingForUserInputSessionIds = useWaitingForUserInputSessionIds(
+    const sessionAttentionBySessionId = useSessionAttentionBySessionId(
       sessions,
       locallyStreamingSessionIds,
     )
@@ -3035,7 +3054,7 @@ const WorkspaceGroup = memo(
                 renamingSessionId={renamingSessionId}
                 retainedSessionIds={retainedSessionIds}
                 locallyStreamingSessionIds={locallyStreamingSessionIds}
-                waitingForUserInputSessionIds={waitingForUserInputSessionIds}
+                sessionAttentionBySessionId={sessionAttentionBySessionId}
                 locallyErroredSessionIds={locallyErroredSessionIds}
                 runtimeIconByKind={runtimeIconByKind}
                 t={t}
@@ -3054,7 +3073,7 @@ const WorkspaceGroup = memo(
               renamingSessionId={renamingSessionId}
               retainedSessionIds={retainedSessionIds}
               locallyStreamingSessionIds={locallyStreamingSessionIds}
-              waitingForUserInputSessionIds={waitingForUserInputSessionIds}
+              sessionAttentionBySessionId={sessionAttentionBySessionId}
               locallyErroredSessionIds={locallyErroredSessionIds}
               runtimeIconByKind={runtimeIconByKind}
               t={t}

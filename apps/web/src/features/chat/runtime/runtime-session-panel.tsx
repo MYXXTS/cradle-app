@@ -436,6 +436,7 @@ function Metric({
           tone === 'streaming' && 'text-primary',
           tone === 'pending' && 'text-primary',
           tone === 'waitingForUserInput' && 'text-amber-600 dark:text-amber-400',
+          tone === 'waitingForToolApproval' && 'text-amber-600 dark:text-amber-400',
           tone === 'cancelling' && 'text-amber-600 dark:text-amber-400',
           tone === 'error' && 'text-destructive',
           tone === 'idle' && 'text-foreground',
@@ -632,6 +633,9 @@ function formatStatus(status: RuntimeSessionStatusKind | 'error'): string {
   if (status === 'waitingForUserInput') {
     return 'Waiting for user input'
   }
+  if (status === 'waitingForToolApproval') {
+    return 'Waiting for tool approval'
+  }
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
@@ -666,6 +670,7 @@ function statusShouldPoll(status: RuntimeSessionStatusKind | undefined): boolean
   return status === 'streaming'
     || status === 'pending'
     || status === 'waitingForUserInput'
+    || status === 'waitingForToolApproval'
     || status === 'cancelling'
 }
 

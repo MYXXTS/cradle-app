@@ -629,11 +629,14 @@ describe('issue-agent capability', () => {
         ),
       )
       expect(messagesRes.status).toBe(200)
-      const messages = (await messagesRes.json()) as Array<{
-        role: string
-        content: string
-        status: string
-      }>
+      const { rows: messages } = (await messagesRes.json()) as {
+        revision: number
+        rows: Array<{
+          role: string
+          content: string
+          status: string
+        }>
+      }
       expect(messages.at(-1)).toEqual(
         expect.objectContaining({
           role: 'assistant',
@@ -690,10 +693,13 @@ describe('issue-agent capability', () => {
         ),
       )
       expect(rerunMessagesRes.status).toBe(200)
-      const rerunMessages = (await rerunMessagesRes.json()) as Array<{
-        role: string
-        content: string
-      }>
+      const { rows: rerunMessages } = (await rerunMessagesRes.json()) as {
+        revision: number
+        rows: Array<{
+          role: string
+          content: string
+        }>
+      }
       expect(rerunMessages.at(-1)).toEqual(
         expect.objectContaining({ role: 'assistant', content: 'Hello from delegated run 2' }),
       )
@@ -1154,11 +1160,14 @@ describe('issue-agent capability', () => {
         ),
       )
       expect(messagesRes.status).toBe(200)
-      const messages = (await messagesRes.json()) as Array<{
-        role: string
-        content: string
-        status: string
-      }>
+      const { rows: messages } = (await messagesRes.json()) as {
+        revision: number
+        rows: Array<{
+          role: string
+          content: string
+          status: string
+        }>
+      }
       expect(messages).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

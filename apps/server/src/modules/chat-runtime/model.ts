@@ -395,7 +395,10 @@ export const ChatRuntimeModel = {
     terminated: t.Boolean(),
   }),
 
-  chatMessages: t.Array(chatMessageSnapshotSchema),
+  chatMessages: t.Object({
+    revision: t.Number({ minimum: 0 }),
+    rows: t.Array(chatMessageSnapshotSchema),
+  }, { additionalProperties: false }),
 
   queueItem: queueItemSchema,
 

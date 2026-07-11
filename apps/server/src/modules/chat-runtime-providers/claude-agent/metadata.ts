@@ -36,7 +36,9 @@ export const CLAUDE_AGENT_RUNTIME_METADATA = {
 } satisfies ChatRuntimeMetadata
 
 export const CLAUDE_AGENT_RUNTIME_CAPABILITIES = {
-  steer: 'native',
+  // Claude Agent SDK has sequential native message queue + interrupt, not Codex-style same-turn steer.
+  // Follow-ups while a query is alive go through native enqueue (push, no interrupt); otherwise Cradle durable queue.
+  steer: 'queue-fallback',
   supportsShellExecution: false,
   supportsLastTurnRollback: false,
   supportsRuntimeSettings: true,

@@ -2,6 +2,10 @@
 
 import * as z from 'zod';
 
+export const zPostAuthWebsocketTicketBody = z.object({
+    audience: z.string().min(1).max(256)
+});
+
 export const zPutPreferencesAppBody = z.object({
     featureFlags: z.object({
         multiWorkspacePoc: z.boolean().default(false),
@@ -840,11 +844,6 @@ export const zPostSecretsBody = z.object({
     kind: z.string().min(1),
     label: z.string().min(1),
     secret: z.string().min(1)
-});
-
-export const zPostSecretsRotateBody = z.object({
-    from: z.string().min(1),
-    to: z.string().min(1)
 });
 
 export const zDeleteSecretsByIdPath = z.object({

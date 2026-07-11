@@ -81,7 +81,7 @@ async function waitForLatestAssistantStatus(
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const response = await app.handle(new Request(`http://localhost/chat/sessions/${encodeURIComponent(sessionId)}/messages`))
     if (response.status === 200) {
-      const groups = await response.json() as ChatMessageSnapshot[]
+      const { rows: groups } = await response.json() as { revision: number, rows: ChatMessageSnapshot[] }
       const assistants = groups.filter(group => group.role === 'assistant')
       const latestAssistant = assistants.at(-1)
       if (assistants.length === expectedAssistantCount && latestAssistant?.status === expectedStatus) {

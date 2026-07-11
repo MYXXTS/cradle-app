@@ -20,7 +20,7 @@ import {
   LEGACY_ASSISTANT_MESSAGE_SNAPSHOTTED_EVENT_TYPE,
 } from '../es/events'
 import { finalizeInterruptedRun } from '../es/recovery'
-import { getMessageGroups } from '../history-api'
+import { getMessageGroups, getMessageSnapshot } from '../history-api'
 import {
   deleteRunStreamCheckpoint,
   readRunStreamCheckpoint,
@@ -233,6 +233,12 @@ describe('run stream checkpoints', () => {
       expect(
         db().select().from(messages).where(eq(messages.id, messageId)).get()?.content,
       ).toBe('')
+      await expect(getMessageSnapshot(sessionId)).resolves.toMatchObject({
+        revision: 1,
+        rows: expect.arrayContaining([
+          expect.objectContaining({ messageId, content: 'overlay partial' }),
+        ]),
+      })
     })
   })
 

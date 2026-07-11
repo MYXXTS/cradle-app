@@ -427,8 +427,10 @@ export const runtimeStatusSchema = t.Union([
   t.Literal('pending'),
   t.Literal('streaming'),
   t.Literal('waitingForUserInput'),
+  t.Literal('waitingForToolApproval'),
   t.Literal('cancelling'),
 ])
+
 export const sessionTailEventTypeSchema = t.Union([
   t.Literal('UserMessageAppended'),
   t.Literal('MessageImported'),

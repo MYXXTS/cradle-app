@@ -16,7 +16,7 @@ import type {
   RuntimeToolApprovalRequest,
   RuntimeUserInputRequest,
 } from '../../chat-runtime/runtime-provider-types'
-import { ClaudeAgentProvider } from './provider'
+import { ClaudeAgentProvider, setClaudeTurnFirstMessageTimeoutForTests } from './provider'
 
 const sdkMocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -414,6 +414,7 @@ function createBangResultMessage(input: {
 
 describe.sequential('claudeAgentProvider MCP integration', () => {
   afterEach(() => {
+    setClaudeTurnFirstMessageTimeoutForTests(null)
     removeHostMcpServer('browser-use')
     removeHostMcpServer('nowledge-mem')
     sdkMocks.query.mockReset()
@@ -3371,7 +3372,7 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     ].join('\n'))
   })
 
-  it('interrupts an active streaming-input query and appends steer text', async () => {
+  it('enqueues native follow-ups into the live SDK input stream without interrupt', async () => {
     const activeQuery = createPendingQuery()
     sdkMocks.query.mockReturnValue(activeQuery)
 
@@ -3393,17 +3394,156 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     })
 
     await expect(readPromptText(0)).resolves.toBe('Initial task')
-    await provider.steerTurn({
-      runtimeSession,
-      profile: createProfile(),
-      message: createUserMessage('Use React Query instead'),
+
+    const live = liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)
+    expect(live?.enqueueNativeFollowUp).toBeTypeOf('function')
+    await live!.enqueueNativeFollowUp!({
+      queueItemId: 'queue-native-1',
+      message: createUserMessage('Follow up while busy'),
     })
 
-    expect(activeQuery.interrupt).toHaveBeenCalledOnce()
-    await expect(readPromptText(0)).resolves.toBe('Use React Query instead')
+    expect(activeQuery.interrupt).not.toHaveBeenCalled()
+    await expect(readPromptText(0)).resolves.toBe('Follow up while busy')
 
     activeQuery.close()
     await pendingNext
+  })
+
+  it('adopts a native follow-up on the next streamTurn without double-push', async () => {
+    const activeQuery = createControllableQuery()
+    sdkMocks.query.mockReturnValue(activeQuery)
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+    })
+    const runtimeSession = createResumedRuntimeSession({
+      providerSessionId: 'claude-session-native-adopt',
+    })
+
+    const firstStream = provider.streamTurn({
+      runId: 'run-claude-agent-native-1',
+      runtimeSession,
+      profile: createProfile(),
+      message: createUserMessage('First turn'),
+      workspaceId: 'workspace-1',
+    })
+    const firstPending = firstStream.next()
+    void firstPending.catch(() => undefined)
+
+    await vi.waitFor(() => {
+      expect(sdkMocks.query).toHaveBeenCalledOnce()
+    })
+    await expect(readPromptText(0)).resolves.toBe('First turn')
+
+    const live = liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)
+    await live!.enqueueNativeFollowUp!({
+      queueItemId: 'queue-adopt-1',
+      message: createUserMessage('Queued next'),
+    })
+    await expect(readPromptText(0)).resolves.toBe('Queued next')
+
+    activeQuery.push({
+      type: 'assistant',
+      session_id: 'claude-session-native-adopt',
+      message: { content: [{ type: 'text', text: 'done first' }] },
+    })
+    activeQuery.push({
+      type: 'result',
+      session_id: 'claude-session-native-adopt',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    for await (const _chunk of firstStream) {
+      // drain first turn
+    }
+
+    // SDK already started the follow-up before Cradle adopts.
+    activeQuery.push({
+      type: 'assistant',
+      session_id: 'claude-session-native-adopt',
+      message: { content: [{ type: 'text', text: 'from queue' }] },
+    })
+    activeQuery.push({
+      type: 'result',
+      session_id: 'claude-session-native-adopt',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+
+    const secondChunks: UIMessageChunk[] = []
+    for await (const chunk of provider.streamTurn({
+      runId: 'run-claude-agent-native-2',
+      runtimeSession,
+      profile: createProfile(),
+      message: createUserMessage('Queued next'),
+      queueItemId: 'queue-adopt-1',
+      workspaceId: 'workspace-1',
+    })) {
+      secondChunks.push(chunk)
+    }
+
+    expect(secondChunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'text-delta', delta: 'from queue' }),
+    ]))
+    expect(live!.claimNativeFollowUp!('queue-adopt-1')).toBe(false)
+
+    activeQuery.close()
+    await provider.dispose()
+  })
+
+  it('fails native enqueue when the live query pump is dead', async () => {
+    const activeQuery = createPendingQuery()
+    sdkMocks.query.mockReturnValue(activeQuery)
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+    })
+    const runtimeSession = createRuntimeSession()
+    const stream = provider.streamTurn({
+      runId: 'run-claude-agent-dead-pump',
+      runtimeSession,
+      profile: createProfile(),
+      message: createUserMessage('Initial task'),
+      workspaceId: 'workspace-1',
+    })
+    const pendingNext = stream.next()
+    void pendingNext.catch(() => undefined)
+
+    await vi.waitFor(() => {
+      expect(sdkMocks.query).toHaveBeenCalledOnce()
+    })
+
+    const live = liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)
+    activeQuery.close()
+    await vi.waitFor(() => {
+      expect(liveRuntimeSessionRegistry.read(runtimeSession.chatSessionId)).toBeUndefined()
+    })
+
+    await expect(live!.enqueueNativeFollowUp!({
+      queueItemId: 'queue-dead-1',
+      message: createUserMessage('Should fail'),
+    })).rejects.toThrow(/no live query/i)
+
+    await provider.dispose()
+  })
+
+  it('fails the turn when the SDK never accepts the appended user message', async () => {
+    setClaudeTurnFirstMessageTimeoutForTests(30)
+    const activeQuery = createPendingQuery()
+    sdkMocks.query.mockReturnValue(activeQuery)
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+    })
+    const runtimeSession = createRuntimeSession()
+
+    await expect(provider.streamTurn({
+      runId: 'run-claude-agent-zombie',
+      runtimeSession,
+      profile: createProfile(),
+      message: createUserMessage('Ghost prompt'),
+      workspaceId: 'workspace-1',
+    }).next()).rejects.toThrow(/did not accept the user message/i)
+
+    await provider.dispose()
   })
 
   it('passes configured Claude Agent SDK model aliases through the query environment', async () => {
@@ -3618,152 +3758,6 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         },
       },
     ])
-  })
-
-  it('interrupts an active query and appends steered image content blocks', async () => {
-    const activeQuery = createPendingQuery()
-    sdkMocks.query.mockReturnValue(activeQuery)
-
-    const provider = new ClaudeAgentProvider({
-      readSecret: () => 'sk-ant-test',
-    })
-    const runtimeSession = createRuntimeSession()
-    const stream = provider.streamTurn({
-      runId: 'run-claude-agent-test',
-      runtimeSession,
-      profile: createProfile(),
-      message: createUserMessage('Initial task'),
-      workspaceId: 'workspace-1',
-    })
-    const pendingNext = stream.next()
-
-    await vi.waitFor(() => {
-      expect(sdkMocks.query).toHaveBeenCalledOnce()
-    })
-
-    await expect(readPromptText(0)).resolves.toBe('Initial task')
-    await provider.steerTurn({
-      runtimeSession,
-      profile: createProfile(),
-      message: {
-        id: 'steer-with-image',
-        role: 'user',
-        parts: [
-          { type: 'text', text: 'Use this screenshot instead' },
-          {
-            type: 'file',
-            mediaType: 'image/jpeg',
-            filename: 'screen.jpg',
-            url: 'data:image/jpeg;base64,screen-data',
-          },
-        ],
-      },
-    })
-
-    expect(activeQuery.interrupt).toHaveBeenCalledOnce()
-    await expect(readPromptContent(0)).resolves.toEqual([
-      { type: 'text', text: 'Use this screenshot instead' },
-      {
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: 'image/jpeg',
-          data: 'screen-data',
-        },
-      },
-    ])
-
-    activeQuery.close()
-    await pendingNext
-  })
-
-  /**
-   * Repro: live steer interrupts the active Claude query. The SDK then emits a parent-level
-   * `result` (end of interrupted generation). Cradle clears `currentTurn` on that result, so the
-   * foreground run ends while the long-lived query stays open. Post-steer assistant output is
-   * then routed to synthetic turns — session looks idle, but Claude is still producing.
-   */
-  it('repro: steer interrupt result ends the foreground run and leaves later turns fragile', async () => {
-    const activeQuery = createControllableQuery()
-    sdkMocks.query.mockReturnValue(activeQuery)
-
-    const provider = new ClaudeAgentProvider({
-      readSecret: () => 'sk-ant-test',
-    })
-    const runtimeSession = createRuntimeSession()
-    const syntheticEvents: ProviderSyntheticTurnEvent[] = []
-    const firstChunks: UIMessageChunk[] = []
-
-    const firstStream = provider.streamTurn({
-      runId: 'run-claude-agent-steer-fracture-1',
-      runtimeSession,
-      profile: createProfile(),
-      message: createUserMessage('Initial long task'),
-      workspaceId: 'workspace-1',
-      onProviderSyntheticTurnEvent: (event) => {
-        syntheticEvents.push(event)
-      },
-    })
-    const firstPending = firstStream.next()
-    void firstPending.catch(() => undefined)
-
-    await vi.waitFor(() => {
-      expect(sdkMocks.query).toHaveBeenCalledOnce()
-    })
-    await expect(readPromptText(0)).resolves.toBe('Initial long task')
-
-    activeQuery.push({
-      type: 'assistant',
-      session_id: 'claude-session-steer-fracture',
-      message: { content: [{ type: 'text', text: 'Working on it' }] },
-    })
-    await expect(firstPending).resolves.toEqual({
-      done: false,
-      value: expect.objectContaining({ type: 'text-start' }),
-    })
-    for await (const chunk of firstStream) {
-      firstChunks.push(chunk)
-      if (chunk.type === 'text-delta') {
-        break
-      }
-    }
-    expect(firstChunks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'text-delta', delta: 'Working on it' }),
-    ]))
-
-    await provider.steerTurn({
-      runtimeSession,
-      profile: createProfile(),
-      message: createUserMessage('Stop and switch approach'),
-    })
-    expect(activeQuery.interrupt).toHaveBeenCalledOnce()
-    await expect(readPromptText(0)).resolves.toBe('Stop and switch approach')
-
-    // SDK acknowledges the interrupted generation — this closes the foreground turn.
-    activeQuery.push({
-      type: 'result',
-      session_id: 'claude-session-steer-fracture',
-      usage: { input_tokens: 1, output_tokens: 1 },
-    })
-    for await (const chunk of firstStream) {
-      firstChunks.push(chunk)
-    }
-
-    // Foreground run is done, but the query is still alive — post-steer work becomes synthetic.
-    activeQuery.push({
-      type: 'assistant',
-      session_id: 'claude-session-steer-fracture',
-      message: { content: [{ type: 'text', text: 'Continuing after steer' }] },
-    })
-    await vi.waitFor(() => {
-      expect(syntheticEvents.flatMap(event => event.chunks)).toEqual(expect.arrayContaining([
-        expect.objectContaining({ type: 'text-delta', delta: 'Continuing after steer' }),
-      ]))
-    })
-    expect(firstChunks.filter(chunk => chunk.type === 'text-delta' && 'delta' in chunk && chunk.delta === 'Continuing after steer')).toEqual([])
-
-    activeQuery.close()
-    await provider.dispose()
   })
 
   it('rejects non-image file attachments at the provider boundary', async () => {

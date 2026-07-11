@@ -92,6 +92,11 @@ interface ChatMessageRow {
   }
 }
 
+interface ChatMessageSnapshotResponse {
+  revision: number
+  rows: ChatMessageRow[]
+}
+
 interface ChatQueueItemView {
   id: string
   sessionId: string
@@ -215,7 +220,7 @@ async function waitForMessageStatus(
       new Request(`http://localhost/chat/sessions/${encodeURIComponent(sessionId)}/messages`),
     )
     if (response.status === 200) {
-      const groups = (await response.json()) as ChatMessageRow[]
+      const { rows: groups } = (await response.json()) as ChatMessageSnapshotResponse
       latestGroups = groups
       const assistant = groups.find(group => group.role === 'assistant')
       if (assistant?.status === expectedStatus) {
@@ -235,7 +240,7 @@ async function getChatMessages(app: ElysiaApp, sessionId: string): Promise<ChatM
     new Request(`http://localhost/chat/sessions/${encodeURIComponent(sessionId)}/messages`),
   )
   expect(response.status).toBe(200)
-  return (await response.json()) as ChatMessageRow[]
+  return ((await response.json()) as ChatMessageSnapshotResponse).rows
 }
 
 async function waitForCondition<T>(assertion: () => T | Promise<T>, label: string): Promise<T> {
@@ -4153,7 +4158,7 @@ describe('chat runtime capability', () => {
         new Request('http://localhost/chat/sessions/session-chat-provider-deleted/messages'),
       )
       expect(messagesRes.status).toBe(200)
-      const messageRows = (await messagesRes.json()) as ChatMessageRow[]
+      const { rows: messageRows } = (await messagesRes.json()) as ChatMessageSnapshotResponse
       expect(messageRows).toEqual([
         expect.objectContaining({
           messageId: userMessage.id,
@@ -6495,7 +6500,7 @@ describe('chat runtime capability', () => {
         new Request('http://localhost/chat/sessions/session-chat-message-metadata/messages'),
       )
       expect(response.status).toBe(200)
-      const rows = (await response.json()) as ChatMessageRow[]
+      const { rows } = (await response.json()) as ChatMessageSnapshotResponse
       expect(rows).toHaveLength(1)
       expect(rows[0].message.metadata).toEqual({
         cradle: {

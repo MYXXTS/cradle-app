@@ -36,7 +36,6 @@ import type {
   RuntimeSession,
   RuntimeUiSlotState,
   StartChatSessionInput,
-  SteerTurnInput,
   StreamTurnInput,
   UpdateRuntimeSettingsInput,
 } from '../../chat-runtime/runtime-provider-types'
@@ -112,6 +111,12 @@ import { ClaudeCodeToolName } from './tools/identity'
 import { createClaudeCodeToolInputPayload, createClaudeCodeToolResultPayload } from './tools/mapper'
 import type { ClaudeAgentProviderDeps, ClaudeAgentSessionInfo, ClaudeTitleGenerationThinkingEffort } from './types'
 
+type ActiveClaudeNativeFollowUp = {
+  queueItemId: string
+  messageUuid: string
+  userContent: ReturnType<typeof projectClaudeAgentInput>
+}
+
 type ActiveClaudeQuery = {
   query: Query
   abortController: AbortController
@@ -133,7 +138,12 @@ type ActiveClaudeQuery = {
   providerThreadTurns: Map<string, ActiveClaudeProviderThreadTurn>
   completedProviderThreadParentOutputIds: Set<string>
   onProviderSyntheticTurnEvent: StreamTurnInput['onProviderSyntheticTurnEvent'] | null
+  /** Follow-ups already pushed into the SDK input stream, waiting for a Cradle run to adopt. */
+  nativeFollowUps: Map<string, ActiveClaudeNativeFollowUp>
+  /** SDK messages received after a turn `result` while a native follow-up is waiting to be adopted. */
+  preAdoptBuffer: SDKMessage[]
   closed: boolean
+  pumpRunning: boolean
   stderrSink: ClaudeStderrSink
   allowDangerouslySkipPermissions: boolean
 }
@@ -148,6 +158,9 @@ type ActiveClaudeTurn = {
   shouldGenerateTitle: boolean
   outputTextCollector: ReturnType<typeof createBoundedTextCollector>
   endGeneration: (error?: unknown) => void
+  /** True until the pump delivers the first SDK message for this Cradle turn after append. */
+  awaitingFirstSdkMessage: boolean
+  firstSdkMessageWatchdog: ReturnType<typeof setTimeout> | null
 }
 
 type ActiveClaudeSyntheticTurn = {
@@ -169,6 +182,15 @@ type ContextUsageRuntimeInput = Pick<GetContextUsageInput, 'runtimeSession'>
 const COMPACT_SLOT_CONTEXT_USAGE_TTL_MS = 15_000
 const DEFAULT_PROVIDER_THREAD_LIMIT = 50
 const CLAUDE_SUBAGENT_SOURCE_KIND = 'subAgent'
+/** Fail a turn that appended to the SDK but never received any session message (zombie query). */
+export const CLAUDE_TURN_FIRST_MESSAGE_TIMEOUT_MS = 60_000
+
+let claudeTurnFirstMessageTimeoutMs = CLAUDE_TURN_FIRST_MESSAGE_TIMEOUT_MS
+
+/** Test-only override for the first-SDK-message watchdog. */
+export function setClaudeTurnFirstMessageTimeoutForTests(timeoutMs: number | null): void {
+  claudeTurnFirstMessageTimeoutMs = timeoutMs ?? CLAUDE_TURN_FIRST_MESSAGE_TIMEOUT_MS
+}
 
 type ClaudeTranscriptContentBlock = {
   type: string
@@ -462,7 +484,14 @@ export class ClaudeAgentProvider implements ChatRuntime {
     )
     const sessionId = input.runtimeSession.chatSessionId
     let activeEntry = this.activeQueries.get(sessionId)
-    if (activeEntry && (activeEntry.closed || activeEntry.providerTargetId !== profile.providerTargetId)) {
+    if (
+      activeEntry
+      && (
+        activeEntry.closed
+        || !activeEntry.pumpRunning
+        || activeEntry.providerTargetId !== profile.providerTargetId
+      )
+    ) {
       this.closeSessionQuery(sessionId, activeEntry)
       activeEntry = undefined
     }
@@ -523,7 +552,10 @@ export class ClaudeAgentProvider implements ChatRuntime {
         providerThreadTurns: new Map(),
         completedProviderThreadParentOutputIds: new Set(),
         onProviderSyntheticTurnEvent: null,
+        nativeFollowUps: new Map(),
+        preAdoptBuffer: [],
         closed: false,
+        pumpRunning: true,
         stderrSink,
         allowDangerouslySkipPermissions: queryOptions.allowDangerouslySkipPermissions ?? true,
       }
@@ -540,6 +572,15 @@ export class ClaudeAgentProvider implements ChatRuntime {
             profile,
             settings,
           })
+        },
+        enqueueNativeFollowUp: async ({ queueItemId, message }) => {
+          this.enqueueNativeFollowUp(sessionId, queueItemId, message)
+        },
+        cancelNativeFollowUp: async (queueItemId) => {
+          return this.cancelNativeFollowUp(sessionId, queueItemId)
+        },
+        claimNativeFollowUp: (queueItemId) => {
+          return this.claimNativeFollowUp(sessionId, queueItemId)
         },
       })
       void this.captureClaudeAgentAccountSnapshot(input.runtimeSession, activeQuery)
@@ -624,6 +665,8 @@ export class ClaudeAgentProvider implements ChatRuntime {
       shouldGenerateTitle,
       outputTextCollector,
       endGeneration,
+      awaitingFirstSdkMessage: true,
+      firstSdkMessageWatchdog: null,
     }
     activeEntry.currentTurn = turn
 
@@ -643,7 +686,40 @@ export class ClaudeAgentProvider implements ChatRuntime {
           reportSessionTitle: input.reportSessionTitle,
         })
       }
-      activeEntry.inputStream.push(userContent)
+
+      const queueItemId = input.queueItemId?.trim() || null
+      const adoptNative = queueItemId ? this.claimNativeFollowUp(sessionId, queueItemId) : false
+      if (adoptNative) {
+        turn.awaitingFirstSdkMessage = activeEntry.preAdoptBuffer.length === 0
+        const buffered = activeEntry.preAdoptBuffer.splice(0, activeEntry.preAdoptBuffer.length)
+        for (const bufferedMessage of buffered) {
+          await this.handleClaudeSessionMessage(activeEntry, bufferedMessage)
+        }
+      }
+      else {
+        activeEntry.inputStream.push(userContent, { priority: 'next' })
+      }
+
+      if (turn.awaitingFirstSdkMessage) {
+        const timeoutMs = claudeTurnFirstMessageTimeoutMs
+        turn.firstSdkMessageWatchdog = setTimeout(() => {
+          if (activeEntry.currentTurn !== turn || !turn.awaitingFirstSdkMessage || activeEntry.closed) {
+            return
+          }
+          const failure = new ProviderRuntimeError(
+            ProviderErrors.requestFailed(
+              this.runtimeKind,
+              'streamTurn',
+              `Claude Agent did not accept the user message within ${timeoutMs}ms (query may be stuck)`,
+            ),
+          )
+          turn.awaitingFirstSdkMessage = false
+          this.clearClaudeTurnWatchdog(turn)
+          turn.endGeneration(failure)
+          turn.queue.fail(failure)
+          this.closeSessionQuery(sessionId, activeEntry)
+        }, timeoutMs)
+      }
 
       while (true) {
         const chunk = await turn.queue.next()
@@ -658,6 +734,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     catch (error) {
       endGeneration(error)
       if (activeEntry.currentTurn === turn) {
+        this.clearClaudeTurnWatchdog(turn)
         activeEntry.currentTurn = null
       }
       this.closeSessionQuery(sessionId, activeEntry)
@@ -666,6 +743,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     finally {
       endGeneration()
       if (activeEntry.currentTurn === turn) {
+        this.clearClaudeTurnWatchdog(turn)
         this.completeClaudeProviderThreadTurns(activeEntry, turn)
         activeEntry.currentTurn = null
         turn.queue.close()
@@ -674,6 +752,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
   }
 
   private async pumpClaudeSessionQuery(sessionId: string, entry: ActiveClaudeQuery): Promise<void> {
+    entry.pumpRunning = true
     try {
       for await (const message of entry.query) {
         if (entry.abortController.signal.aborted || entry.closed) {
@@ -685,6 +764,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     catch (error) {
       const turn = entry.currentTurn
       if (turn) {
+        this.clearClaudeTurnWatchdog(turn)
         const enriched = entry.stderrSink.enrichError(error)
         const failure = enriched instanceof Error ? enriched : new Error(String(enriched))
         turn.endGeneration(failure)
@@ -692,8 +772,10 @@ export class ClaudeAgentProvider implements ChatRuntime {
       }
     }
     finally {
+      entry.pumpRunning = false
       const turn = entry.currentTurn
       if (turn) {
+        this.clearClaudeTurnWatchdog(turn)
         this.completeClaudeProviderThreadTurns(entry, turn)
         turn.endGeneration()
         turn.queue.close()
@@ -701,6 +783,8 @@ export class ClaudeAgentProvider implements ChatRuntime {
       }
       await this.completeClaudeSyntheticTurn(entry)
       entry.closed = true
+      entry.nativeFollowUps.clear()
+      entry.preAdoptBuffer = []
       entry.inputStream.close()
       this.releaseQuery(sessionId, entry)
     }
@@ -708,6 +792,16 @@ export class ClaudeAgentProvider implements ChatRuntime {
 
   private async handleClaudeSessionMessage(entry: ActiveClaudeQuery, message: SDKMessage): Promise<void> {
     const turn = entry.currentTurn
+    if (!turn && entry.nativeFollowUps.size > 0) {
+      entry.preAdoptBuffer.push(message)
+      return
+    }
+
+    if (turn?.awaitingFirstSdkMessage) {
+      turn.awaitingFirstSdkMessage = false
+      this.clearClaudeTurnWatchdog(turn)
+    }
+
     if (turn && isChatStreamTraceEnabled()) {
       recordChatStreamTrace({
         chatSessionId: entry.runtimeSession.chatSessionId,
@@ -792,6 +886,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
 
     if (message.type === 'result' && !readClaudeMessageParentToolUseId(message)) {
       if (turn) {
+        this.clearClaudeTurnWatchdog(turn)
         this.completeClaudeProviderThreadTurns(entry, turn)
         await this.refreshCompactState({ runtimeSession: entry.runtimeSession }).catch(() => undefined)
         turn.endGeneration()
@@ -1105,9 +1200,13 @@ export class ClaudeAgentProvider implements ChatRuntime {
       return
     }
     entry.closed = true
+    entry.pumpRunning = false
     if (entry.currentTurn) {
+      this.clearClaudeTurnWatchdog(entry.currentTurn)
       this.completeClaudeProviderThreadTurns(entry, entry.currentTurn)
     }
+    entry.nativeFollowUps.clear()
+    entry.preAdoptBuffer = []
     entry.abortController.abort()
     entry.inputStream.close()
     closeClaudeQuery(entry.query)
@@ -1116,16 +1215,74 @@ export class ClaudeAgentProvider implements ChatRuntime {
     this.releaseQuery(sessionId, entry)
   }
 
-  async steerTurn(input: SteerTurnInput): Promise<void> {
-    const sessionId = input.runtimeSession.chatSessionId
+  private clearClaudeTurnWatchdog(turn: ActiveClaudeTurn): void {
+    if (turn.firstSdkMessageWatchdog) {
+      clearTimeout(turn.firstSdkMessageWatchdog)
+      turn.firstSdkMessageWatchdog = null
+    }
+  }
+
+  private enqueueNativeFollowUp(sessionId: string, queueItemId: string, message: UIMessage): void {
+    const entry = this.activeQueries.get(sessionId)
+    if (!entry || entry.closed || !entry.pumpRunning) {
+      throw new ProviderRuntimeError(
+        ProviderErrors.requestFailed(
+          this.runtimeKind,
+          'enqueueNativeFollowUp',
+          `Claude Agent session has no live query to enqueue into: ${sessionId}`,
+        ),
+      )
+    }
+    if (entry.nativeFollowUps.has(queueItemId)) {
+      return
+    }
+    const userContent = projectClaudeAgentInput(message, 'Claude Agent native queue')
+    const messageUuid = entry.inputStream.push(userContent, {
+      priority: 'next',
+      uuid: queueItemId,
+    })
+    entry.nativeFollowUps.set(queueItemId, {
+      queueItemId,
+      messageUuid,
+      userContent,
+    })
+  }
+
+  private async cancelNativeFollowUp(sessionId: string, queueItemId: string): Promise<boolean> {
     const entry = this.activeQueries.get(sessionId)
     if (!entry) {
-      throw new ProviderRuntimeError(ProviderErrors.sessionNotFound(this.runtimeKind, sessionId))
+      return false
     }
+    const pending = entry.nativeFollowUps.get(queueItemId)
+    if (!pending) {
+      return false
+    }
+    entry.nativeFollowUps.delete(queueItemId)
+    const cancelAsyncMessage = (entry.query as {
+      cancelAsyncMessage?: (messageUuid: string) => Promise<unknown>
+    }).cancelAsyncMessage
+    if (typeof cancelAsyncMessage === 'function') {
+      try {
+        await cancelAsyncMessage.call(entry.query, pending.messageUuid)
+      }
+      catch (error) {
+        this.deps.logger?.warn?.('Claude Agent failed to cancel native queued follow-up', {
+          error,
+          sessionId,
+          queueItemId,
+          messageUuid: pending.messageUuid,
+        })
+      }
+    }
+    return true
+  }
 
-    const userContent = projectClaudeAgentInput(input.message, 'Claude Agent steer')
-    await entry.query.interrupt()
-    entry.inputStream.push(userContent)
+  private claimNativeFollowUp(sessionId: string, queueItemId: string): boolean {
+    const entry = this.activeQueries.get(sessionId)
+    if (!entry) {
+      return false
+    }
+    return entry.nativeFollowUps.delete(queueItemId)
   }
 
   async getContextUsage(input: GetContextUsageInput): Promise<RuntimeContextUsage | null> {

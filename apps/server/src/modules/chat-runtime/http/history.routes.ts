@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia'
 
 import { AppError } from '../../../errors/app-error'
-import { getMessageGroups, listCompletedRuns } from '../history-api'
+import { getMessageSnapshot, listCompletedRuns } from '../history-api'
 import { ChatRuntimeModel } from '../model'
 import { getRunSnapshot, getRunSnapshots } from '../run-snapshot'
 import { listChatSessionTraceDtos, readChatRunTraceDto } from '../stream-trace'
@@ -13,7 +13,7 @@ export const chatRuntimeHistoryRoutes = new Elysia({
   .get(
     '/sessions/:sessionId/messages',
     async ({ params }): Promise<Response> => {
-      return Response.json(await getMessageGroups(params.sessionId))
+      return Response.json(await getMessageSnapshot(params.sessionId))
     },
     {
       detail: {

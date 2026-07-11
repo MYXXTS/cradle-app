@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 
 import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
+import { readCurrentSessionEventVersion } from './es/event-store'
 import { compactStoredMessageSnapshotForRead } from './message-snapshot-compaction'
 import type { ChatMessageStatus } from './run/stream-chunks'
 import { assertStoredSession } from './runtime-session-context'
@@ -26,6 +27,11 @@ export interface ChatMessageSnapshotRow {
   parentToolCallId: string | null
   taskId: string | null
   depth: number
+}
+
+export interface ChatMessageSnapshot {
+  revision: number
+  rows: ChatMessageSnapshotRow[]
 }
 
 export interface CompletedChatRunDto {
@@ -151,6 +157,14 @@ export async function getMessageGroups(sessionId: string): Promise<ChatMessageSn
       depth: row.depth,
     }
   })
+}
+
+export async function getMessageSnapshot(sessionId: string): Promise<ChatMessageSnapshot> {
+  const rows = await getMessageGroups(sessionId)
+  return {
+    revision: readCurrentSessionEventVersion(db(), sessionId),
+    rows,
+  }
 }
 
 function parseStoredMessageSnapshot(

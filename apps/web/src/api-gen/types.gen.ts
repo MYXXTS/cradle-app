@@ -4,6 +4,45 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type PostAuthWebsocketTicketData = {
+    body: {
+        audience: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/auth/websocket-ticket';
+};
+
+export type PostAuthWebsocketTicketResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ticket: string;
+        expiresAt: number;
+    };
+};
+
+export type PostAuthWebsocketTicketResponse = PostAuthWebsocketTicketResponses[keyof PostAuthWebsocketTicketResponses];
+
+export type PostAuthBrowserSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/browser-session';
+};
+
+export type PostAuthBrowserSessionResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        ok: boolean;
+    };
+};
+
+export type PostAuthBrowserSessionResponse = PostAuthBrowserSessionResponses[keyof PostAuthBrowserSessionResponses];
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -3720,29 +3759,6 @@ export type PostSecretsResponses = {
 };
 
 export type PostSecretsResponse = PostSecretsResponses[keyof PostSecretsResponses];
-
-export type PostSecretsRotateData = {
-    body: {
-        from: string;
-        to: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/secrets/rotate';
-};
-
-export type PostSecretsRotateResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        rotated: number;
-        fromVersion: number;
-        toVersion: number;
-    };
-};
-
-export type PostSecretsRotateResponse = PostSecretsRotateResponses[keyof PostSecretsRotateResponses];
 
 export type DeleteSecretsByIdData = {
     body?: never;
@@ -17206,7 +17222,7 @@ export type GetChatSessionsBySessionIdRuntimeStatusResponses = {
      */
     200: {
         sessionId: string;
-        status: 'idle' | 'pending' | 'streaming' | 'waitingForUserInput' | 'cancelling';
+        status: 'idle' | 'pending' | 'streaming' | 'waitingForUserInput' | 'waitingForToolApproval' | 'cancelling';
         runtimeKind: string;
         providerTargetId: string | null;
         providerSessionId: string | null;
@@ -18490,27 +18506,30 @@ export type GetChatSessionsBySessionIdMessagesResponses = {
     /**
      * Response for status 200
      */
-    200: Array<{
-        messageId: string;
-        role: 'user' | 'assistant';
-        status: 'streaming' | 'complete' | 'aborted' | 'failed';
-        errorText?: string;
-        content: string;
-        message: {
-            id: string;
-            role: 'system' | 'user' | 'assistant';
-            parts: Array<{
-                type: string;
+    200: {
+        revision: number;
+        rows: Array<{
+            messageId: string;
+            role: 'user' | 'assistant';
+            status: 'streaming' | 'complete' | 'aborted' | 'failed';
+            errorText?: string;
+            content: string;
+            message: {
+                id: string;
+                role: 'system' | 'user' | 'assistant';
+                parts: Array<{
+                    type: string;
+                    [key: string]: unknown;
+                }>;
+                metadata?: unknown;
                 [key: string]: unknown;
-            }>;
-            metadata?: unknown;
-            [key: string]: unknown;
-        };
-        parentMessageId: string | null;
-        parentToolCallId: string | null;
-        taskId: string | null;
-        depth: number;
-    }>;
+            };
+            parentMessageId: string | null;
+            parentToolCallId: string | null;
+            taskId: string | null;
+            depth: number;
+        }>;
+    };
 };
 
 export type GetChatSessionsBySessionIdMessagesResponse = GetChatSessionsBySessionIdMessagesResponses[keyof GetChatSessionsBySessionIdMessagesResponses];

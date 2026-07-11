@@ -18,11 +18,18 @@ interface PendingToolApprovalState {
 
 const pendingToolApprovalById = new Map<string, PendingToolApprovalState>()
 
-export function hasPendingRuntimeToolApproval(sessionId: string): boolean {
+export function hasPendingRuntimeToolApproval(
+  sessionId: string,
+  options: { runId?: string } = {},
+): boolean {
   for (const pending of pendingToolApprovalById.values()) {
-    if (pending.request.sessionId === sessionId) {
-      return true
+    if (pending.request.sessionId !== sessionId) {
+      continue
     }
+    if (options.runId && pending.request.runId !== options.runId) {
+      continue
+    }
+    return true
   }
   return false
 }

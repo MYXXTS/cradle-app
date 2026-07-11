@@ -142,7 +142,7 @@ async function waitForMessageStatus(app: ElysiaApp, sessionId: string, expectedS
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const response = await app.handle(new Request(`http://localhost/chat/sessions/${encodeURIComponent(sessionId)}/messages`))
     if (response.status === 200) {
-      const groups = await response.json() as ChatMessageSnapshot[]
+      const { rows: groups } = await response.json() as { revision: number, rows: ChatMessageSnapshot[] }
       const assistant = groups.find(group => group.role === 'assistant')
       if (assistant?.status === expectedStatus) {
         return groups
