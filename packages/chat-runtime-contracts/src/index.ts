@@ -1329,7 +1329,9 @@ export interface CancelTurnInput {
   profile: RuntimeProviderTargetProfile | null
 }
 
-export interface RollbackLastTurnInput extends GetCapabilitiesInput {}
+export interface RollbackLastTurnInput extends GetCapabilitiesInput {
+  numTurns: number
+}
 
 export interface RollbackLastTurnResult {
   runtimeKind: RuntimeKind
