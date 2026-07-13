@@ -6819,11 +6819,21 @@ export type GetSessionsByIdEnvironmentResponses = {
                 runtimeKind?: string;
                 modelId?: string;
                 thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+                sessionPolicy?: 'new' | 'heartbeat';
+                isolationPolicy?: 'workspace' | 'worktree_per_run';
+                completionPolicy?: {
+                    stopWhen?: string;
+                    noFindingsBehavior?: 'archive' | 'triage';
+                };
             };
             chatSessionId: string | null;
             backendRunId: string | null;
             artifactCount: number;
             errorText: string | null;
+            resultKind: 'findings' | 'no_findings' | 'stopped' | 'error' | null;
+            resultSummary: string | null;
+            triageStatus: 'unread' | 'read' | 'resolved' | 'archived' | null;
+            triagedAt: number | null;
             scheduledFor: number | null;
             claimedAt: number | null;
             startedAt: number | null;
