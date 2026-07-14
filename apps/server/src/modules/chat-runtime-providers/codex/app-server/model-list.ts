@@ -73,6 +73,7 @@ function isModelDescriptorReasoningEffort(effort: string): effort is ReasoningEf
     || effort === 'high'
     || effort === 'xhigh'
     || effort === 'max'
+    || effort === 'ultra'
 }
 
 function projectCodexModelListResponse(response: ModelListResponse): ModelDescriptor[] {

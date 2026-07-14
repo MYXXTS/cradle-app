@@ -9,6 +9,7 @@ import type { ConsumeAccountRateLimitResetCreditResponse } from '../app-server-p
 import type { GetAccountRateLimitsResponse } from '../app-server-protocol/v2/GetAccountRateLimitsResponse'
 import type { GetAccountResponse } from '../app-server-protocol/v2/GetAccountResponse'
 import type { GetAccountTokenUsageResponse } from '../app-server-protocol/v2/GetAccountTokenUsageResponse'
+import type { RateLimitResetCredit } from '../app-server-protocol/v2/RateLimitResetCredit'
 import type { RateLimitSnapshot } from '../app-server-protocol/v2/RateLimitSnapshot'
 import type { RateLimitWindow } from '../app-server-protocol/v2/RateLimitWindow'
 import { buildCodexConfig } from '../config/runtime-config'
@@ -71,6 +72,7 @@ export interface CodexAccountDiagnostics {
   rateLimitsByLimitId: Record<string, CodexRateLimitSnapshotDiagnostics> | null
   rateLimitResetCredits: {
     availableCount: string
+    credits: RateLimitResetCredit[] | null
   } | null
   tokenUsage: {
     summary: {
@@ -219,7 +221,10 @@ export async function readCodexAccountDiagnostics(
       rateLimits: projectRateLimitSnapshot(rateLimitsResponse.rateLimits),
       rateLimitsByLimitId: projectRateLimitsByLimitId(rateLimitsResponse.rateLimitsByLimitId),
       rateLimitResetCredits: rateLimitsResponse.rateLimitResetCredits
-        ? { availableCount: formatCounter(rateLimitsResponse.rateLimitResetCredits.availableCount) }
+        ? {
+            availableCount: formatCounter(rateLimitsResponse.rateLimitResetCredits.availableCount),
+            credits: rateLimitsResponse.rateLimitResetCredits.credits,
+          }
         : null,
       tokenUsage: projectTokenUsage(usageResponse),
     }

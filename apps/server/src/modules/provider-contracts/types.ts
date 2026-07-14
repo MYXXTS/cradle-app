@@ -25,7 +25,7 @@ export interface ModelCapabilities {
   inputModalities?: string[]
   outputModalities?: string[]
   reasoning?: boolean
-  reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>
   toolCall?: boolean
   temperature?: boolean
   structuredOutput?: boolean

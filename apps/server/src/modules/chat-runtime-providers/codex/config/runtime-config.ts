@@ -142,6 +142,7 @@ export function readCodexReasoningEffort(
     case 'high':
     case 'xhigh':
     case 'max':
+    case 'ultra':
       return override
     default:
       return isCodexReasoningEffort(configured) ? configured : 'high'
@@ -301,4 +302,5 @@ function isCodexReasoningEffort(value: unknown): value is ReasoningEffort {
     || value === 'high'
     || value === 'xhigh'
     || value === 'max'
+    || value === 'ultra'
 }

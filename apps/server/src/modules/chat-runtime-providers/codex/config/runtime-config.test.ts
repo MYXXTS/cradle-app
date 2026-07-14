@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { addHostMcpServer, removeHostMcpServer } from '../../../../plugins/mcp-registry'
 import type { CodexConfig } from '../../../provider-contracts/provider-base'
 import { readTrustedCodexConfig } from '../../../provider-contracts/provider-base'
-import { buildCodexConfig, buildCodexMcpServersEnvironment } from './runtime-config'
+import { buildCodexConfig, buildCodexMcpServersEnvironment, readCodexReasoningEffort } from './runtime-config'
 
 function createCodexConfig(config: Partial<CodexConfig> = {}): CodexConfig {
   return readTrustedCodexConfig(JSON.stringify(config))
@@ -56,5 +56,11 @@ describe('buildCodexConfig MCP projection', () => {
     expect(buildCodexMcpServersEnvironment()).toEqual({
       CRADLE_CODEX_MCP_HEADER_NOWLEDGE_MEM_AUTHORIZATION: 'Bearer secret-token',
     })
+  })
+})
+
+describe('codex reasoning effort projection', () => {
+  it('forwards ultra to the app-server boundary', () => {
+    expect(readCodexReasoningEffort('ultra', 'high')).toBe('ultra')
   })
 })

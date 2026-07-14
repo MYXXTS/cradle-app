@@ -11,6 +11,7 @@ export function readSessionThinkingEffort(
     case 'high':
     case 'xhigh':
     case 'max':
+    case 'ultra':
       return value
     default:
       return null

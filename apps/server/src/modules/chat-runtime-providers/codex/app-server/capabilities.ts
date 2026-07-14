@@ -25,8 +25,8 @@ export interface CodexAppServerCapabilityManifest {
 }
 
 const CODEX_APP_SERVER_PROTOCOL = 'codex-app-server'
-const CODEX_APP_SERVER_GENERATOR_VERSION = 'codex-cli 0.143.0'
-const CODEX_APP_SERVER_GENERATED_DATE = '2026-07-09'
+const CODEX_APP_SERVER_GENERATOR_VERSION = 'codex-cli 0.144.4'
+const CODEX_APP_SERVER_GENERATED_DATE = '2026-07-14'
 
 export const CODEX_APP_SERVER_CLIENT_METHODS = [
   { method: 'initialize', paramsType: 'InitializeParams', category: 'initialize', operation: 'initialize', interaction: 'request' },

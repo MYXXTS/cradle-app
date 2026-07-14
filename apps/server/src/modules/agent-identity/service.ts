@@ -127,7 +127,7 @@ function normalizeAgentThinkingEffort(effort: unknown): AgentThinkingEffort {
   if (effort === 'none' || effort === 'minimal') {
     return 'low'
   }
-  if (effort === 'max') {
+  if (effort === 'max' || effort === 'ultra') {
     return 'xhigh'
   }
   return AgentThinkingEffortSchema.safeParse(effort).data ?? 'high'

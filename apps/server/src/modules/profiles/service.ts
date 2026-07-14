@@ -53,7 +53,7 @@ const ModelCapabilitiesSchema = z.object({
   inputModalities: z.array(z.string()).optional(),
   outputModalities: z.array(z.string()).optional(),
   reasoning: z.boolean().optional(),
-  reasoningEfforts: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).optional(),
+  reasoningEfforts: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).optional(),
   toolCall: z.boolean().optional(),
   temperature: z.boolean().optional(),
   structuredOutput: z.boolean().optional(),

@@ -12,7 +12,7 @@ export interface RuntimeModelCapabilities {
   inputModalities?: string[]
   outputModalities?: string[]
   reasoning?: boolean
-  reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>
   toolCall?: boolean
   temperature?: boolean
   structuredOutput?: boolean
@@ -171,7 +171,7 @@ export interface RuntimeOwnedProviderTargets {
   listModelsForProviderTarget?: (input: ListRuntimeOwnedProviderTargetModelsInput) => Promise<RuntimeModelDescriptor[]>
 }
 
-export type ChatThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ChatThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 export interface RuntimeSlashCommand {
   name: string
