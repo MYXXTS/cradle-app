@@ -45,9 +45,9 @@ describe('resolveSessionSystemPrompt Work context', () => {
 
     expect(prompt).toContain('## Cradle Work')
     expect(prompt).toContain('Work ID: work-1')
-    expect(prompt).toContain('MUST call the native cradle work_prepare tool')
-    expect(prompt).toContain('work_prepare only records a local handoff.')
-    expect(prompt).toContain('Do not run work submit')
+    expect(prompt).toContain('work_prepare')
+    expect(prompt).toContain('Work Lifecycle')
+    expect(prompt).toContain('After Draft PR creation, Cradle automatically registers Session Awaits')
     expect(prompt).not.toContain('/tmp/turn-context')
   })
 

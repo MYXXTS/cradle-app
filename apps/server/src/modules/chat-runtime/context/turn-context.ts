@@ -7,6 +7,8 @@ import { readTrustedAgentRuntimeConfig } from '../../../helpers/agent-runtime-co
 import { readPositiveIntegerEnv } from '../../../helpers/env'
 import { getSystemWorkflow } from '../../../helpers/system-workflow'
 import { db } from '../../../infra'
+import * as PullRequest from '../../pull-request/service'
+import * as SessionAwait from '../../session-await/service'
 import type { CradleTurnTranscript } from '../transcript'
 import { resolveCradleTurnTranscript } from '../transcript'
 
@@ -78,21 +80,61 @@ function resolvePrimaryWorkPrompt(session: Session): string | undefined {
     return undefined
   }
 
-  return [
+  const pullRequest = PullRequest.getBoundPullRequest(session.id)
+  const awaits = SessionAwait.listBySession(session.id)
+
+  const lines = [
     '## Cradle Work',
     `Work ID: ${work.id}`,
     `Title: ${session.title || work.id}`,
     `Objective data: ${JSON.stringify(work.objective)}`,
+  ]
+
+  if (pullRequest) {
+    lines.push(
+      '',
+      `Draft PR: #${pullRequest.number} (${pullRequest.state}) ${pullRequest.url}`,
+      `PR Branch: ${pullRequest.headRef} -> ${pullRequest.baseRef}`,
+    )
+  }
+
+  if (awaits.length > 0) {
+    const pendingAwaits = awaits.filter(a => a.status === 'pending')
+    const triggeredAwaits = awaits.filter(a => a.status === 'triggered')
+    lines.push('')
+    if (pendingAwaits.length > 0) {
+      lines.push(`Session Awaits (pending): ${pendingAwaits.map(a => `${a.source}(${a.reason ?? 'no reason'})`).join(', ')}`)
+    }
+    if (triggeredAwaits.length > 0) {
+      lines.push(`Session Awaits (triggered): ${triggeredAwaits.map(a => a.source).join(', ')}`)
+    }
+  }
+
+  lines.push(
     '',
-    'CRITICAL: Do not attempt to complete this Work without following the instructions below.',
+    '## CRITICAL',
+    '',
+    'Do not attempt to complete this Work without following the instructions below.',
     'This is an active Cradle Work session. Implement and verify the objective in the current managed Worktree.',
     'You are explicitly authorized to create coherent local commits for this Work. Keep the checkout clean.',
-    'Every commit must include: Co-authored-by: Cradle Agent <cradleagent@wibus.ren>',
-    'Before claiming the Work is complete or ending the turn successfully, you MUST call the native cradle work_prepare tool with this Work ID, a clear title, summary, and test plan.',
-    'If work_prepare returns an error, do not claim completion. Resolve the reported local readiness problem and call work_prepare again, or clearly explain the blocker to the user.',
-    'work_prepare only records a local handoff. It never pushes or publishes anything.',
+    'When committing, always use: git commit -m "<message>" --trailer "Co-authored-by: Cradle Agent <cradleagent@wibus.ren>"',
+    '',
+    '## Work Lifecycle',
+    '',
+    'When implementation is complete:',
+    '1. Call `work_prepare` with this Work ID, a clear title, summary, and test plan.',
+    '2. If `work_prepare` returns an error, resolve the issue and try again.',
+    '3. After `work_prepare` succeeds, wait for the user to review. Do NOT automatically submit.',
+    '4. When the user requests submission, call `work submit` to create/update the Draft PR.',
+    '5. After Draft PR creation, Cradle automatically registers Session Awaits for CI and review.',
+    '6. You will see the PR and Await status in your Work context above.',
+    '7. Wait for CI and review results. Do NOT poll or manually check GitHub.',
+    '8. When Session Awaits trigger (CI passed, review approved), the results will be delivered to this session.',
+    '',
     'Do not run work submit, push, create or update a pull request, mark ready, or merge unless the user explicitly requests that action.',
-  ].join('\n')
+  )
+
+  return lines.join('\n')
 }
 
 export function resolveSessionSystemPrompt(session: Session | null | undefined): string | undefined {

@@ -132,6 +132,7 @@ const FIELD_SEP = '\x1F'
 const ROOT_REPOSITORY_PATH = '.'
 const CRADLE_INTERNAL_REFS = 'refs/cradle/*'
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+const CRADLE_CO_AUTHOR_TRAILER = 'Co-authored-by: Cradle Agent <cradleagent@wibus.ren>'
 const RE_REMOTE_PREFIX = /^remotes\//
 const RE_REMOTE_BRANCH = /^[^/]+\/(.+)$/
 const MAX_REPOSITORY_SCAN_ENTRIES = 20_000
@@ -658,7 +659,7 @@ export async function commitFileGroups(
         })
       }
 
-      await runGitCommand(repository.absolutePath, ['commit', '-m', group.message])
+      await runGitCommand(repository.absolutePath, ['commit', '-m', group.message, '--trailer', CRADLE_CO_AUTHOR_TRAILER])
       const sha = (await runGitCommand(repository.absolutePath, ['rev-parse', 'HEAD'])).trim()
       commits.push({
         sha,
