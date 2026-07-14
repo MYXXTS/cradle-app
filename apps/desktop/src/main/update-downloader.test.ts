@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Writable } from 'node:stream'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,7 +25,7 @@ async function createTempRoot(): Promise<string> {
   return root
 }
 
-function createCandidate(sha256: string | null): DesktopUpdateCandidate {
+function createCandidate(sha256: string | null, size = Buffer.byteLength('zip-payload')): DesktopUpdateCandidate {
   return {
     info: {
       version: '1.2.3',
@@ -34,7 +36,7 @@ function createCandidate(sha256: string | null): DesktopUpdateCandidate {
     },
     artifact: {
       url: 'https://updates.example.com/cradle/macos/Cradle-1.2.3-universal.zip',
-      size: null,
+      size,
       sha256,
       platform: 'darwin',
       arch: 'universal',
@@ -93,5 +95,45 @@ describe('desktopUpdateDownloader', () => {
 
     await expect(downloader.download(createCandidate('0'.repeat(64)))).rejects.toThrow('SHA-256')
     await expect(pathExists(join(downloadDir, 'Cradle-1.2.3-universal.zip.download'))).resolves.toBe(false)
+  })
+
+  it('removes the temporary archive when the manifest size does not match', async () => {
+    const payload = Buffer.from('zip-payload')
+    const sha256 = createHash('sha256').update(payload).digest('hex')
+    const downloadDir = await createTempRoot()
+    const { DesktopUpdateDownloader } = await import('./update-downloader')
+    const downloader = new DesktopUpdateDownloader({
+      downloadDir,
+      fetchFn: async () => new Response(payload, { status: 200 }),
+    })
+
+    await expect(downloader.download(createCandidate(sha256, payload.byteLength + 1))).rejects.toThrow('size verification failed')
+    await expect(pathExists(join(downloadDir, 'Cradle-1.2.3-universal.zip.download'))).resolves.toBe(false)
+  })
+
+  it('waits for a late writer error and removes the temporary archive', async () => {
+    const payload = Buffer.from('zip-payload')
+    const sha256 = createHash('sha256').update(payload).digest('hex')
+    const downloadDir = await createTempRoot()
+    const temporaryPath = join(downloadDir, 'Cradle-1.2.3-universal.zip.download')
+    const { DesktopUpdateDownloader } = await import('./update-downloader')
+    const downloader = new DesktopUpdateDownloader({
+      downloadDir,
+      fetchFn: async () => new Response(payload, { status: 200 }),
+      writeStreamFactory: (path) => {
+        writeFileSync(path, 'partial')
+        return new Writable({
+          write(_chunk, _encoding, callback) {
+            callback()
+          },
+          final(callback) {
+            queueMicrotask(() => callback(new Error('late writer error')))
+          },
+        })
+      },
+    })
+
+    await expect(downloader.download(createCandidate(sha256))).rejects.toThrow('late writer error')
+    await expect(pathExists(temporaryPath)).resolves.toBe(false)
   })
 })

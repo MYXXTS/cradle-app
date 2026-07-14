@@ -1,9 +1,10 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { DesktopUpdateBundleVerifier } from './update-bundle-verifier'
 import type { DesktopUpdateDownload } from './update-types'
 
 const electronMocks = vi.hoisted(() => ({
@@ -49,6 +50,9 @@ vi.mock('node:child_process', async () => {
 })
 
 const tempRoots: string[] = []
+const bundleVerifier: DesktopUpdateBundleVerifier = {
+  verify: vi.fn(async () => {}),
+}
 
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', {
@@ -85,8 +89,8 @@ function createDownload(archivePath: string): DesktopUpdateDownload {
     archivePath,
     artifact: {
       url: 'https://updates.example.com/cradle/macos/Cradle-1.2.3-universal.zip',
-      size: null,
-      sha256: null,
+      size: 11,
+      sha256: 'a'.repeat(64),
       platform: 'darwin',
       arch: 'universal',
     },
@@ -117,6 +121,8 @@ describe('desktopUpdateInstaller', () => {
       }
     })
     childProcessMocks.spawn.mockClear()
+    vi.mocked(bundleVerifier.verify).mockReset()
+    vi.mocked(bundleVerifier.verify).mockResolvedValue()
   })
 
   afterEach(async () => {
@@ -137,7 +143,7 @@ describe('desktopUpdateInstaller', () => {
     setExecPath(currentExecutablePath)
 
     const { DesktopUpdateInstaller } = await import('./update-installer')
-    const installer = new DesktopUpdateInstaller({ updatesDir })
+    const installer = new DesktopUpdateInstaller({ updatesDir, bundleVerifier })
 
     const plan = await installer.prepare(createDownload(archivePath), '1.2.3')
     const script = await readFile(plan.scriptPath, 'utf8')
@@ -156,6 +162,7 @@ describe('desktopUpdateInstaller', () => {
       '-',
       join(plan.stagedAppPath, 'Contents', 'Info.plist'),
     ])
+    expect(bundleVerifier.verify).toHaveBeenCalledWith(plan.stagedAppPath, currentAppPath)
     expect(plan).toMatchObject({
       version: '1.2.3',
       archivePath,
@@ -187,7 +194,7 @@ describe('desktopUpdateInstaller', () => {
     setExecPath(currentExecutablePath)
 
     const { DesktopUpdateInstaller } = await import('./update-installer')
-    const installer = new DesktopUpdateInstaller({ updatesDir })
+    const installer = new DesktopUpdateInstaller({ updatesDir, bundleVerifier })
 
     const plan = await installer.prepare(createDownload(archivePath), '1.2.3')
 
@@ -213,7 +220,7 @@ describe('desktopUpdateInstaller', () => {
     const { promisify } = await vi.importActual<typeof import('node:util')>('node:util')
     const runFile = promisify(realExecFile)
     const { DesktopUpdateInstaller } = await import('./update-installer')
-    const installer = new DesktopUpdateInstaller({ updatesDir })
+    const installer = new DesktopUpdateInstaller({ updatesDir, bundleVerifier })
     const plan = await installer.prepare(createDownload(archivePath), '1.2.3')
     const script = (await readFile(plan.scriptPath, 'utf8'))
       .replace(/^PARENT_PID=\d+$/m, 'PARENT_PID=999999')
@@ -238,7 +245,7 @@ describe('desktopUpdateInstaller', () => {
 
   it('launches the installer script as a detached child process', async () => {
     const { DesktopUpdateInstaller } = await import('./update-installer')
-    const installer = new DesktopUpdateInstaller({ updatesDir: '/unused' })
+    const installer = new DesktopUpdateInstaller({ updatesDir: '/unused', bundleVerifier })
 
     installer.launch({
       version: '1.2.3',
@@ -283,8 +290,30 @@ describe('desktopUpdateInstaller', () => {
     setExecPath(currentExecutablePath)
 
     const { DesktopUpdateInstaller } = await import('./update-installer')
-    const installer = new DesktopUpdateInstaller({ updatesDir: join(root, 'updates') })
+    const installer = new DesktopUpdateInstaller({ updatesDir: join(root, 'updates'), bundleVerifier })
 
     await expect(installer.prepare(createDownload(archivePath), '1.2.3')).rejects.toThrow('does not match manifest version')
+    expect(bundleVerifier.verify).not.toHaveBeenCalled()
+  })
+
+  it('rejects a staged bundle that does not match the current app signing requirement', async () => {
+    vi.mocked(bundleVerifier.verify).mockRejectedValue(new Error('designated requirement mismatch'))
+    const root = await createTempRoot()
+    const currentAppPath = join(root, 'Applications', 'Cradle.app')
+    const currentExecutablePath = join(currentAppPath, 'Contents', 'MacOS', 'Cradle')
+    const archivePath = join(root, 'Cradle-1.2.3-universal.zip')
+    const updatesDir = join(root, 'updates')
+    await mkdir(join(currentAppPath, 'Contents', 'MacOS'), { recursive: true })
+    await writeFile(currentExecutablePath, '')
+    await writeFile(archivePath, 'zip-payload')
+    setExecPath(currentExecutablePath)
+
+    const { DesktopUpdateInstaller } = await import('./update-installer')
+    const installer = new DesktopUpdateInstaller({ updatesDir, bundleVerifier })
+
+    await expect(installer.prepare(createDownload(archivePath), '1.2.3')).rejects.toThrow('designated requirement mismatch')
+    expect(bundleVerifier.verify).toHaveBeenCalledWith(expect.stringContaining('Cradle.app'), currentAppPath)
+    const stagingEntries = await readdir(join(updatesDir, 'staging'))
+    expect(stagingEntries).toEqual([])
   })
 })

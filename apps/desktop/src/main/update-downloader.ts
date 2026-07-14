@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
-import { once } from 'node:events'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import type { Writable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 
 import { app } from 'electron'
 
@@ -19,21 +21,31 @@ export type DesktopUpdateDownloadProgress = {
 export type DesktopUpdateDownloaderOptions = {
   downloadDir?: string
   fetchFn?: FetchFn
+  writeStreamFactory?: (path: string) => Writable
+  renameFn?: typeof rename
 }
 
 export class DesktopUpdateDownloader {
   private readonly downloadDir: string
   private readonly fetchFn: FetchFn
+  private readonly writeStreamFactory: (path: string) => Writable
+  private readonly renameFn: typeof rename
 
   constructor(options: DesktopUpdateDownloaderOptions = {}) {
     this.downloadDir = options.downloadDir ?? join(app.getPath('userData'), 'updates', 'downloads')
     this.fetchFn = options.fetchFn ?? fetch
+    this.writeStreamFactory = options.writeStreamFactory ?? createWriteStream
+    this.renameFn = options.renameFn ?? rename
   }
 
   async download(
     candidate: DesktopUpdateCandidate,
     onProgress?: (progress: DesktopUpdateDownloadProgress) => void,
   ): Promise<DesktopUpdateDownload> {
+    if (candidate.artifact.size === null || candidate.artifact.sha256 === null) {
+      throw new Error('Update artifact size and SHA-256 are required')
+    }
+
     await mkdir(this.downloadDir, { recursive: true })
 
     const archiveName = readArchiveName(candidate.artifact.url, candidate.info.version)
@@ -50,56 +62,39 @@ export class DesktopUpdateDownloader {
       throw new Error('Update download response did not include a body')
     }
 
-    const expectedBytes = candidate.artifact.size ?? readContentLength(response)
+    const expectedBytes = candidate.artifact.size
     const digest = createHash('sha256')
-    const writer = createWriteStream(temporaryPath)
-    const writerError = once(writer, 'error').then(([error]) => {
-      throw error
-    })
     let transferredBytes = 0
-
-    const reader = response.body.getReader()
     try {
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) {
-          break
-        }
+      const progressStream = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          transferredBytes += chunk.byteLength
+          digest.update(chunk)
+          onProgress?.({
+            percent: readProgressPercent(transferredBytes, expectedBytes),
+            transferredBytes,
+            totalBytes: expectedBytes,
+          })
+          callback(null, chunk)
+        },
+      })
+      const bodyStream = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream)
+      await pipeline(bodyStream, progressStream, this.writeStreamFactory(temporaryPath))
 
-        const chunk = Buffer.from(value)
-        transferredBytes += chunk.byteLength
-        digest.update(chunk)
-
-        if (!writer.write(chunk)) {
-          await Promise.race([once(writer, 'drain'), writerError])
-        }
-
-        onProgress?.({
-          percent: readProgressPercent(transferredBytes, expectedBytes),
-          transferredBytes,
-          totalBytes: expectedBytes,
-        })
+      const actualSha256 = digest.digest('hex')
+      if (transferredBytes !== expectedBytes) {
+        throw new Error(`Update archive size verification failed: expected ${expectedBytes} bytes, received ${transferredBytes}`)
       }
+      if (actualSha256.toLowerCase() !== candidate.artifact.sha256.toLowerCase()) {
+        throw new Error('Update archive SHA-256 verification failed')
+      }
+
+      await this.renameFn(temporaryPath, archivePath)
     }
     catch (error) {
-      writer.destroy()
       await rm(temporaryPath, { force: true })
       throw error
     }
-    finally {
-      reader.releaseLock()
-    }
-
-    writer.end()
-    await Promise.race([once(writer, 'finish'), writerError])
-
-    const actualSha256 = digest.digest('hex')
-    if (candidate.artifact.sha256 && actualSha256.toLowerCase() !== candidate.artifact.sha256.toLowerCase()) {
-      await rm(temporaryPath, { force: true })
-      throw new Error('Update archive SHA-256 verification failed')
-    }
-
-    await rename(temporaryPath, archivePath)
     onProgress?.({
       percent: 100,
       transferredBytes,
@@ -120,16 +115,6 @@ function readArchiveName(url: string, version: string): string {
     return fileName
   }
   return `Cradle-${version}-mac.zip`
-}
-
-function readContentLength(response: Response): number | null {
-  const value = response.headers.get('content-length')
-  if (!value) {
-    return null
-  }
-
-  const parsed = Number.parseInt(value, 10)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
 function readProgressPercent(transferredBytes: number, totalBytes: number | null): number {

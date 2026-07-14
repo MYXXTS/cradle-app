@@ -55,6 +55,9 @@ export class DesktopUpdateSource {
 
     this.currentVersion = options.currentVersion
     this.manifestUrl = resolveManifestUrl(updateFeedUrl)
+    if (new URL(this.manifestUrl).protocol !== 'https:') {
+      throw new Error('Desktop update manifest URL must use HTTPS')
+    }
     this.fetchFn = options.fetchFn ?? fetch
   }
 
@@ -117,6 +120,17 @@ export class DesktopUpdateSource {
 
     if (!artifact) {
       throw new Error(`Update ${manifest.version} does not include a macOS artifact for ${arch}`)
+    }
+
+    const artifactUrl = new URL(artifact.url)
+    if (artifactUrl.protocol !== 'https:') {
+      throw new Error(`Update ${manifest.version} artifact URL must use HTTPS`)
+    }
+    if (artifact.size === null) {
+      throw new Error(`Update ${manifest.version} artifact size is required`)
+    }
+    if (artifact.sha256 === null) {
+      throw new Error(`Update ${manifest.version} artifact SHA-256 is required`)
     }
 
     return artifact

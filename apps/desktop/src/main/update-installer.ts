@@ -6,6 +6,10 @@ import { promisify } from 'node:util'
 
 import { app } from 'electron'
 
+import type { DesktopUpdateBundleVerifier } from './update-bundle-verifier'
+import {
+  MacOSDesktopUpdateBundleVerifier,
+} from './update-bundle-verifier'
 import type {
   DesktopUpdateApplyResult,
   DesktopUpdateDownload,
@@ -19,13 +23,16 @@ const STAGING_CLEANUP_RETRY_DELAY_MS = 200
 
 export type DesktopUpdateInstallerOptions = {
   updatesDir?: string
+  bundleVerifier?: DesktopUpdateBundleVerifier
 }
 
 export class DesktopUpdateInstaller {
   private readonly updatesDir: string
+  private readonly bundleVerifier: DesktopUpdateBundleVerifier
 
   constructor(options: DesktopUpdateInstallerOptions = {}) {
     this.updatesDir = options.updatesDir ?? join(app.getPath('userData'), 'updates')
+    this.bundleVerifier = options.bundleVerifier ?? new MacOSDesktopUpdateBundleVerifier()
   }
 
   get resultPath(): string {
@@ -58,6 +65,7 @@ export class DesktopUpdateInstaller {
       if (stagedVersion !== version) {
         throw new Error(`Update bundle version ${stagedVersion} does not match manifest version ${version}`)
       }
+      await this.bundleVerifier.verify(stagedAppPath, targetAppPath)
 
       const targetParent = dirname(targetAppPath)
       const usesAdministratorPrivileges = !(await canWriteDirectory(targetParent))

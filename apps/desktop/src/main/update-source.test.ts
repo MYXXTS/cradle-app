@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { DesktopUpdateSource } from './update-source'
 
@@ -12,6 +12,20 @@ function createManifestResponse(body: unknown): Response {
 }
 
 describe('desktopUpdateSource', () => {
+  it.each([
+    'http://updates.example.com/cradle',
+    'http://updates.example.com/cradle/macos/manifest.json',
+  ])('rejects a non-HTTPS manifest URL before fetching: %s', (updateFeedUrl) => {
+    const fetchFn = vi.fn<typeof fetch>()
+
+    expect(() => new DesktopUpdateSource({
+      currentVersion: '1.2.2',
+      updateFeedUrl,
+      fetchFn,
+    })).toThrow('Desktop update manifest URL must use HTTPS')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
   it('reads an update candidate from a feed root manifest', async () => {
     const requests: string[] = []
     const source = new DesktopUpdateSource({
@@ -66,6 +80,8 @@ describe('desktopUpdateSource', () => {
         files: [
           {
             url: 'https://updates.example.com/cradle/macos/Cradle-1.2.3-universal.zip',
+            size: 123,
+            sha256: 'a'.repeat(64),
             arch: 'universal',
           },
         ],
@@ -96,6 +112,8 @@ describe('desktopUpdateSource', () => {
         files: [
           {
             url: 'https://updates.example.com/cradle/Cradle.zip',
+            size: 123,
+            sha256: 'a'.repeat(64),
             arch: 'universal',
           },
         ],
@@ -118,6 +136,8 @@ describe('desktopUpdateSource', () => {
         files: [
           {
             url: 'https://updates.example.com/cradle/macos/Cradle-1.2.4-universal.zip',
+            size: 123,
+            sha256: 'a'.repeat(64),
             arch: 'universal',
           },
         ],
@@ -125,5 +145,22 @@ describe('desktopUpdateSource', () => {
     })
 
     await expect(source.checkForUpdates()).rejects.toThrow('SemVer-compatible versions')
+  })
+
+  it.each([
+    [{ url: 'http://updates.example.com/Cradle.zip', size: 123, sha256: 'a'.repeat(64) }, 'must use HTTPS'],
+    [{ url: 'https://updates.example.com/Cradle.zip', sha256: 'a'.repeat(64) }, 'size is required'],
+    [{ url: 'https://updates.example.com/Cradle.zip', size: 123 }, 'SHA-256 is required'],
+  ])('rejects a selected artifact without required integrity metadata', async (artifact, message) => {
+    const source = new DesktopUpdateSource({
+      currentVersion: '1.2.3',
+      updateFeedUrl: 'https://updates.example.com/cradle/manifest.json',
+      fetchFn: async () => createManifestResponse({
+        version: '1.2.4',
+        files: [{ ...artifact, arch: 'universal' }],
+      }),
+    })
+
+    await expect(source.checkForUpdates()).rejects.toThrow(message)
   })
 })
