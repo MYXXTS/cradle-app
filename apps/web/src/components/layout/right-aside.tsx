@@ -398,9 +398,9 @@ function ActiveRightAside({
   // Badge: active adjustment session
   const adjustmentSession = useBrowserPanelStore(state => state.annotationAdjustmentSession)
   const hasActiveAdjustment = adjustmentSession !== null
-  const browserPanelOpen = useBrowserPanelStore(state => ownerId
-    ? (state.owners[ownerId]?.open ?? false)
-    : state.open)
+  const browserPanelOpen = useLayoutStore(state => ownerId
+    ? (state.browserPanelOpenByOwnerId[ownerId] ?? false)
+    : state.browserPanelOpen)
   const hasActiveBrowserTab = useBrowserPanelStore((state) => {
     const ownerState = ownerId ? state.owners[ownerId] : state.owners[state.activeOwnerId]
     const activePanelTab = ownerState?.tabs.find(tab => tab.id === ownerState.activeTabId)

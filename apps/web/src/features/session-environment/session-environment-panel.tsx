@@ -1,6 +1,8 @@
 import {
   BookmarkLine as BookmarkIcon,
+  CalendarTimeAddLine as WorkflowIcon,
   ClipboardLine as NotesIcon,
+  CoinLine as UsageIcon,
   ExternalLinkLine as ExternalLinkIcon,
   GitCompareLine as DiffIcon,
   GitPullRequestLine as PullRequestIcon,
@@ -9,7 +11,6 @@ import {
   TargetLine as TargetIcon,
 } from '@mingcute/react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CoinsIcon as UsageIcon, WorkflowIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import {

@@ -78,7 +78,6 @@ describe('rightAside browser panel coupling', () => {
     useBrowserPanelStore.setState({
       activeOwnerId: 'owner-a',
       owners: {},
-      open: false,
       tabs: [],
       activeTabId: null,
       requestedTab: null,

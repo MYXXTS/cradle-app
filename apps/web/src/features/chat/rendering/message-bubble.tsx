@@ -62,7 +62,6 @@ import {
   readUserDisplayText,
 } from './message-bubble-selectors'
 import {
-  MessageFileLineCommentContextPartById,
   MessageFilePartById,
   MessagePluginContextPartById,
   MessageReasoningPartById,
@@ -424,14 +423,6 @@ const MessageSegmentView = ({
     case 'plugin-context':
       return (
         <MessagePluginContextPartById
-          sessionId={sessionId}
-          messageId={segment.messageId}
-          partIndex={segment.partIndex}
-        />
-      )
-    case 'file-line-comment-context':
-      return (
-        <MessageFileLineCommentContextPartById
           sessionId={sessionId}
           messageId={segment.messageId}
           partIndex={segment.partIndex}
