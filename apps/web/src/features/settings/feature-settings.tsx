@@ -66,6 +66,18 @@ export function FeatureSettings() {
               />
             </SettingsRow>
             <SettingsRow
+              label={t('features.turnCheckpoints.label' as SettingsKey)}
+              description={t('features.turnCheckpoints.description' as SettingsKey)}
+            >
+              <Switch
+                size="sm"
+                checked={prefs.featureFlags.turnCheckpoints}
+                disabled={isSaving}
+                onCheckedChange={checked => saveFeatureFlags({ turnCheckpoints: checked })}
+                aria-label={t('features.turnCheckpoints.label' as SettingsKey)}
+              />
+            </SettingsRow>
+            <SettingsRow
               label={t('features.continueBlockedCodexGoals.label' as SettingsKey)}
               description={t('features.continueBlockedCodexGoals.description' as SettingsKey)}
             >

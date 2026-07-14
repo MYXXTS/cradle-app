@@ -235,6 +235,8 @@
   "features.multiWorkspace.label": "Multi-folder workspace POC",
   "features.nativeProviderSkillProjection.description": "Agent が、有効化済みプラグインや組み込みスキルを含む Cradle の全機能を見つけて使えるようにします。",
   "features.nativeProviderSkillProjection.label": "Agent が Cradle の全機能を使えるようにする",
+  "features.turnCheckpoints.description": "Capture Git-backed snapshots before and after chat turns. This experimental feature writes internal refs into the workspace repository.",
+  "features.turnCheckpoints.label": "Turn checkpoints",
   "features.page.description": "Gate unfinished Cradle capabilities before they appear in workspace flows.",
   "features.page.title": "Features",
   "hostEnrollments.action.add": "登録を追加",

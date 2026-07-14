@@ -69,5 +69,6 @@
   "trend.prompt": "Prompt",
   "trend.title": "Tendencia de uso",
   "trend.toggleCost": "Costo",
-  "trend.toggleTokens": "Tokens"
+  "trend.toggleTokens": "Tokens",
+  "trend.total": "Total"
 }

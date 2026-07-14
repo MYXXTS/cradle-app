@@ -26,6 +26,7 @@ export default {
   'trend.title': 'Usage trend',
   'trend.description': 'Token and cost volume over the selected range.',
   'trend.toggleTokens': 'Tokens',
+  'trend.total': 'Total',
   'trend.toggleCost': 'Cost',
   'trend.prompt': 'Prompt',
   'trend.completion': 'Completion',

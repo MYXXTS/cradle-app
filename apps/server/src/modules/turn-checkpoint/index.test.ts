@@ -8,6 +8,7 @@ const chatRuntimeMock = vi.hoisted(() => ({
   rollbackTurns: vi.fn(),
 }))
 const turnCheckpointServiceMock = vi.hoisted(() => ({
+  assertTurnCheckpointsEnabled: vi.fn(),
   cleanupHistoricalRewind: vi.fn(),
   listForSession: vi.fn(() => []),
   planHistoricalRewind: vi.fn(),
@@ -77,6 +78,7 @@ describe('turn checkpoint restore route', () => {
     ))
 
     expect(response.status).toBe(200)
+    expect(turnCheckpointServiceMock.assertTurnCheckpointsEnabled).toHaveBeenCalledOnce()
     await expect(response.json()).resolves.toMatchObject({
       checkpoint: { id: 'checkpoint-1' },
       transcriptReverted: true,

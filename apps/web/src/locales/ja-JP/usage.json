@@ -69,5 +69,6 @@
   "trend.prompt": "Prompt",
   "trend.title": "使用トレンド",
   "trend.toggleCost": "コスト",
-  "trend.toggleTokens": "Tokens"
+  "trend.toggleTokens": "Tokens",
+  "trend.total": "合計"
 }

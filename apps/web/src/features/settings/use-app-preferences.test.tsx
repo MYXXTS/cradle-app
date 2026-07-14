@@ -28,12 +28,17 @@ const initialPreferences: AppPreferences = {
     continueBlockedCodexGoals: false,
     blockCodexAppServerLogInserts: false,
     nativeProviderSkillProjection: false,
+    turnCheckpoints: false,
   },
   worktreeCleanup: { maxWorktrees: 25, maxTotalSizeGb: 50 },
 }
 
 describe('app preference mutations', () => {
   beforeEach(() => mocks.update.mockReset())
+
+  it('keeps turn checkpoints disabled in the initial preference fixture', () => {
+    expect(initialPreferences.featureFlags.turnCheckpoints).toBe(false)
+  })
 
   it('serializes concurrent writers so unrelated fields are not lost', async () => {
     let resolveFirst!: () => void

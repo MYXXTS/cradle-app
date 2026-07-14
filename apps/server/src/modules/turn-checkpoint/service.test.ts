@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db, shutdownInfra } from '../../infra'
 import {
+  captureRunStart,
   cleanupHistoricalRewind,
   listForSession,
   planHistoricalRewind,
@@ -20,8 +21,15 @@ const gitStoreMocks = vi.hoisted(() => ({
   restoreCheckpoint: vi.fn(),
   summarizeCheckpointDiff: vi.fn(),
 }))
+const preferencesMocks = vi.hoisted(() => ({
+  isAppFeatureFlagEnabled: vi.fn(() => true),
+}))
 
 vi.mock('./git-store', () => gitStoreMocks)
+vi.mock('../preferences/service', () => ({
+  assertAppFeatureFlagEnabled: vi.fn(),
+  isAppFeatureFlagEnabled: preferencesMocks.isAppFeatureFlagEnabled,
+}))
 
 const previousDataDir = process.env.CRADLE_DATA_DIR
 const previousDbPath = process.env.CRADLE_DB_PATH
@@ -32,6 +40,7 @@ beforeEach(() => {
   process.env.CRADLE_DATA_DIR = dataDir
   delete process.env.CRADLE_DB_PATH
   vi.clearAllMocks()
+  preferencesMocks.isAppFeatureFlagEnabled.mockReturnValue(true)
   gitStoreMocks.restoreCheckpoint.mockResolvedValue(true)
   gitStoreMocks.deleteCheckpointRefs.mockResolvedValue(undefined)
   db().insert(sessions).values({
@@ -84,6 +93,24 @@ function seedHistory(): void {
   seedCheckpoint('checkpoint-2', 'run-2')
   seedCheckpoint('checkpoint-3', 'run-3')
 }
+
+describe('turn checkpoint feature flag', () => {
+  it('does not inspect or write the repository while disabled', async () => {
+    preferencesMocks.isAppFeatureFlagEnabled.mockReturnValue(false)
+
+    await expect(captureRunStart({
+      sessionId: 'session-1',
+      runId: 'run-disabled',
+      assistantMessageId: null,
+      workspaceId: null,
+      workspacePath: '/tmp/workspace',
+    })).resolves.toBeNull()
+
+    expect(gitStoreMocks.isGitWorkspace).not.toHaveBeenCalled()
+    expect(gitStoreMocks.captureCheckpoint).not.toHaveBeenCalled()
+    expect(db().select().from(turnCheckpoints).all()).toEqual([])
+  })
+})
 
 describe('historical checkpoint rewind', () => {
   it('uses insertion order when checkpoint timestamps are equal', () => {

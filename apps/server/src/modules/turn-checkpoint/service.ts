@@ -6,6 +6,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import { AppError } from '../../errors/app-error'
 import { currentUnixSeconds } from '../../helpers/time'
 import { db } from '../../infra'
+import { assertAppFeatureFlagEnabled, isAppFeatureFlagEnabled } from '../preferences/service'
 import {
   captureCheckpoint,
   deleteCheckpointRefs,
@@ -34,6 +35,18 @@ export interface HistoricalRewindPlan {
   subsequentCheckpoints: TurnCheckpointView[]
 }
 
+export function isTurnCheckpointsEnabled(): boolean {
+  return isAppFeatureFlagEnabled('turnCheckpoints')
+}
+
+export function assertTurnCheckpointsEnabled(): void {
+  assertAppFeatureFlagEnabled('turnCheckpoints', {
+    code: 'turn_checkpoints_disabled',
+    status: 403,
+    message: 'Turn checkpoints are disabled. Enable them in Cradle settings first.',
+  })
+}
+
 export async function captureRunStart(input: {
   sessionId: string
   runId: string
@@ -41,6 +54,9 @@ export async function captureRunStart(input: {
   workspaceId: string | null
   workspacePath: string | null
 }): Promise<TurnCheckpointView | null> {
+  if (!isTurnCheckpointsEnabled()) {
+    return null
+  }
   if (!input.workspacePath || !(await isGitWorkspace(input.workspacePath))) {
     return null
   }
@@ -94,6 +110,9 @@ export async function captureRunEnd(input: {
   sessionId: string
   runId: string
 }): Promise<TurnCheckpointView | null> {
+  if (!isTurnCheckpointsEnabled()) {
+    return null
+  }
   const row = db().select().from(turnCheckpoints).where(and(
     eq(turnCheckpoints.sessionId, input.sessionId),
     eq(turnCheckpoints.runId, input.runId),

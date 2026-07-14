@@ -8,7 +8,10 @@ export const turnCheckpoint = new Elysia({
   prefix: '/sessions',
   detail: { tags: ['turn-checkpoint'] },
 })
-  .get('/:id/turn-checkpoints', ({ params }) => TurnCheckpoint.listForSession(params.id), {
+  .get('/:id/turn-checkpoints', ({ params }) => {
+    TurnCheckpoint.assertTurnCheckpointsEnabled()
+    return TurnCheckpoint.listForSession(params.id)
+  }, {
     detail: {
       'summary': 'List turn checkpoints for a chat session',
       'x-cradle-cli': { command: ['chat', 'session', 'checkpoint', 'list'], defaultChatSessionId: true },
@@ -17,6 +20,7 @@ export const turnCheckpoint = new Elysia({
     response: { 200: t.Array(TurnCheckpointModel.checkpoint) },
   })
   .post('/:id/turn-checkpoints/:checkpointId/restore', async ({ params }) => {
+    TurnCheckpoint.assertTurnCheckpointsEnabled()
     let checkpoint: TurnCheckpoint.TurnCheckpointView | undefined
     try {
       const rollback = await ChatRuntime.rollbackLastTurn(params.id, {
@@ -54,6 +58,7 @@ export const turnCheckpoint = new Elysia({
     response: { 200: TurnCheckpointModel.restoreResponse },
   })
   .post('/:id/turn-checkpoints/:checkpointId/rewind', async ({ params }) => {
+    TurnCheckpoint.assertTurnCheckpointsEnabled()
     const plan = TurnCheckpoint.planHistoricalRewind({
       sessionId: params.id,
       checkpointId: params.checkpointId,

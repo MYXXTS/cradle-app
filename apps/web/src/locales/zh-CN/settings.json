@@ -235,6 +235,8 @@
   "features.multiWorkspace.label": "多文件夹工作区 POC",
   "features.nativeProviderSkillProjection.description": "开启后，Agent 可以发现并使用 Cradle 提供的全部能力，包括已启用插件和内置技能。",
   "features.nativeProviderSkillProjection.label": "让 Agent 使用 Cradle 的全部能力",
+  "features.turnCheckpoints.description": "在聊天回合前后创建基于 Git 的快照。此实验功能会向工作区仓库写入内部 refs。",
+  "features.turnCheckpoints.label": "回合检查点",
   "features.page.description": "在 Cradle 功能进入工作区流程之前，对其进行灰度开关。",
   "features.page.title": "功能开关",
   "hostEnrollments.action.add": "添加配对",

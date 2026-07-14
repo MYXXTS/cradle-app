@@ -53,6 +53,7 @@ export const PreferencesModel = {
           continueBlockedCodexGoals: t.Optional(t.Boolean({ default: false })),
           blockCodexAppServerLogInserts: t.Optional(t.Boolean({ default: false })),
           nativeProviderSkillProjection: t.Optional(t.Boolean({ default: false })),
+          turnCheckpoints: t.Optional(t.Boolean({ default: false })),
         },
         { additionalProperties: false },
       ),
@@ -177,13 +178,18 @@ export const PreferencesModel = {
   }),
 } as const
 
-export const KeybindingsPreferencesJsonSchema = z.array(
-  z.object({
-    command: z.string().min(1),
-    key: z.string().min(1),
-    when: z.string().min(1).optional(),
-  }),
-)
+export const KeybindingsPreferencesJsonSchema = z
+  .string()
+  .transform(raw => JSON.parse(raw))
+  .pipe(
+    z.array(
+      z.object({
+        command: z.string().min(1),
+        key: z.string().min(1),
+        when: z.string().min(1).optional(),
+      }),
+    ),
+  )
 
 export const ChatPreferencesJsonSchema = z
   .union([z.string().transform(raw => JSON.parse(raw)), z.undefined()])
@@ -229,6 +235,7 @@ export const AppPreferencesJsonSchema = z
             continueBlockedCodexGoals: z.boolean().default(false),
             blockCodexAppServerLogInserts: z.boolean().default(false),
             nativeProviderSkillProjection: z.boolean().default(false),
+            turnCheckpoints: z.boolean().default(false),
           })
           .default({
             multiWorkspacePoc: false,
@@ -236,6 +243,7 @@ export const AppPreferencesJsonSchema = z
             continueBlockedCodexGoals: false,
             blockCodexAppServerLogInserts: false,
             nativeProviderSkillProjection: false,
+            turnCheckpoints: false,
           }),
         worktreeCleanup: z
           .object({
@@ -254,6 +262,7 @@ export const AppPreferencesJsonSchema = z
           continueBlockedCodexGoals: false,
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
+          turnCheckpoints: false,
         },
         worktreeCleanup: {
           maxWorktrees: 25,

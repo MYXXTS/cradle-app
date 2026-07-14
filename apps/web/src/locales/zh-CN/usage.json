@@ -69,5 +69,6 @@
   "trend.prompt": "Prompt",
   "trend.title": "用量趋势",
   "trend.toggleCost": "成本",
-  "trend.toggleTokens": "Tokens"
+  "trend.toggleTokens": "Tokens",
+  "trend.total": "总计"
 }
