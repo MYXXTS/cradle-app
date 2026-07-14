@@ -1,74 +1,63 @@
-// Hero trend chart — replaces the old hand-rolled SVG sparklines with a real
-// interactive recharts area chart (crosshair tooltip, gradient fills, a
-// tokens/cost toggle), following the same ChartContainer pattern already
-// used in features/agent-management/codex-account-diagnostics-panel.tsx.
+// Hero trend chart - an ECharts stacked bar chart, one bar per day split by
+// model (top-N + "other"). ECharts gives us the things the recharts version
+// had to hand-roll here: a real legend with color swatches, an axis hover
+// tooltip that lists every model's contribution, and canvas-based animation
+// that stays smooth even at the 1-year (365-bar) range. The cost view is a
+// single-series bar in the same frame.
 import { format, parseISO } from 'date-fns'
+import type { EChartsOption, TooltipComponentFormatterCallbackParams } from 'echarts'
+import { BarChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import * as echarts from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import ReactECharts from 'echarts-for-react'
 import type { TFunction } from 'i18next'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 
-import type { ChartConfig } from '~/components/ui/chart'
-import { ChartContainer, ChartTooltip } from '~/components/ui/chart'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
-import { cn } from '~/lib/cn'
 import { formatTokenCount, formatUsd } from '~/lib/number-format'
+import { useResolvedThemeMode } from '~/store/theme'
 
-import type { ModelTokenShare } from './usage-insights'
-import { denseCostSeries, denseTokenSeries, modelBreakdownByDate } from './usage-insights'
-import { ModelShareRows, TOOLTIP_CARD_CLASS } from './usage-model-tooltip'
+import { denseCostSeries, denseModelStackSeries, modelDisplayLabel, OTHER_MODEL_KEY } from './usage-insights'
+import { categoryColor } from './usage-palette'
 import type { UsageRangeKey } from './usage-time-range'
 import { rangeDays } from './usage-time-range'
-import type { DailyCost, DailyUsage, DailyUsageByModel } from './use-usage-overview'
+import type { DailyCost, DailyUsageByModel } from './use-usage-overview'
+
+// Tree-shake: register only the pieces we use so echarts stays small instead of
+// pulling in every chart type and component.
+echarts.use([BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 type TrendMetric = 'tokens' | 'cost'
 
 interface UsageTrendChartProps {
-  daily: DailyUsage[]
   dailyCost: DailyCost[]
   dailyByModel: DailyUsageByModel[]
   range: UsageRangeKey
   hasCost: boolean
 }
 
-// Prompt/completion are two shades of the *same* hue (not blue+violet) so
-// the split reads as "one metric, two parts" rather than two unrelated
-// series — matches the hero cards' blue = volume convention.
-const TOKENS_CHART_CONFIG = {
-  promptTokens: { label: 'Prompt', color: '#3b82f6' },
-  completionTokens: { label: 'Completion', color: '#93c5fd' },
-} satisfies ChartConfig
+// How many models get their own colored stack before the rest collapse into
+// "Other" - keeps the legend readable for workspaces that cycle through many
+// models.
+const MODEL_STACK_LIMIT = 6
 
-const COST_CHART_CONFIG = {
-  costUsd: { label: 'Cost', color: '#10b981' },
-} satisfies ChartConfig
-
-interface TrendTooltipPoint {
-  date: string
-}
-
-interface TrendTooltipEntry {
-  value?: unknown
-  // recharts allows a dataKey accessor function too, so keep this loose — we
-  // only ever compare it to a string literal, which is safe regardless.
-  dataKey?: unknown
-  payload?: TrendTooltipPoint
-}
-
-export function UsageTrendChart({ daily, dailyCost, dailyByModel, range, hasCost }: UsageTrendChartProps) {
+export function UsageTrendChart({ dailyCost, dailyByModel, range, hasCost }: UsageTrendChartProps) {
   const { t } = useTranslation('usage')
+  const resolvedMode = useResolvedThemeMode()
+  const isDark = resolvedMode === 'dark'
   const [metric, setMetric] = useState<TrendMetric>('tokens')
   const days = rangeDays(range)
-  const activeMetric = hasCost ? metric : 'tokens'
+  const activeMetric: TrendMetric = hasCost ? metric : 'tokens'
 
-  const tokenData = useMemo(() => denseTokenSeries(daily, days), [daily, days])
   const costData = useMemo(() => denseCostSeries(dailyCost, days), [dailyCost, days])
-  // Per-day model split for the tokens tooltip — the stacked area shows
-  // prompt vs completion; this answers the follow-up "but which model was
-  // that?" for whatever day is hovered.
-  const modelSharesByDate = useMemo(() => modelBreakdownByDate(dailyByModel), [dailyByModel])
+  const tokenStack = useMemo(() => denseModelStackSeries(dailyByModel, days, MODEL_STACK_LIMIT), [dailyByModel, days])
 
-  const tickFormatter = (dateKey: string) => format(parseISO(dateKey), days > 90 ? 'MMM' : 'MMM d')
+  const option = useMemo(
+    () => buildTrendOption({ metric: activeMetric, tokenStack, costData, days, isDark, t }),
+    [activeMetric, tokenStack, costData, days, isDark, t],
+  )
 
   return (
     <div>
@@ -100,135 +89,144 @@ export function UsageTrendChart({ daily, dailyCost, dailyByModel, range, hasCost
       </div>
 
       <div className="mt-4">
-        {activeMetric === 'tokens'
-          ? (
-            <ChartContainer config={TOKENS_CHART_CONFIG} className="aspect-auto h-[220px] w-full">
-              <AreaChart data={tokenData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="usage-trend-prompt" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="usage-trend-completion" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#93c5fd" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#93c5fd" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.06} strokeDasharray="2 4" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={36}
-                  tick={{ fontSize: 10, fill: 'currentColor', fillOpacity: 0.55 }}
-                  tickFormatter={tickFormatter}
-                />
-                <ChartTooltip
-                  cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
-                  allowEscapeViewBox={{ x: false, y: true }}
-                  wrapperStyle={{ zIndex: 50 }}
-                  content={({ active, payload }) => renderTokensTooltip(active, payload, modelSharesByDate, t)}
-                />
-                <Area type="monotone" dataKey="promptTokens" stackId="tokens" stroke="#3b82f6" strokeWidth={1.5} fill="url(#usage-trend-prompt)" />
-                <Area type="monotone" dataKey="completionTokens" stackId="tokens" stroke="#93c5fd" strokeWidth={1.5} fill="url(#usage-trend-completion)" />
-              </AreaChart>
-            </ChartContainer>
-          )
-          : (
-            <ChartContainer config={COST_CHART_CONFIG} className="aspect-auto h-[220px] w-full">
-              <AreaChart data={costData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="usage-trend-cost" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="currentColor" strokeOpacity={0.06} strokeDasharray="2 4" />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={36}
-                  tick={{ fontSize: 10, fill: 'currentColor', fillOpacity: 0.55 }}
-                  tickFormatter={tickFormatter}
-                />
-                <ChartTooltip
-                  cursor={{ stroke: 'currentColor', strokeOpacity: 0.15 }}
-                  allowEscapeViewBox={{ x: false, y: true }}
-                  wrapperStyle={{ zIndex: 50 }}
-                  content={({ active, payload }) => renderCostTooltip(active, payload, t)}
-                />
-                <Area type="monotone" dataKey="costUsd" stroke="#10b981" strokeWidth={1.5} fill="url(#usage-trend-cost)" />
-              </AreaChart>
-            </ChartContainer>
-          )}
+        <ReactECharts
+          // Remount on metric switch so the stacked-by-model layout and the
+          // single cost series don't try to morph into each other; range
+          // changes keep the same instance and animate the data transition.
+          key={activeMetric}
+          echarts={echarts}
+          option={option}
+          notMerge={false}
+          style={{ height: 240, width: '100%' }}
+          opts={{ renderer: 'canvas' }}
+        />
       </div>
     </div>
   )
 }
 
-// Tokens tooltip: the hovered day's prompt + completion totals, followed by
-// a per-model breakdown with share bars — "what was this day made of?" in one
-// hover. Models come from the daily-by-model series (top-N + "other").
-function renderTokensTooltip(
-  active: boolean | undefined,
-  payload: ReadonlyArray<TrendTooltipEntry> | undefined,
-  modelSharesByDate: Map<string, ModelTokenShare[]>,
-  t: TFunction<'usage'>,
-) {
-  if (!active || !payload?.length) {
-    return null
+interface TrendOptionInput {
+  metric: TrendMetric
+  tokenStack: ReturnType<typeof denseModelStackSeries>
+  costData: DailyCost[]
+  days: number
+  isDark: boolean
+  t: TFunction<'usage'>
+}
+
+function buildTrendOption({ metric, tokenStack, costData, days, isDark, t }: TrendOptionInput): EChartsOption {
+  // Canvas can't resolve CSS vars / currentColor, so pick concrete theme colors
+  // from the resolved light/dark mode (recharts got this for free via SVG).
+  const muted = isDark ? '#a3a3a3' : '#737373'
+  const gridline = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)'
+  const shadow = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'
+  const dateLabel = (key: string) => format(parseISO(key), days > 90 ? 'MMM' : 'MMM d')
+
+  const tooltipBase = {
+    trigger: 'axis' as const,
+    axisPointer: { type: 'shadow' as const, shadowStyle: { color: shadow } },
+    backgroundColor: '#0a0a0a',
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    padding: [8, 10],
+    textStyle: { color: '#fff', fontSize: 11 },
+    extraCssText: 'border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.25);',
   }
-  const date = payload[0]?.payload?.date
-  const promptTokens = Number(payload.find(entry => entry.dataKey === 'promptTokens')?.value ?? 0)
-  const completionTokens = Number(payload.find(entry => entry.dataKey === 'completionTokens')?.value ?? 0)
-  const shares = date ? modelSharesByDate.get(date) ?? [] : []
-  return (
-    <div className={cn(TOOLTIP_CARD_CLASS, 'min-w-52')}>
-      {date && <p className="font-medium text-white">{format(parseISO(date), 'PP')}</p>}
-      <div className="mt-1 space-y-0.5">
-        <TrendTooltipRow label={t('trend.prompt')} value={promptTokens} color="#3b82f6" />
-        <TrendTooltipRow label={t('trend.completion')} value={completionTokens} color="#93c5fd" />
-      </div>
-      <ModelShareRows shares={shares} tone="default" />
-    </div>
-  )
-}
 
-function renderCostTooltip(
-  active: boolean | undefined,
-  payload: ReadonlyArray<TrendTooltipEntry> | undefined,
-  t: TFunction<'usage'>,
-) {
-  if (!active || !payload?.length) {
-    return null
+  const categoryAxis = (data: string[]) => ({
+    type: 'category' as const,
+    data,
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: { color: muted, fontSize: 10, hideOverlap: true, formatter: (v: string) => dateLabel(v) },
+  })
+
+  const valueAxis = {
+    type: 'value' as const,
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: { show: false },
+    splitLine: { lineStyle: { color: gridline, type: 'dashed' as const } },
   }
-  const date = payload[0]?.payload?.date
-  const value = Number(payload[0]?.value ?? 0)
-  return (
-    <div className={cn(TOOLTIP_CARD_CLASS, 'min-w-40')}>
-      {date && <p className="font-medium text-white">{format(parseISO(date), 'PP')}</p>}
-      <div className="mt-1 flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-white/70">
-          <span className="size-1.5 rounded-full bg-emerald-500" />
-          {t('trend.cost')}
-        </span>
-        <span className="font-mono font-medium tabular-nums text-white">{formatUsd(value)}</span>
-      </div>
-    </div>
-  )
-}
 
-function TrendTooltipRow({ label, value, color }: { label: string, value: number, color: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-white/70">
-        <span className="size-1.5 rounded-full" style={{ backgroundColor: color }} />
-        {label}
-      </span>
-      <span className="font-mono font-medium tabular-nums text-white">{formatTokenCount(value)}</span>
-    </div>
-  )
+  const animation = {
+    animation: true,
+    animationDuration: 600,
+    animationEasing: 'cubicOut' as const,
+    animationDurationUpdate: 400,
+    animationEasingUpdate: 'cubicInOut' as const,
+  }
+
+  if (metric === 'cost') {
+    return {
+      ...animation,
+      grid: { top: 12, left: 8, right: 8, bottom: 24 },
+      tooltip: {
+        ...tooltipBase,
+        formatter: (params: TooltipComponentFormatterCallbackParams) => {
+          const p = Array.isArray(params) ? params[0] : params
+          const date = p?.name
+          const value = Number(p?.value ?? 0)
+          return `${date ? `${format(parseISO(date), 'PP')}<br/>` : ''}${p?.marker ?? ''}${t('trend.cost')}  <b>${formatUsd(value)}</b>`
+        },
+      },
+      xAxis: categoryAxis(costData.map(d => d.date)),
+      yAxis: valueAxis,
+      series: [{
+        type: 'bar',
+        name: t('trend.cost'),
+        data: costData.map(d => d.costUsd),
+        itemStyle: { color: '#10b981', borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 24,
+      }],
+    }
+  }
+
+  const dates = tokenStack.series.map(d => String(d.date))
+  const series = tokenStack.models.map((modelId, index) => ({
+    name: modelDisplayLabel(modelId, t),
+    type: 'bar' as const,
+    stack: 'tokens',
+    data: tokenStack.series.map(d => Number(d[modelId] ?? 0)),
+    itemStyle: {
+      color: modelId === OTHER_MODEL_KEY || modelId === 'unknown' ? muted : categoryColor(index),
+      borderRadius: index === tokenStack.models.length - 1 ? [3, 3, 0, 0] : 0,
+    },
+    barMaxWidth: 24,
+    emphasis: { focus: 'series' as const },
+  }))
+
+  return {
+    ...animation,
+    legend: {
+      type: 'scroll',
+      top: 0,
+      icon: 'roundRect',
+      itemWidth: 10,
+      itemHeight: 10,
+      itemGap: 12,
+      textStyle: { color: muted, fontSize: 11 },
+      inactiveColor: isDark ? '#525252' : '#d4d4d4',
+    },
+    grid: { top: 34, left: 8, right: 8, bottom: 24 },
+    tooltip: {
+      ...tooltipBase,
+      formatter: (params: TooltipComponentFormatterCallbackParams) => {
+        const arr = Array.isArray(params) ? params : [params]
+        if (!arr.length) {
+          return ''
+        }
+        const date = arr[0].name
+        const total = arr.reduce((sum, p) => sum + Number(p.value ?? 0), 0)
+        const rows = arr
+          .filter(p => Number(p.value ?? 0) > 0)
+          .map(p => `${p.marker ?? ''}${p.seriesName ?? ''}  <b>${formatTokenCount(Number(p.value))}</b>`)
+          .join('<br/>')
+        return `${date ? `${format(parseISO(date), 'PP')}<br/>` : ''}${t('trend.total')}  <b>${formatTokenCount(total)}</b><br/>${rows}`
+      },
+    },
+    xAxis: categoryAxis(dates),
+    yAxis: valueAxis,
+    series,
+  }
 }

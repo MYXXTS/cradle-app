@@ -6,14 +6,12 @@
 // light card), hence the `tone` prop. Each row carries a progress bar + %
 // computed from the shares' own total, so "which model dominated this day /
 // weekday" is readable at a glance instead of only as raw token counts.
-import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 
 import { formatPercentFromRatio, formatTokenCount } from '~/lib/number-format'
 
 import type { ModelTokenShare } from './usage-insights'
-import { OTHER_MODEL_KEY } from './usage-insights'
-import { categoryColor } from './usage-palette'
+import { modelCategoryColor, modelDisplayLabel } from './usage-insights'
 
 // Shared chrome for Usage dashboard tooltips. Keep this fixed-dark rather
 // than semantic "foreground/background" so it does not flip to a white bubble
@@ -37,7 +35,7 @@ export function ModelShareRows({ shares, tone = 'default' }: { shares: ModelToke
     <div className={`mt-2 space-y-1.5 border-t pt-2 ${classes.border}`}>
       {shares.map((share, index) => {
         const ratio = total > 0 ? share.totalTokens / total : 0
-        const color = modelDotColor(share.modelId, index)
+        const color = modelCategoryColor(share.modelId, index)
         return (
           <div key={share.modelId} className="space-y-1">
             <div className="flex items-center justify-between gap-2">
@@ -58,17 +56,4 @@ export function ModelShareRows({ shares, tone = 'default' }: { shares: ModelToke
       })}
     </div>
   )
-}
-
-function modelDotColor(modelId: string, index: number): string {
-  if (modelId === OTHER_MODEL_KEY || modelId === 'unknown') {
-    return 'var(--color-muted-foreground)'
-  }
-  return categoryColor(index)
-}
-
-function modelDisplayLabel(modelId: string, t: TFunction<'usage'>): string {
-  if (modelId === OTHER_MODEL_KEY) { return t('tooltip.otherModels') }
-  if (modelId === 'unknown') { return t('tooltip.unknownModel') }
-  return modelId
 }

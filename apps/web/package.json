@@ -73,6 +73,8 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "dockview-react": "^7.0.2",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
     "embla-carousel-react": "^8.6.0",
     "es-module-shims": "^2.8.1",
     "es-toolkit": "^1.47.0",

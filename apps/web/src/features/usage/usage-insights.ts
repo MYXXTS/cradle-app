@@ -1,7 +1,10 @@
 // Pure calculations that turn the raw daily series into the comparisons and
 // call-outs the dashboard surfaces ("+23% vs last week", "busiest on
 // Tuesdays"). Everything here is derived from real API data — no mocking.
-import { buildDenseDailySeries, weekdayIndexFromDateKey } from './usage-date'
+import type { TFunction } from 'i18next'
+
+import { buildDenseDailySeries, lastDateKeys, weekdayIndexFromDateKey } from './usage-date'
+import { categoryColor } from './usage-palette'
 import type { DailyCost, DailyUsage, DailyUsageByModel } from './use-usage-overview'
 
 export { weekdayLabel } from './usage-date'
@@ -89,6 +92,23 @@ export interface ModelTokenShare {
 /** Synthetic key for the collapsed "everything past the top N" bucket — never a real model id. */
 export const OTHER_MODEL_KEY = '__other__'
 
+// Stable categorical color + localized label for a model id, shared by the
+// trend chart legend/stacks and the per-model tooltip rows. The collapsed
+// "other"/"unknown" buckets fall back to a muted tone instead of a palette
+// slot so they read as "leftover" rather than another named model.
+export function modelCategoryColor(modelId: string, index: number): string {
+  if (modelId === OTHER_MODEL_KEY || modelId === 'unknown') {
+    return 'var(--color-muted-foreground)'
+  }
+  return categoryColor(index)
+}
+
+export function modelDisplayLabel(modelId: string, t: TFunction<'usage'>): string {
+  if (modelId === OTHER_MODEL_KEY) { return t('tooltip.otherModels') }
+  if (modelId === 'unknown') { return t('tooltip.unknownModel') }
+  return modelId
+}
+
 /** Collapses per-model totals to the top `limit` entries plus one "other" bucket for the remainder, so a workspace that has cycled through a dozen models still renders a readable tooltip. */
 function topModelShares(entries: ModelTokenShare[], limit: number): ModelTokenShare[] {
   const sorted = [...entries].sort((a, b) => b.totalTokens - a.totalTokens)
@@ -112,6 +132,56 @@ export function modelBreakdownByDate(dailyByModel: DailyUsageByModel[], limit = 
     grouped.set(date, topModelShares(entries, limit))
   }
   return grouped
+}
+
+export type ModelStackDatum = Record<string, number | string>
+
+export interface ModelStackSeries {
+  /** One datum per calendar day in the window. Carries `date` plus a token count keyed by model id (top-N) or OTHER_MODEL_KEY. */
+  series: ModelStackDatum[]
+  /** Model ids in stack order (bottom -> top), top-N by total volume then OTHER_MODEL_KEY when there is a remainder. */
+  models: string[]
+}
+
+/**
+ * Pivots the daily-by-model series into one stacked-bar datum per calendar day,
+ * for the trend chart's multi-colored "tokens by model" view. Models are ranked
+ * by total volume across ALL history (not just the window) so a given model
+ * keeps a stable stack position/color as the range slider moves; everything past
+ * the top `limit` collapses into the OTHER_MODEL_KEY bucket.
+ */
+export function denseModelStackSeries(
+  dailyByModel: DailyUsageByModel[],
+  days: number,
+  limit = 6,
+): ModelStackSeries {
+  const totalsByModel = new Map<string, number>()
+  for (const row of dailyByModel) {
+    totalsByModel.set(row.modelId, (totalsByModel.get(row.modelId) ?? 0) + row.totalTokens)
+  }
+  const ranked = [...totalsByModel.entries()].sort((a, b) => b[1] - a[1]).map(([modelId]) => modelId)
+  const top = ranked.slice(0, limit)
+  const topSet = new Set(top)
+  const models = ranked.length > limit ? [...top, OTHER_MODEL_KEY] : [...top]
+
+  const byDate = new Map<string, Map<string, number>>()
+  for (const row of dailyByModel) {
+    const key = topSet.has(row.modelId) ? row.modelId : OTHER_MODEL_KEY
+    const bucket = byDate.get(row.date) ?? new Map<string, number>()
+    bucket.set(key, (bucket.get(key) ?? 0) + row.totalTokens)
+    byDate.set(row.date, bucket)
+  }
+
+  const series: ModelStackDatum[] = lastDateKeys(days).map((date) => {
+    const bucket = byDate.get(date)
+    const datum: ModelStackDatum = { date }
+    for (const modelId of models) {
+      datum[modelId] = bucket?.get(modelId) ?? 0
+    }
+    return datum
+  })
+
+  return { series, models }
 }
 
 /** Groups the daily-by-model series by weekday, for the "which model" line in the by-weekday pattern chart tooltip. */
