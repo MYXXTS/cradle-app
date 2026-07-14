@@ -146,7 +146,7 @@ export const chatSessionQueueItems = sqliteTable('chat_session_queue_items', {
     .references(() => providerTargets.id, { onDelete: 'set null' }),
   modelId: text('model_id'),
   thinkingEffort: text('thinking_effort', {
-    enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
   }),
   runtimeSettingsJson: text('runtime_settings_json').notNull().default('{}'),
   position: int('position').notNull(),

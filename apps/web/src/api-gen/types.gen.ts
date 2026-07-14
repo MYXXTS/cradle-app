@@ -1743,7 +1743,7 @@ export type PatchProfilesByIdCustomModelsData = {
                 inputModalities?: Array<string>;
                 outputModalities?: Array<string>;
                 reasoning?: boolean;
-                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
                 toolCall?: boolean;
                 temperature?: boolean;
                 structuredOutput?: boolean;
@@ -1782,7 +1782,7 @@ export type PatchProfilesByIdCustomModelsResponses = {
             inputModalities?: Array<string>;
             outputModalities?: Array<string>;
             reasoning?: boolean;
-            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
             toolCall?: boolean;
             temperature?: boolean;
             structuredOutput?: boolean;
@@ -2152,6 +2152,15 @@ export type GetProviderTargetsByProviderTargetIdCodexAccountDiagnosticsResponses
         } | null;
         rateLimitResetCredits: {
             availableCount: string;
+            credits: Array<{
+                id: string;
+                resetType: 'codexRateLimits' | 'unknown';
+                status: 'available' | 'redeeming' | 'redeemed' | 'unknown';
+                grantedAt: number;
+                expiresAt: number | null;
+                title: string | null;
+                description: string | null;
+            }> | null;
         } | null;
         tokenUsage: {
             summary: {
@@ -2303,7 +2312,7 @@ export type PatchProviderTargetsByProviderTargetIdCustomModelsResponses = {
             inputModalities?: Array<string>;
             outputModalities?: Array<string>;
             reasoning?: boolean;
-            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
             toolCall?: boolean;
             temperature?: boolean;
             structuredOutput?: boolean;
@@ -4000,7 +4009,7 @@ export type PostProvidersModelsResponses = {
             inputModalities?: Array<string>;
             outputModalities?: Array<string>;
             reasoning?: boolean;
-            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
             toolCall?: boolean;
             temperature?: boolean;
             structuredOutput?: boolean;
@@ -4046,7 +4055,7 @@ export type GetProvidersTargetsByProviderTargetIdModelsCacheResponses = {
                 inputModalities?: Array<string>;
                 outputModalities?: Array<string>;
                 reasoning?: boolean;
-                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
                 toolCall?: boolean;
                 temperature?: boolean;
                 structuredOutput?: boolean;
@@ -4097,7 +4106,7 @@ export type GetProvidersByProfileIdModelsCacheResponses = {
                 inputModalities?: Array<string>;
                 outputModalities?: Array<string>;
                 reasoning?: boolean;
-                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
                 toolCall?: boolean;
                 temperature?: boolean;
                 structuredOutput?: boolean;
@@ -4145,7 +4154,7 @@ export type PostProvidersModelLookupResponses = {
             inputModalities?: Array<string>;
             outputModalities?: Array<string>;
             reasoning?: boolean;
-            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
             toolCall?: boolean;
             temperature?: boolean;
             structuredOutput?: boolean;
@@ -4189,7 +4198,7 @@ export type PostProvidersModelSearchResponses = {
             inputModalities?: Array<string>;
             outputModalities?: Array<string>;
             reasoning?: boolean;
-            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+            reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
             toolCall?: boolean;
             temperature?: boolean;
             structuredOutput?: boolean;
@@ -4599,7 +4608,7 @@ export type GetAutomationsResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -4658,7 +4667,7 @@ export type PostAutomationsData = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -4717,7 +4726,7 @@ export type PostAutomationsResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -4808,7 +4817,7 @@ export type GetAutomationsByIdResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -4864,7 +4873,7 @@ export type PatchAutomationsByIdData = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -4925,7 +4934,7 @@ export type PatchAutomationsByIdResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -4996,7 +5005,7 @@ export type PostAutomationsByIdEnableResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5067,7 +5076,7 @@ export type PostAutomationsByIdDisableResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5142,7 +5151,7 @@ export type PostAutomationsByIdRunResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5222,7 +5231,7 @@ export type GetAutomationsByIdRunsResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5303,7 +5312,7 @@ export type GetAutomationsByIdRunsByRunIdResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5384,7 +5393,7 @@ export type PostAutomationsByIdRunsByRunIdStopResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5467,7 +5476,7 @@ export type PatchAutomationsByIdRunsByRunIdTriageResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5643,7 +5652,7 @@ export type GetAutomationTriageResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -5800,7 +5809,7 @@ export type GetCronRunsResponses = {
             providerTargetId?: string;
             runtimeKind?: string;
             modelId?: string;
-            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+            thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
             sessionPolicy?: 'new' | 'heartbeat';
             isolationPolicy?: 'workspace' | 'worktree_per_run';
             completionPolicy?: {
@@ -6094,7 +6103,7 @@ export type GetSessionsResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6147,7 +6156,7 @@ export type PostSessionsData = {
                 };
             } | null | undefined;
         };
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
         linkedIssueId?: string | null;
         sessionGroupId?: string | null;
         worktreeId?: string;
@@ -6179,7 +6188,7 @@ export type PostSessionsResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6254,7 +6263,7 @@ export type GetSessionsByIdResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6285,7 +6294,7 @@ export type PatchSessionsByIdData = {
         pinned?: boolean;
         providerTargetId?: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         sessionGroupId?: string | null;
     };
     path: {
@@ -6316,7 +6325,7 @@ export type PatchSessionsByIdResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6373,7 +6382,7 @@ export type PostSessionsByIdArchiveResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6428,7 +6437,7 @@ export type PostSessionsByIdReadResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6483,7 +6492,7 @@ export type PostSessionsByIdUnreadResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -6880,7 +6889,7 @@ export type GetSessionsByIdEnvironmentResponses = {
                 providerTargetId?: string;
                 runtimeKind?: string;
                 modelId?: string;
-                thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+                thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
                 sessionPolicy?: 'new' | 'heartbeat';
                 isolationPolicy?: 'workspace' | 'worktree_per_run';
                 completionPolicy?: {
@@ -7137,7 +7146,7 @@ export type PostThreadHandoffsData = {
         sourceSessionId: string;
         destinationProviderTargetId: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
     };
     path?: never;
     query?: never;
@@ -7176,7 +7185,7 @@ export type PostThreadHandoffsResponses = {
             providerTargetId: string | null;
             agentId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             linkedIssueId: string | null;
             sessionGroupId: string | null;
             runtimeKind: string;
@@ -7417,7 +7426,7 @@ export type PostWorksData = {
         baseStrategy?: 'source-head' | 'remote-default';
         providerTargetId?: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
         runtimeKind?: string;
         runtimeSettings?: {
             permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | null;
@@ -7482,7 +7491,7 @@ export type PostWorksResponses = {
             providerTargetId: string | null;
             agentId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             linkedIssueId: string | null;
             sessionGroupId: string | null;
             runtimeKind: string;
@@ -7594,7 +7603,7 @@ export type GetWorksByIdResponses = {
             providerTargetId: string | null;
             agentId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             linkedIssueId: string | null;
             sessionGroupId: string | null;
             runtimeKind: string;
@@ -7708,7 +7717,7 @@ export type PostWorksByIdArchiveResponses = {
             providerTargetId: string | null;
             agentId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             linkedIssueId: string | null;
             sessionGroupId: string | null;
             runtimeKind: string;
@@ -7824,7 +7833,7 @@ export type PostWorksByIdPrepareResponses = {
             providerTargetId: string | null;
             agentId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             linkedIssueId: string | null;
             sessionGroupId: string | null;
             runtimeKind: string;
@@ -7941,7 +7950,7 @@ export type PostWorksByIdSubmitResponses = {
             providerTargetId: string | null;
             agentId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             linkedIssueId: string | null;
             sessionGroupId: string | null;
             runtimeKind: string;
@@ -9721,7 +9730,7 @@ export type GetIssuesByIdSessionsResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -18008,7 +18017,7 @@ export type GetChatRuntimesByRuntimeKindModelsResponses = {
                 inputModalities?: Array<string>;
                 outputModalities?: Array<string>;
                 reasoning?: boolean;
-                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>;
+                reasoningEfforts?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'>;
                 toolCall?: boolean;
                 temperature?: boolean;
                 structuredOutput?: boolean;
@@ -19035,7 +19044,7 @@ export type GetChatSessionsBySessionIdQueueResponses = {
             }>;
             providerTargetId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             runtimeSettings: {
                 [key: string]: string | number | boolean;
             };
@@ -19100,7 +19109,7 @@ export type PostChatSessionsBySessionIdQueueData = {
         }>;
         providerTargetId?: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
         runtimeSettings?: {
             [key: string]: string | number | boolean | null;
         };
@@ -19168,7 +19177,7 @@ export type PostChatSessionsBySessionIdQueueResponses = {
         }>;
         providerTargetId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         runtimeSettings: {
             [key: string]: string | number | boolean;
         };
@@ -19315,7 +19324,7 @@ export type PostChatSessionsBySessionIdSteerResponses = {
             }>;
             providerTargetId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             runtimeSettings: {
                 [key: string]: string | number | boolean;
             };
@@ -19399,7 +19408,7 @@ export type PostChatSessionsBySessionIdQueueReorderResponses = {
             }>;
             providerTargetId: string | null;
             modelId: string | null;
-            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+            thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
             runtimeSettings: {
                 [key: string]: string | number | boolean;
             };
@@ -19481,7 +19490,7 @@ export type DeleteChatSessionsBySessionIdQueueByQueueItemIdResponses = {
         }>;
         providerTargetId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         runtimeSettings: {
             [key: string]: string | number | boolean;
         };
@@ -19545,7 +19554,7 @@ export type PatchChatSessionsBySessionIdQueueByQueueItemIdData = {
         }>;
         providerTargetId?: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
         runtimeSettings?: {
             [key: string]: string | number | boolean | null;
         };
@@ -19614,7 +19623,7 @@ export type PatchChatSessionsBySessionIdQueueByQueueItemIdResponses = {
         }>;
         providerTargetId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         runtimeSettings: {
             [key: string]: string | number | boolean;
         };
@@ -19679,7 +19688,7 @@ export type PostChatSessionsBySessionIdTitleRegenerateResponses = {
         providerTargetId: string | null;
         agentId: string | null;
         modelId: string | null;
-        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+        thinkingEffort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null;
         linkedIssueId: string | null;
         sessionGroupId: string | null;
         runtimeKind: string;
@@ -19845,7 +19854,7 @@ export type PostChatSessionsBySessionIdResponseData = {
         }>;
         providerTargetId?: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
         runtimeSettings?: {
             [key: string]: string | number | boolean | null;
         };
@@ -19925,7 +19934,7 @@ export type PostChatSideConversationsBySideConversationIdResponseData = {
         }>;
         providerTargetId?: string;
         modelId?: string | null;
-        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+        thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
         runtimeSettings?: {
             [key: string]: string | number | boolean | null;
         };

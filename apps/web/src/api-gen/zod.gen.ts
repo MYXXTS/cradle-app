@@ -346,7 +346,8 @@ export const zPatchProfilesByIdCustomModelsBody = z.object({
                 'medium',
                 'high',
                 'xhigh',
-                'max'
+                'max',
+                'ultra'
             ])).optional(),
             toolCall: z.boolean().optional(),
             temperature: z.boolean().optional(),
@@ -1046,7 +1047,8 @@ export const zPostAutomationsBody = z.object({
             'medium',
             'high',
             'xhigh',
-            'max'
+            'max',
+            'ultra'
         ]).optional(),
         sessionPolicy: z.enum(['new', 'heartbeat']).optional(),
         isolationPolicy: z.enum(['workspace', 'worktree_per_run']).optional(),
@@ -1124,7 +1126,8 @@ export const zPatchAutomationsByIdBody = z.object({
             'medium',
             'high',
             'xhigh',
-            'max'
+            'max',
+            'ultra'
         ]).optional(),
         sessionPolicy: z.enum(['new', 'heartbeat']).optional(),
         isolationPolicy: z.enum(['workspace', 'worktree_per_run']).optional(),
@@ -1338,7 +1341,8 @@ export const zPostSessionsBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).optional(),
     linkedIssueId: z.string().min(1).nullish(),
     sessionGroupId: z.string().min(1).nullish(),
@@ -1366,7 +1370,8 @@ export const zPatchSessionsByIdBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).nullish(),
     sessionGroupId: z.string().min(1).nullish()
 });
@@ -1536,7 +1541,8 @@ export const zPostThreadHandoffsBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).nullish()
 });
 
@@ -1579,7 +1585,8 @@ export const zPostWorksBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).optional(),
     runtimeKind: z.string().min(1).optional(),
     runtimeSettings: z.object({
@@ -3017,7 +3024,8 @@ export const zPostChatSessionsBySessionIdQueueBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).optional(),
     runtimeSettings: z.record(z.string(), z.union([
         z.string(),
@@ -3179,7 +3187,8 @@ export const zPatchChatSessionsBySessionIdQueueByQueueItemIdBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).optional(),
     runtimeSettings: z.record(z.string(), z.union([
         z.string(),
@@ -3308,7 +3317,8 @@ export const zPostChatSessionsBySessionIdResponseBody = z.object({
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).optional(),
     runtimeSettings: z.record(z.string(), z.union([
         z.string(),
@@ -3402,7 +3412,8 @@ export const zPostChatSideConversationsBySideConversationIdResponseBody = z.obje
         'medium',
         'high',
         'xhigh',
-        'max'
+        'max',
+        'ultra'
     ]).optional(),
     runtimeSettings: z.record(z.string(), z.union([
         z.string(),

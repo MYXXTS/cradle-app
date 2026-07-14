@@ -15,6 +15,11 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
+type DesktopServerStatus
+  = | { state: 'starting' }
+    | { state: 'ready', serverUrl: string }
+    | { state: 'failed', message: string }
+
 // Stub out Electron-only window properties so devtool code compiles in web context.
 // These features are non-functional in the web build but won't crash.
 interface Window {
@@ -55,6 +60,10 @@ interface Window {
     }
     desktopUpdate: {
       onStatusChanged: (handler: (status: unknown) => void) => () => void
+    }
+    serverRuntime?: {
+      getStatus: () => Promise<DesktopServerStatus>
+      onStatusChanged: (handler: (status: DesktopServerStatus) => void) => () => void
     }
     desktopAppBadge?: {
       setUnreadCount: (count: number) => Promise<unknown>
