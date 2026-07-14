@@ -52,7 +52,18 @@ class FakeCodexAccountClient implements CodexAppServerClientLike {
               rateLimitReachedType: null,
             },
           },
-          rateLimitResetCredits: { availableCount: 2n, credits: null },
+          rateLimitResetCredits: {
+            availableCount: 2n,
+            credits: [{
+              id: 'credit-1',
+              resetType: 'codexRateLimits',
+              status: 'available',
+              grantedAt: 1_799_000_000,
+              expiresAt: 1_801_000_000,
+              title: 'One-time reset',
+              description: 'Reset the active Codex usage window.',
+            }],
+          },
         }
       case 'account/usage/read':
         return {
@@ -132,6 +143,15 @@ describe('codex account diagnostics', () => {
     })
     expect(diagnostics.rateLimitsByLimitId?.codex?.secondary?.windowDurationMins).toBe(10_080)
     expect(diagnostics.rateLimitResetCredits?.availableCount).toBe('2')
+    expect(diagnostics.rateLimitResetCredits?.credits).toEqual([{
+      id: 'credit-1',
+      resetType: 'codexRateLimits',
+      status: 'available',
+      grantedAt: 1_799_000_000,
+      expiresAt: 1_801_000_000,
+      title: 'One-time reset',
+      description: 'Reset the active Codex usage window.',
+    }])
     expect(diagnostics.tokenUsage?.summary.lifetimeTokens).toBe('1234567890123456789')
     expect(diagnostics.tokenUsage?.dailyUsageBuckets).toEqual([
       { startDate: '2026-06-19', tokens: '42' },

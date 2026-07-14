@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { describe, expect, it } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { createElement } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { toastManager } from '~/components/ui/toast'
 
 import {
   AGENT_MODELS_QUERY_KEY,
@@ -8,7 +14,40 @@ import {
   isRuntimeOwnedProviderTarget,
   providerTargetModelsQueryKey,
   shouldLiveRefreshModelInventory,
+  useProviderTargetModelMap,
 } from './use-agent-models'
+
+const apiMocks = vi.hoisted(() => ({
+  getModelSettings: vi.fn(),
+  getModelsCache: vi.fn(),
+  postModels: vi.fn(),
+}))
+
+vi.mock('~/api-gen/sdk.gen', () => ({
+  getProfilesById: vi.fn(),
+  getProvidersByProfileIdModelsCache: vi.fn(),
+  getProviderTargetsByProviderTargetIdModelSettings: apiMocks.getModelSettings,
+  getProvidersTargetsByProviderTargetIdModelsCache: apiMocks.getModelsCache,
+  postProvidersModels: apiMocks.postModels,
+}))
+
+beforeEach(() => {
+  apiMocks.getModelSettings.mockReset().mockResolvedValue({
+    data: { configJson: JSON.stringify({ enabledModels: [] }) },
+  })
+  apiMocks.getModelsCache.mockReset().mockResolvedValue({
+    data: {
+      models: [],
+      cached: false,
+      stale: false,
+      coolingDown: false,
+      providerLabel: 'Provider 1',
+    },
+  })
+  apiMocks.postModels.mockReset()
+})
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('agentModelsQueryKey', () => {
   it('uses one stable cache slot per profile', () => {
@@ -110,5 +149,65 @@ describe('shouldLiveRefreshModelInventory', () => {
       coolingDown: true,
       models: [],
     })).toBe(false)
+  })
+})
+
+describe('useProviderTargetModelMap', () => {
+  it('settles the cache query before a background refresh and does not toast on refresh failure', async () => {
+    let rejectRefresh!: (reason: Error) => void
+    apiMocks.postModels.mockReturnValue(new Promise((_, reject) => {
+      rejectRefresh = reject
+    }))
+    const toast = vi.spyOn(toastManager, 'add')
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const target = {
+      id: 'provider-1',
+      kind: 'external' as const,
+      enabled: true,
+      name: 'Provider 1',
+      providerKind: 'openai-compatible' as const,
+    }
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children)
+
+    const { result } = renderHook(() => useProviderTargetModelMap([target], [target.id]), { wrapper })
+
+    await waitFor(() => expect(apiMocks.postModels).toHaveBeenCalledTimes(1))
+    expect(queryClient.getQueryState(providerTargetModelsQueryKey(target))?.status).toBe('success')
+
+    rejectRefresh(new Error('upstream unavailable'))
+    await waitFor(() => expect(result.current.loadingProviderTargetIds.has(target.id)).toBe(false))
+    expect(toast).not.toHaveBeenCalled()
+    toast.mockRestore()
+  })
+
+  it('live-fetches runtime-owned targets that cannot have a durable cache', async () => {
+    apiMocks.postModels.mockResolvedValue({
+      data: [{
+        id: 'runtime-model',
+        label: 'Runtime Model',
+        providerKind: 'universal',
+        capabilities: {},
+      }],
+    })
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const target = {
+      id: 'runtime-native:opencode:test',
+      kind: 'external' as const,
+      enabled: true,
+      name: 'Runtime Provider',
+      providerKind: 'universal' as const,
+    }
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children)
+
+    const { result } = renderHook(() => useProviderTargetModelMap([target], [target.id]), { wrapper })
+
+    await waitFor(() => expect(result.current.modelsByProviderTargetId[target.id]).toHaveLength(1))
+    expect(apiMocks.postModels).toHaveBeenCalledTimes(1)
   })
 })

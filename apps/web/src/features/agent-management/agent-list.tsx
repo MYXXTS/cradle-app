@@ -171,6 +171,7 @@ function readAgentBatchThinkingEffort(value: unknown): AgentBatchThinkingEffort 
     case 'xhigh':
       return value
     case 'max':
+    case 'ultra':
       return 'xhigh'
     case 'none':
     case 'minimal':

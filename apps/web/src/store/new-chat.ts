@@ -7,7 +7,7 @@ import type { RuntimeSettings, RuntimeSettingsPatch } from '~/features/chat/comm
 
 import { persistStorage } from './persist-storage'
 
-type PersistedThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+type PersistedThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null
 export interface NewChatClaudeAgentConfig {
   modelAliases: ClaudeAgentModelAliases
 }
@@ -26,6 +26,8 @@ interface NewChatState {
   lastThinkingEffort: PersistedThinkingEffort
   /** map of profileId → last selected thinking effort for that provider */
   lastThinkingByProfile: Record<string, PersistedThinkingEffort>
+  /** map of profileId → modelId → last selected thinking effort */
+  lastThinkingByProviderModel: Record<string, Record<string, PersistedThinkingEffort>>
   lastRuntimeSettingsByKind: Partial<Record<RuntimeKind, RuntimeSettings>>
   setLastRuntimeKind: (kind: RuntimeKind | null) => void
   setLastAgentId: (id: string | null) => void
@@ -35,9 +37,9 @@ interface NewChatState {
   setLastClaudeAgentForProfile: (profileId: string, config: NewChatClaudeAgentConfig | null) => void
   setLastThinkingEffort: (effort: PersistedThinkingEffort) => void
   setLastThinkingForProfile: (profileId: string, effort: PersistedThinkingEffort) => void
+  setLastThinkingForProviderModel: (profileId: string, modelId: string, effort: PersistedThinkingEffort) => void
   patchLastRuntimeSettings: (runtimeKind: RuntimeKind, patch: RuntimeSettingsPatch) => void
   getLastModelForProfile: (profileId: string) => string | undefined
-  reconcileProfiles: (profileIds: string[]) => void
 }
 
 function areClaudeAgentConfigsEqual(
@@ -75,6 +77,7 @@ export const useNewChatStore = create<NewChatState>()(
       lastClaudeAgentByProfile: {},
       lastThinkingEffort: 'high',
       lastThinkingByProfile: {},
+      lastThinkingByProviderModel: {},
       lastRuntimeSettingsByKind: {},
       setLastRuntimeKind: (kind) => {
         set((state) => {
@@ -177,6 +180,35 @@ export const useNewChatStore = create<NewChatState>()(
           }
         })
       },
+      setLastThinkingForProviderModel: (profileId, modelId, effort) => {
+        set((state) => {
+          const currentByModel = state.lastThinkingByProviderModel[profileId] ?? {}
+          if (effort === null) {
+            if (!(modelId in currentByModel)) {
+              return state
+            }
+            const nextByModel = { ...currentByModel }
+            delete nextByModel[modelId]
+            const nextByProvider = { ...state.lastThinkingByProviderModel }
+            if (Object.keys(nextByModel).length === 0) {
+              delete nextByProvider[profileId]
+            }
+            else {
+              nextByProvider[profileId] = nextByModel
+            }
+            return { lastThinkingByProviderModel: nextByProvider }
+          }
+          if (currentByModel[modelId] === effort) {
+            return state
+          }
+          return {
+            lastThinkingByProviderModel: {
+              ...state.lastThinkingByProviderModel,
+              [profileId]: { ...currentByModel, [modelId]: effort },
+            },
+          }
+        })
+      },
       patchLastRuntimeSettings: (runtimeKind, patch) => {
         set((state) => {
           const current = state.lastRuntimeSettingsByKind[runtimeKind] ?? {}
@@ -203,53 +235,11 @@ export const useNewChatStore = create<NewChatState>()(
         })
       },
       getLastModelForProfile: profileId => get().lastModelByProfile[profileId],
-      reconcileProfiles: (profileIds) => {
-        set((state) => {
-          const allowed = new Set(profileIds)
-          const lastAgentProfileId = state.lastAgentProfileId && allowed.has(state.lastAgentProfileId)
-            ? state.lastAgentProfileId
-            : null
-
-          const lastModelByProfile = Object.fromEntries(
-            Object.entries(state.lastModelByProfile).filter(([profileId]) => allowed.has(profileId)),
-          )
-          const lastClaudeAgentByProfile = Object.fromEntries(
-            Object.entries(state.lastClaudeAgentByProfile).filter(([profileId]) => allowed.has(profileId)),
-          )
-          const lastThinkingByProfile = Object.fromEntries(
-            Object.entries(state.lastThinkingByProfile).filter(([profileId]) => allowed.has(profileId)),
-          )
-
-          const modelsUnchanged = Object.keys(state.lastModelByProfile).length === Object.keys(lastModelByProfile).length
-            && Object.entries(lastModelByProfile).every(([profileId, modelId]) => state.lastModelByProfile[profileId] === modelId)
-          const claudeAgentsUnchanged = Object.keys(state.lastClaudeAgentByProfile).length === Object.keys(lastClaudeAgentByProfile).length
-            && Object.entries(lastClaudeAgentByProfile).every(([profileId, config]) =>
-              areClaudeAgentConfigsEqual(state.lastClaudeAgentByProfile[profileId] ?? null, config))
-          const thinkingUnchanged = Object.keys(state.lastThinkingByProfile).length === Object.keys(lastThinkingByProfile).length
-            && Object.entries(lastThinkingByProfile).every(([profileId, effort]) => state.lastThinkingByProfile[profileId] === effort)
-
-          if (
-            state.lastAgentProfileId === lastAgentProfileId
-            && modelsUnchanged
-            && claudeAgentsUnchanged
-            && thinkingUnchanged
-          ) {
-            return state
-          }
-
-          return {
-            lastAgentProfileId,
-            lastModelByProfile,
-            lastClaudeAgentByProfile,
-            lastThinkingByProfile,
-          }
-        })
-      },
     }),
     {
       name: 'cradle:new-chat:v1',
       storage: persistStorage,
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>
         if (version < 2) {
@@ -262,18 +252,27 @@ export const useNewChatStore = create<NewChatState>()(
                 opencode: legacy,
               },
               lastThinkingByProfile: {},
+              lastThinkingByProviderModel: {},
             }
           }
           return {
             ...state,
             lastRuntimeSettingsByKind: {},
             lastThinkingByProfile: {},
+            lastThinkingByProviderModel: {},
           }
         }
         if (version < 3) {
           return {
             ...state,
             lastThinkingByProfile: {},
+            lastThinkingByProviderModel: {},
+          }
+        }
+        if (version < 4) {
+          return {
+            ...state,
+            lastThinkingByProviderModel: {},
           }
         }
         return persisted as NewChatState

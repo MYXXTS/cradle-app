@@ -280,7 +280,7 @@ function tryParseJsonSnippet(text: string): JsonObject | null {
   }
 }
 
-function extractFromJsonObject(obj: JsonObject): { apiKey?: string, baseUrl?: string } {
+function extractFromJsonObject(obj: JsonObject): { apiKey?: string, baseUrl?: string, newapiChannel?: boolean } {
   let apiKey: string | undefined
   let baseUrl: string | undefined
 
@@ -298,7 +298,9 @@ function extractFromJsonObject(obj: JsonObject): { apiKey?: string, baseUrl?: st
     }
   }
 
-  return { apiKey, baseUrl }
+  const newapiChannel = obj._type === 'newapi_channel_conn'
+
+  return { apiKey, baseUrl, newapiChannel }
 }
 
 // ── main ──
@@ -307,14 +309,14 @@ function parseProviderConfigText(text: string): ParseResult {
   // 0. Try JSON snippet first (most structured)
   const jsonObj = tryParseJsonSnippet(text)
   if (jsonObj) {
-    const { apiKey: jsonKey, baseUrl: jsonUrl } = extractFromJsonObject(jsonObj)
+    const { apiKey: jsonKey, baseUrl: jsonUrl, newapiChannel } = extractFromJsonObject(jsonObj)
     if (jsonKey || jsonUrl) {
       const urls: ParsedUrl[] = jsonUrl ? [{ url: jsonUrl, kind: classifyUrl(jsonUrl) }] : []
       const providers: ParsedProvider[] = []
       if (jsonUrl) {
-        const kind = classifyUrl(jsonUrl)
+        const kind = newapiChannel ? 'universal' : (classifyUrl(jsonUrl) === 'unknown' ? 'openai-compatible' : classifyUrl(jsonUrl))
         providers.push({
-          providerKind: kind === 'unknown' ? 'openai-compatible' : kind,
+          providerKind: kind,
           name: hostnameFromUrl(jsonUrl),
           apiKey: jsonKey ?? '',
           baseUrl: jsonUrl,

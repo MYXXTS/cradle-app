@@ -47,7 +47,7 @@ const AutomationRecipeSchema = z.object({
   providerTargetId: z.string().optional(),
   runtimeKind: z.string().min(1).optional(),
   modelId: z.string().optional(),
-  thinkingEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  thinkingEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']).optional(),
   sessionPolicy: z.enum(['new', 'heartbeat']).optional(),
   isolationPolicy: z.enum(['workspace', 'worktree_per_run']).optional(),
   completionPolicy: z.object({

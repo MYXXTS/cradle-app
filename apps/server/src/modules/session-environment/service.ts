@@ -35,7 +35,9 @@ export function getEnvironment(sessionId: string) {
     usage: Usage.getSessionUsage(sessionId),
     pullRequest: PullRequest.getBoundPullRequest(sessionId),
     automationRuns: Automation.listRunsForSession(sessionId).slice(0, 5),
-    checkpoints: TurnCheckpoint.listForSession(sessionId).slice(0, 20),
+    checkpoints: TurnCheckpoint.isTurnCheckpointsEnabled()
+      ? TurnCheckpoint.listForSession(sessionId).slice(0, 20)
+      : [],
     handoff: ThreadHandoff.getByDestinationSessionId(sessionId),
   }
 }

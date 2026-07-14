@@ -534,6 +534,7 @@ function RateLimitsTab({
         {(resetCreditCount !== null || whamResetCredits !== null) && (
           <ResetCreditsCard
             whamCredits={whamResetCredits}
+            nativeCredits={diagnostics?.rateLimitResetCredits?.credits ?? null}
             fallbackCount={resetCreditCount}
             loading={whamLoading}
             onUse={onUseResetCredit}
@@ -568,12 +569,14 @@ function RateLimitsTab({
 
 function ResetCreditsCard({
   whamCredits,
+  nativeCredits,
   fallbackCount,
   loading,
   onUse,
   pending,
 }: {
   whamCredits: WhamResetCredits | null
+  nativeCredits: CodexNativeResetCredit[] | null
   fallbackCount: number | null
   loading: boolean
   onUse: () => void
@@ -582,7 +585,7 @@ function ResetCreditsCard({
   const count = whamCredits?.availableCredits ?? fallbackCount ?? 0
   const hasCredits = count > 0
   const refreshingWham = loading && whamCredits === null
-  const credits = whamCredits?.credits ?? []
+  const credits = whamCredits?.credits ?? nativeCredits?.map(projectNativeResetCredit) ?? []
 
   return (
     <div className="rounded-xl bg-muted/20 px-4 py-3 ring-1 ring-foreground/6">
@@ -787,10 +790,24 @@ interface WhamResetCredit {
   expiresAt: number | null
 }
 
+type CodexNativeResetCredit = NonNullable<
+  NonNullable<CodexAccountDiagnostics['rateLimitResetCredits']>['credits']
+>[number]
+
 interface WhamResetCredits {
   availableCredits: number
   totalEarnedCount: number
   credits: WhamResetCredit[]
+}
+
+function projectNativeResetCredit(credit: CodexNativeResetCredit): WhamResetCredit {
+  return {
+    id: credit.id,
+    title: credit.title,
+    status: credit.status,
+    grantedAt: credit.grantedAt * 1_000,
+    expiresAt: credit.expiresAt === null ? null : credit.expiresAt * 1_000,
+  }
 }
 
 // WHAM timestamps arrive as ISO-8601 strings (e.g. "2026-07-18T00:36:52Z").

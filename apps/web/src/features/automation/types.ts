@@ -32,7 +32,7 @@ export interface AutomationRecipe {
   providerTargetId?: string | null
   runtimeKind?: RuntimeKind | null
   modelId?: string | null
-  thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+  thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra' | null
   sessionPolicy?: 'new' | 'heartbeat'
   isolationPolicy?: 'workspace' | 'worktree_per_run'
   completionPolicy?: {
@@ -113,7 +113,7 @@ export interface CreateAutomationInput {
     providerTargetId?: string
     runtimeKind?: RuntimeKind
     modelId?: string
-    thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+    thinkingEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
     sessionPolicy?: 'new' | 'heartbeat'
     isolationPolicy?: 'workspace' | 'worktree_per_run'
     completionPolicy?: AutomationRecipe['completionPolicy']

@@ -259,6 +259,23 @@ export const ProviderTargetsModel = {
     rateLimitResetCredits: t.Union([
       t.Object({
         availableCount: t.String(),
+        credits: t.Union([
+          t.Array(t.Object({
+            id: t.String(),
+            resetType: t.Union([t.Literal('codexRateLimits'), t.Literal('unknown')]),
+            status: t.Union([
+              t.Literal('available'),
+              t.Literal('redeeming'),
+              t.Literal('redeemed'),
+              t.Literal('unknown'),
+            ]),
+            grantedAt: t.Number(),
+            expiresAt: nullableNumber,
+            title: nullableString,
+            description: nullableString,
+          }, { additionalProperties: false })),
+          t.Null(),
+        ]),
       }, { additionalProperties: false }),
       t.Null(),
     ]),

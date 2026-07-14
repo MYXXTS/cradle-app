@@ -76,7 +76,7 @@ const ModelDescriptorSchema = z.object({
       inputModalities: z.array(z.string()).optional(),
       outputModalities: z.array(z.string()).optional(),
       reasoning: z.boolean().optional(),
-      reasoningEfforts: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).optional(),
+      reasoningEfforts: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).optional(),
       toolCall: z.boolean().optional(),
       temperature: z.boolean().optional(),
       structuredOutput: z.boolean().optional(),
@@ -278,7 +278,8 @@ async function refreshProviderTargetModels(
  * Shared inventory read policy for full provider-target records:
  * - `refresh: true` always live-fetches (even when cache is warm)
  * - cache hit with models → return filtered cache immediately (including stale)
- * - cache miss / empty → live-fetch for enabled API provider kinds
+ * - cache miss / empty → return immediately; the model-map owner may refresh in background
+ * - runtime-owned target cache miss → live-fetch because no durable cache exists
  *
  * Stale soft-TTL refresh is owned by `useProviderTargetModelMap` so the UI can
  * paint cached models first, then replace them when a background live fetch finishes.
@@ -311,12 +312,12 @@ async function fetchVisibleModelsForProviderTarget(
     return filterVisibleModels(ModelDescriptorListSchema.parse(cache.models), visibility)
   }
 
-  if (!canLiveFetch) {
-    return []
+  if (canLiveFetch && isRuntimeOwnedProviderTarget(target)) {
+    const liveModels = await refreshProviderTargetModelsDeduped(target, options)
+    return filterVisibleModels(liveModels, visibility)
   }
 
-  const liveModels = await refreshProviderTargetModelsDeduped(target, options)
-  return filterVisibleModels(liveModels, visibility)
+  return []
 }
 
 /**
@@ -452,6 +453,7 @@ export function useProviderTargetModelMap(
   const { t } = useTranslation('common')
   const queryClient = useQueryClient()
   const refreshesRef = useRef(new Map<string, Promise<ModelDescriptor[]>>())
+  const [refreshingProviderTargetIds, setRefreshingProviderTargetIds] = useState<Set<string>>(() => new Set())
   const reportedErrorsRef = useRef(new Map<string, number>())
   const [requestedProviderTargetIds, setRequestedProviderTargetIds] = useState<Set<string>>(
     () => new Set(initialProviderTargetIds.flatMap(targetId => (targetId ? [targetId] : []))),
@@ -524,24 +526,27 @@ export function useProviderTargetModelMap(
     }
 
     const queryKey = providerTargetModelsQueryKey(target, hookOptions.workspaceId, hookOptions.hostId)
-    const refresh = (async () => {
-      await queryClient.cancelQueries({ queryKey })
-      return queryClient.fetchQuery({
-        queryKey,
-        queryFn: () => fetchVisibleModelsForProviderTarget(target, {
-          refresh: true,
-          workspaceId: hookOptions.workspaceId,
-          hostId: hookOptions.hostId,
-        }),
-        staleTime: 0,
-        gcTime: MODEL_INVENTORY_GC_TIME_MS,
-        retry: false,
-      })
-    })()
-    refreshesRef.current.set(target.id, refresh)
-    void refresh.catch(() => []).finally(() => {
-      refreshesRef.current.delete(target.id)
+    setRefreshingProviderTargetIds(current => new Set(current).add(target.id))
+    const refresh = fetchVisibleModelsForProviderTarget(target, {
+      refresh: true,
+      workspaceId: hookOptions.workspaceId,
+      hostId: hookOptions.hostId,
     })
+    refreshesRef.current.set(target.id, refresh)
+    void refresh
+      .then(models => queryClient.setQueryData(queryKey, models))
+      .catch(() => {
+        // Background inventory probes are opportunistic. The server records a
+        // cooldown; opening a picker must not surface an operational toast.
+      })
+      .finally(() => {
+        refreshesRef.current.delete(target.id)
+        setRefreshingProviderTargetIds((current) => {
+          const next = new Set(current)
+          next.delete(target.id)
+          return next
+        })
+      })
   }, [hookOptions.hostId, hookOptions.workspaceId, queryClient])
 
   const ensureProviderTargetModelsFresh = useCallback((target: ProviderTargetModelRequestTarget) => {
@@ -630,7 +635,7 @@ export function useProviderTargetModelMap(
     modelsByProviderTargetId[target.id] = ModelDescriptorListSchema.parse(
       query?.data,
     ) satisfies ModelDescriptor[]
-    if (query?.isLoading || query?.isFetching) {
+    if (query?.isLoading || query?.isFetching || refreshingProviderTargetIds.has(target.id)) {
       loadingProviderTargetIds.add(target.id)
     }
     if (query?.isSuccess) {
