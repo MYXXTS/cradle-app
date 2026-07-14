@@ -9,6 +9,16 @@ web/server architecture review. Plans 042-046 were independently audited and
 then vetted against current source; they do not reopen completed Plans 024,
 035, 040, or 041.
 
+Supplemented again from the exhaustive architecture review on the same commit:
+Plans 048-051 cover the four remaining evidence-backed correctness/ownership
+directions selected for execution. Plan 047 is the independently prepared
+Download Center track and remains unchanged.
+
+Supplemented on 2026-07-14 against commit `c450147`: Plan 052 replaces Codex's
+chat-session-scoped app-server processes with one provider-target-owned host that
+multiplexes isolated threads. It was requested as a focused plan and does not
+reopen the wider audit.
+
 Each executor: read the plan fully before starting, run its drift check, honor its
 STOP conditions, and update your row below when done. Plans are self-contained —
 they do not assume you saw the audit or any other plan.
@@ -60,12 +70,17 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 039  | Replace secret rotation with runtime keyring             | P0       | M      | 038        | DONE                                                                                   |
 | 040  | Establish web state authority                            | P1       | L      | 038        | DONE                                                                                  |
 | 041  | Enforce domain and lifecycle ownership                   | P1       | XL     | 038, 040   | DONE                                                                                  |
-| 042  | Collapse Automation contract and query path              | P1       | L      | 040        | TODO                                                                                  |
+| 042  | Collapse Automation contract and query path              | P0       | L      | 040        | TODO                                                                                  |
 | 043  | Deepen Composer Draft lifecycle ownership                | P1       | M      | 040        | TODO                                                                                  |
 | 044  | Establish one Chat turn completion owner                 | P1       | L      | 024, 041   | TODO                                                                                  |
-| 045  | Close the Provider Catalog target query seam             | P2       | M      | 035        | TODO (execute only after Plan 035 status is reconciled)                               |
+| 045  | Close the Provider Catalog target query seam             | P2       | M      | 035, 048   | TODO (execute after Plan 035 status is reconciled and Plan 048 lands)                  |
 | 046  | Deepen Terminal lifetime ownership                       | P2       | M      | 041        | TODO                                                                                  |
 | 047  | Build a unified, thin Download Center                    | P1       | XL     | 028, 041   | TODO                                                                                  |
+| 048  | Publish a safe Provider Endpoint catalog projection      | P1       | M      | 035        | TODO (execute only after Plan 035 status is reconciled)                               |
+| 049  | Complete lossless Navigation surface round-trip          | P1       | L      | 040        | TODO                                                                                  |
+| 050  | Own Session projection and cache coherence               | P0       | L      | 040        | TODO                                                                                  |
+| 051  | Own Issue–execution association end to end               | P0       | L      | 050        | TODO                                                                                  |
+| 052  | Make Codex app-server provider-owned and thread-multiplexed | P0     | XL     | 041        | TODO                                                                                  |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
@@ -142,12 +157,17 @@ splitting until this track is stable.
 - 039 requires 038 so secret administration is not exposed through the old optional-auth boundary.
 - 040 requires 038 because all feature gateways must consume the shared authenticated transport.
 - 041 requires 038 and 040 so server domain boundaries and web projection boundaries converge on one API contract.
-- 042 follows 040 and removes Automation's remaining raw-fetch/auth exception; execute it first because it also removes a concrete 1+N path.
+- 042 follows 040 and removes Automation's remaining raw-fetch/auth exception; its authentication bypass can make the entire feature return 401, so execute this P0 first.
 - 043 follows 040 and centralizes Draft state/transport transitions; it is independent of 042 and may run in parallel in an isolated worktree.
 - 044 builds on 024's durable facts and 041's process lifecycle owner; it must not change event schemas or provider protocols.
-- 045 is post-035 consolidation, not a second model-layer redesign. Reconcile/finish 035 before touching overlapping Provider Catalog files.
+- 045 is post-035/048 consolidation, not a second model-layer redesign. Reconcile/finish 035, then land 048's canonical endpoint projection before touching the overlapping Provider Catalog route/model/docs files.
 - 046 consumes 041's ownership rules but remains web TUI scoped; it preserves the server PTY lease and the two terminal adapters.
 - 047 consumes 041's lifecycle ownership and 028's Server-owned dynamic Plugin source boundary. Its internal milestone order is mandatory: security/characterization → shared HTTP kernel → Server host → Server owners → Desktop host/owners → Web projection → legacy cleanup. It does not reuse Background Job or wait for Plans 030/031, but must reconcile their already-landed Plugin preview/cache foundation before migrating Plugin downloads.
+- 048 keeps endpoint templates Server-owned and publishes only a safe projection; it precedes 045 to avoid overlapping Provider Catalog edits and never exposes runtime auth policy.
+- 049 is independent after 040 and replaces duplicated route/type/persistence definitions with one lossless Navigation codec. It intentionally resets the reconstructible v1 surface snapshot rather than adding a compatibility shim.
+- 050 follows 040 and repairs the concrete snapshot-gap stale-cache bug before consolidating all Session projection semantics. It must land before association cache work.
+- 051 follows 050 so Issue association mutations reuse the Session projection gateway. Server-side workspace invariants and participant-owned writes are mandatory before Web cache reconciliation.
+- 052 follows completed Plan 041's lifecycle ownership rules and is independent of Plans 042-051. Its internal order is mandatory: characterize isolation -> retain idle hosts -> establish the provider host/router -> move session env to thread config -> bind/resume threads -> migrate all callers -> ratchet docs/tests. Do not land a rollback-only resume patch first.
 - 040 supersedes blocked Plan 023: generated clients remain transport infrastructure, while feature-owned gateways own query/error/invalidation semantics.
 - 041 supersedes blocked Plans 020 and 021: dependency enforcement and lifecycle ownership precede god-file extraction.
 
@@ -216,6 +236,13 @@ orchestration layer) would be reasonable; a whole-codebase migration is negative
 - **Redo Provider Catalog inventory/enrichment/visibility/selection architecture** — rejected as duplicate of Plan 035. Plan 045 only closes the still-open target query seam and cold-cache Conversation Bridge path.
 - **Recreate `apps/web/src/features/tui/tui-runtime-registry.ts` from the review snapshot** — rejected because the file no longer exists and a shallow registry would duplicate current state. Plan 046 specifies a narrow lifetime controller instead.
 - **Persist Composer file attachments in the existing draft JSON** — deferred from Plan 043; attachment size, security, and serialization need a separate contract before storage.
+
+- **Expose the full internal Provider Endpoint template over HTTP** — rejected. `anthropicWireAuth` and future credential/runtime policies remain Server-only; Plan 048 publishes an explicit field allowlist.
+- **Keep a bundled Web Provider Endpoint fallback registry** — rejected because it recreates the drift Plan 048 removes. Catalog failure degrades detection only; manual import remains available.
+- **Treat Diff `line`/`side` omission as implicitly transient** — rejected. Plan 049 persists existing deep-link context unless product owners explicitly choose a different policy at its STOP condition.
+- **Repair Session event gaps by invalidating lists only or adding polling** — rejected. Open detail/runtime/queue projections must converge through Plan 050's targeted semantic recovery; timeout/polling is not the authority.
+- **Allow cross-workspace Issue–execution links or patch caches caller-by-caller** — rejected. Plan 051 enforces a single workspace invariant and uses owner APIs for old/new association reconciliation.
+- **Fix Codex rollback by catching `thread not found` or calling `thread/resume` only in rollback** — rejected. It leaves session-scoped process ownership, notification/request routing, environment isolation, diagnostics hosts, and every other maintenance operation incorrect; Plan 052 migrates the ownership model instead.
 
 - **Workspace symlinks escaping the lexical workspace root** — rejected as a vulnerability on 2026-07-11. Multi-folder workspaces intentionally use top-level symlinks to explicitly configured external project directories, and Workspace Explorer intentionally follows resolvable symlinks. Future hardening must preserve this capability and instead validate the authorized resolved-root set, expose resolved write targets, and require the existing non-Cradle-owned write consent.
 

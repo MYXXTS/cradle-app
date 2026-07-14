@@ -13,7 +13,7 @@
 
 ## Status
 
-- **Priority**: P1
+- **Priority**: P0
 - **Effort**: L
 - **Risk**: MED
 - **Depends on**: `plans/040-establish-web-state-authority.md` (DONE)

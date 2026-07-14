@@ -16,7 +16,7 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: `plans/035-model-layer-unification.md` (core M0-M6 landed; reconcile status before execution)
+- **Depends on**: `plans/035-model-layer-unification.md` (core M0-M6 landed; reconcile status before execution), `plans/048-publish-provider-endpoint-catalog.md`
 - **Category**: perf, tests, tech-debt
 - **Planned at**: commit `e3d008c`, 2026-07-14
 
