@@ -409,7 +409,25 @@ describe('opencodeProvider provider threads', () => {
       },
       {
         info: assistantMessage({ id: 'msg_assistant', sessionID: 'ses_child', parentID: 'msg_user' }),
-        parts: [textPart({ id: 'part_assistant', sessionID: 'ses_child', messageID: 'msg_assistant', text: 'Hello' })],
+        parts: [
+          {
+            id: 'part_glob',
+            sessionID: 'ses_child',
+            messageID: 'msg_assistant',
+            type: 'tool',
+            callID: 'call_glob_1',
+            tool: 'glob',
+            state: {
+              status: 'completed',
+              input: { pattern: 'src/**/*.ts' },
+              title: 'Find TypeScript files',
+              output: 'src/index.ts',
+              metadata: {},
+              time: { start: 1, end: 2 },
+            },
+          },
+          textPart({ id: 'part_assistant', sessionID: 'ses_child', messageID: 'msg_assistant', text: 'Hello' }),
+        ],
       },
     )
 
@@ -446,7 +464,37 @@ describe('opencodeProvider provider threads', () => {
       ],
       messages: [
         { role: 'user', parts: [{ type: 'text', text: 'Hi' }] },
-        { role: 'assistant', parts: [{ type: 'text', text: 'Hello' }] },
+        {
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-glob',
+              toolCallId: 'call_glob_1',
+              state: 'output-available',
+              input: {
+                type: 'cradle.builtin-tool-call.input.v1',
+                identifier: 'opencode',
+                apiName: 'glob',
+                kind: 'search',
+                args: { pattern: 'src/**/*.ts' },
+              },
+              output: {
+                type: 'cradle.builtin-tool-call.result.v1',
+                identifier: 'opencode',
+                apiName: 'glob',
+                kind: 'search',
+                args: { pattern: 'src/**/*.ts' },
+                result: {
+                  title: 'Find TypeScript files',
+                  output: 'src/index.ts',
+                  metadata: {},
+                  attachments: [],
+                },
+              },
+            },
+            { type: 'text', text: 'Hello' },
+          ],
+        },
       ],
     })
   })
@@ -666,7 +714,8 @@ describe('opencodeProvider UI slot states', () => {
     fake.state.sessionStatusData.ses_1 = { type: 'busy' }
     fake.state.sessionTodoData.push(
       { id: 'todo-1', content: 'Inspect files', status: 'in_progress', priority: 'high' },
-      { id: 'todo-2', content: 'Report result', status: 'pending', priority: 'medium' },
+      // The live OpenCode endpoint may omit ids despite the SDK contract.
+      { content: 'Report result', status: 'pending', priority: 'medium' },
     )
     fake.state.sessionDiffData.push({
       file: 'src/app.ts',
@@ -699,6 +748,9 @@ describe('opencodeProvider UI slot states', () => {
         slotId: 'opencode:progress',
         inProgressCount: 1,
         pendingCount: 1,
+        items: expect.arrayContaining([
+          expect.objectContaining({ id: null, label: 'Report result', status: 'pending' }),
+        ]),
       }),
       expect.objectContaining({
         kind: 'diff',

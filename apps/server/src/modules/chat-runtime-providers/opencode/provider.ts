@@ -102,7 +102,12 @@ import {
   readOpencodeTaskBindingsFromMessages,
   resolveOpencodeProviderThreadTarget,
 } from './subagent-bridge'
-import { buildOpencodePermissionInput, buildOpencodePermissionOutput } from './tools/mapper'
+import {
+  buildOpencodePermissionInput,
+  buildOpencodePermissionOutput,
+  buildOpencodeToolInput,
+  buildOpencodeToolOutput,
+} from './tools/mapper'
 
 interface OpencodeTurnResult {
   data: {
@@ -2568,7 +2573,10 @@ function projectOpencodeProgressState(
   updatedAt: number,
 ): RuntimeUiSlotState {
   const items = todos.map(todo => ({
-    id: todo.id,
+    // OpenCode's live /session/:id/todo endpoint currently omits `id` even
+    // though the generated SDK declares it as required. The UI-slot contract
+    // deliberately represents absent provider ids as null.
+    id: todo.id ?? null,
     label: todo.content,
     status: projectOpencodeTodoStatus(todo.status),
     sourceStatus: todo.status,
@@ -2853,10 +2861,7 @@ function projectOpencodeMessagePartsToUiParts(parts: OpencodePart[]): UIMessage[
           url: part.url,
         }]
       case 'tool':
-        return [{
-          type: 'text',
-          text: formatOpencodeToolPartForProviderThread(part),
-        }]
+        return [projectOpencodeToolPartForProviderThread(part)]
       case 'patch':
         return [{
           type: 'text',
@@ -2876,16 +2881,35 @@ function projectOpencodeMessagePartsToUiParts(parts: OpencodePart[]): UIMessage[
   })
 }
 
-function formatOpencodeToolPartForProviderThread(part: Extract<OpencodePart, { type: 'tool' }>): string {
+function projectOpencodeToolPartForProviderThread(
+  part: Extract<OpencodePart, { type: 'tool' }>,
+): UIMessage['parts'][number] {
+  const input = buildOpencodeToolInput(part)
   switch (part.state.status) {
     case 'pending':
-      return `${part.tool}: pending`
+      return {
+        type: `tool-${part.tool}`,
+        toolCallId: part.callID,
+        state: 'input-available',
+        input,
+      } as UIMessage['parts'][number]
     case 'running':
-      return `${part.tool}: ${part.state.title ?? 'running'}`
     case 'completed':
-      return `${part.tool}: ${part.state.output}`
+      return {
+        type: `tool-${part.tool}`,
+        toolCallId: part.callID,
+        state: 'output-available',
+        input,
+        output: buildOpencodeToolOutput(part),
+      } as UIMessage['parts'][number]
     case 'error':
-      return `${part.tool}: ${part.state.error}`
+      return {
+        type: `tool-${part.tool}`,
+        toolCallId: part.callID,
+        state: 'output-error',
+        input,
+        errorText: part.state.error,
+      } as UIMessage['parts'][number]
   }
 }
 
