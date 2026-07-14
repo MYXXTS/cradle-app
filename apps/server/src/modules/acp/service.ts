@@ -150,7 +150,13 @@ function recordAudit(input: z.input<typeof AuditInputSchema>): void {
 // ── public API ──
 
 export function fetchRegistry(): Promise<RegistryAgent[]> {
-  return registry.fetchRegistry()
+  return registry.fetchRegistry().then(agents => agents.map(agent => ({
+    ...agent,
+    distribution: {
+      npx: agent.distribution.npx,
+      uvx: agent.distribution.uvx,
+    },
+  })))
 }
 
 export async function getDistributionTypes(agentId: string): Promise<{ agentId: string, types: AcpDistributionType[] }> {
@@ -182,6 +188,15 @@ export async function install(agentId: string, distributionType: AcpDistribution
       status: 404,
       message: 'ACP agent not found in registry',
       details: { agentId },
+    })
+  }
+
+  if (distributionType === 'binary' && agent.distribution.binary) {
+    throw new AppError({
+      code: 'acp_binary_integrity_metadata_missing',
+      status: 409,
+      message: 'ACP binary installation requires a trusted publisher checksum, but the registry does not provide one',
+      details: { agentId, distributionType },
     })
   }
 

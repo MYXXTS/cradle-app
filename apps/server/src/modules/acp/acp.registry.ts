@@ -91,8 +91,10 @@ const PLATFORM_MAP: Partial<Record<string, PlatformKey>> = {
 }
 
 export class AcpRegistry {
+  constructor(private readonly fetchFn: typeof fetch = fetch) {}
+
   async fetchRegistry(): Promise<RegistryAgent[]> {
-    const response = await fetch(ACP_REGISTRY_URL)
+    const response = await this.fetchFn(ACP_REGISTRY_URL)
     if (!response.ok) {
       throw new Error(`ACP registry fetch failed with HTTP ${response.status}`)
     }
@@ -103,10 +105,6 @@ export class AcpRegistry {
 
   getSupportedDistributionTypes(agent: RegistryAgent): AcpDistributionType[] {
     const out: AcpDistributionType[] = []
-    const platformKey = getPlatformKey()
-    if (platformKey && agent.distribution.binary?.[platformKey]) {
-      out.push('binary')
-    }
     if (agent.distribution.npx) {
       out.push('npx')
     }
