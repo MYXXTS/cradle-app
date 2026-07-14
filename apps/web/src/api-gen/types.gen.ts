@@ -6528,6 +6528,15 @@ export type GetSessionsByIdExportMarkdownResponses = {
 
 export type GetSessionsByIdExportMarkdownResponse = GetSessionsByIdExportMarkdownResponses[keyof GetSessionsByIdExportMarkdownResponses];
 
+export type GetSessionsByIdExportZipData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/sessions/{id}/export/zip';
+};
+
 export type DeleteSessionsByIdLinkedIssueData = {
     body?: never;
     path: {

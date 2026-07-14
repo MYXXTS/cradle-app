@@ -1395,6 +1395,10 @@ export const zGetSessionsByIdExportMarkdownPath = z.object({
     id: z.string().min(1)
 });
 
+export const zGetSessionsByIdExportZipPath = z.object({
+    id: z.string().min(1)
+});
+
 export const zDeleteSessionsByIdLinkedIssuePath = z.object({
     id: z.string().min(1)
 });
