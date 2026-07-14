@@ -896,7 +896,6 @@ export function Composer({
     setPastedTexts(replaceDraft.pastedTexts)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [replaceDraftKey, replaceComposerAttachments])
-
   useEffect(() => {
     if (!contextIngress) {
       return

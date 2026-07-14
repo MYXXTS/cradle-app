@@ -457,7 +457,6 @@ export function ChatComposerSection({
             replaceTextKey: composerReplaceTextKey,
             replaceDraft: composerReplaceDraft,
             replaceDraftKey: composerReplaceDraftKey,
-            contextIngress,
           }}
           view={{
             placeholder,

@@ -49,6 +49,8 @@ import {
 import * as Workspace from '../workspace/service'
 import { isLocalWorkspaceLocator } from '../workspace/workspace-locator'
 import { attachSessionToWorktree, readSessionIsolation } from '../worktree/service'
+import type { SessionArchive } from './export-archive'
+import { sessionArchiveFileName, threadExportBlockedReason } from './export-archive'
 import type { SessionExecutionTarget } from './remote-projection'
 import {
   createRemoteProjectedSession,
@@ -56,8 +58,6 @@ import {
   readSessionExecutionTarget,
   removeRemoteProjectedSession,
 } from './remote-projection'
-import type { SessionArchive } from './export-archive'
-import { sessionArchiveFileName, threadExportBlockedReason } from './export-archive'
 
 export type { SessionExecutionTarget }
 

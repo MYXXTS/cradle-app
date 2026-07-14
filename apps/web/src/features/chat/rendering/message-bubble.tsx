@@ -22,7 +22,10 @@ import { readBangCommandMetadata, readBangResultMetadata } from '../commands/ban
 import { BangCommandBlock, BangCommandPromptBlock } from './blocks/bang-command-block'
 import { ReasoningBlock } from './blocks/reasoning-block'
 import { RuntimeWarningBlock } from './blocks/runtime-warning-block'
-import type { ChatRenderItem, ChatRenderSegment } from './chat-render-plan'
+import type {
+  ChatRenderItem,
+  ChatRenderSegment,
+} from './chat-render-plan'
 import {
   groupMessageParts,
   splitExecutionPhase,

@@ -7,8 +7,8 @@ import {
   CopyLine as ClipboardCopyIcon,
   CopyLine as CopyIcon,
   DeleteLine as Trash2Icon,
-  DownSmallLine as ChevronDownIcon,
   DownloadLine as DownloadIcon,
+  DownSmallLine as ChevronDownIcon,
   ExternalLinkLine as ExternalLinkIcon,
   FileNewLine as FilePlusIcon,
   FilterLine as ListFilterIcon,
@@ -118,6 +118,7 @@ import {
   remoteHostUpstreamQueryKey,
 } from '~/features/remote-hosts/upstream-fetch'
 import { useGlobalSearchStore } from '~/features/search/global-search-store'
+import { downloadSessionZip } from '~/features/session/download-session-zip'
 import { SettingsGroup, SettingsPage } from '~/features/settings/settings-container'
 import { SettingsRow } from '~/features/settings/settings-row'
 import { useFeatureFlag } from '~/features/settings/use-app-preferences'
@@ -128,7 +129,6 @@ import { MigrateWorkspaceDialog } from '~/features/workspace/migrate-workspace-d
 import { ensureRemoteWorkspaceForPath } from '~/features/workspace/remote-workspace-import'
 import type { Workspace } from '~/features/workspace/types'
 import { getLocalWorkspacePath, getWorkspaceLocationLabel } from '~/features/workspace/types'
-import { downloadSessionZip } from '~/features/session/download-session-zip'
 import { useNow } from '~/hooks/use-now'
 import { cn } from '~/lib/cn'
 import { authorizeDangerousAction, isElectron, nativeIpc } from '~/lib/electron'

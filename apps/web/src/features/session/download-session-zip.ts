@@ -37,7 +37,7 @@ export async function downloadSessionZip(sessionId: string): Promise<void> {
   const blob = await response.blob()
   const filename
     = parseFilenameFromDisposition(response.headers.get('content-disposition') ?? '')
-    ?? `cradle-session-${sessionId}.zip`
+      ?? `cradle-session-${sessionId}.zip`
 
   const objectUrl = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

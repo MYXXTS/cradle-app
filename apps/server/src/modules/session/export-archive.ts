@@ -109,7 +109,7 @@ async function buildZipEntry(entry: SessionArchiveEntry): Promise<ZipEntryRecord
   const method = 8
 
   const localChunk = Buffer.concat([
-    u32(0x04034b50), // local file header signature
+    u32(0x04034B50), // local file header signature
     u16(20), // version needed to extract
     u16(UTF8_FLAG), // general purpose: UTF-8 names
     u16(method), // compression method (8 deflate)
@@ -126,7 +126,7 @@ async function buildZipEntry(entry: SessionArchiveEntry): Promise<ZipEntryRecord
 
   const centralRecord = (offset: number): Buffer =>
     Buffer.concat([
-      u32(0x02014b50), // central directory header signature
+      u32(0x02014B50), // central directory header signature
       u16(20), // version made by
       u16(20), // version needed to extract
       u16(UTF8_FLAG), // general purpose: UTF-8 names
@@ -241,7 +241,7 @@ export async function* sessionArchiveChunks(archive: SessionArchive): AsyncGener
   yield centralDirectoryBody
 
   yield Buffer.concat([
-    u32(0x06054b50), // end of central directory signature
+    u32(0x06054B50), // end of central directory signature
     u16(0), // number of this disk
     u16(0), // disk where central directory starts
     u16(entryCount), // entries on this disk

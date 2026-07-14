@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import type { ArchiveMessage, SessionArchive } from './export-archive'
 import {
-  type ArchiveMessage,
-  type SessionArchive,
   buildSessionArchiveBytes,
   sessionArchiveFileName,
   threadExportBlockedReason,
@@ -52,7 +51,7 @@ async function readZip(buffer: Buffer): Promise<ZipEntry[]> {
   const { crc32, inflateRawSync } = await import('node:zlib')
   const entries: ZipEntry[] = []
   // End-of-central-directory record signature.
-  const eocd = buffer.indexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]))
+  const eocd = buffer.indexOf(Buffer.from([0x50, 0x4B, 0x05, 0x06]))
   expect(eocd).toBeGreaterThan(-1)
   const cdOffset = buffer.readUInt32LE(eocd + 16)
   const cdSize = buffer.readUInt32LE(eocd + 12)
@@ -61,7 +60,7 @@ async function readZip(buffer: Buffer): Promise<ZipEntry[]> {
   let cursor = cdOffset
   while (cursor < cdEnd) {
     const signature = buffer.readUInt32LE(cursor)
-    if (signature !== 0x02014b50) {
+    if (signature !== 0x02014B50) {
       break
     }
     const crc = buffer.readUInt32LE(cursor + 16)
