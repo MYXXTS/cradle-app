@@ -396,7 +396,7 @@ const KanbanIssueRelationSchema = z.object({
   createdAt: z.number(),
 })
 const KanbanIssueRelationListSchema = z.array(KanbanIssueRelationSchema).default([])
-const SessionThinkingEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+const SessionThinkingEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const SessionWorktreeHealthSchema = z.enum(['ok', 'missing', 'stale'])
 
 const AgentSessionSchema = z

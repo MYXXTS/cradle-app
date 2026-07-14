@@ -1,10 +1,15 @@
-import { MonitorLine as MonitorIcon, Refresh1Line as RefreshCwIcon } from '@mingcute/react'
+import {
+  FolderOpenLine as FolderOpenIcon,
+  MonitorLine as MonitorIcon,
+  Refresh1Line as RefreshCwIcon,
+} from '@mingcute/react'
 import { useRouterState } from '@tanstack/react-router'
 import { useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Switch } from '~/components/ui/switch'
-import { isElectron } from '~/lib/electron'
+import { ResourcesPopover } from '~/features/devtool/resources/resources-popover'
+import { isElectron, nativeIpc } from '~/lib/electron'
 import { getReactDiagnosticsApi } from '~/lib/react-diagnostics'
 
 export function DevBottomBar() {
@@ -21,6 +26,15 @@ export function DevBottomBar() {
       return location.href ?? location.pathname
     },
   })
+
+  const openUserData = async () => {
+    if (!nativeIpc) {
+      return
+    }
+
+    const { userDataPath } = await nativeIpc.native.getCradleDataPaths()
+    await nativeIpc.native.openPath(userDataPath)
+  }
 
   return (
     <footer className="flex h-7 shrink-0 items-center border-t border-border bg-sidebar px-2 font-mono text-[10px]">
@@ -75,6 +89,18 @@ export function DevBottomBar() {
           <RefreshCwIcon className="inline-block size-3.5" aria-hidden="true" />
           {t('dev.action.hardReload')}
         </button>
+        <button
+          type="button"
+          title={t('dev.action.openUserData.title')}
+          aria-label={t('dev.action.openUserData')}
+          disabled={!nativeIpc}
+          onClick={() => void openUserData()}
+          className="flex items-center gap-1 rounded px-2 py-0.5 text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        >
+          <FolderOpenIcon className="inline-block size-3.5" aria-hidden="true" />
+          {t('dev.action.openUserData')}
+        </button>
+        <ResourcesPopover />
       </div>
     </footer>
   )

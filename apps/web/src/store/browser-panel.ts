@@ -1778,6 +1778,30 @@ export function selectOwnerBrowserAnnotations(ownerId: string) {
     store.owners[normalizeBrowserPanelOwnerId(ownerId)]?.annotations ?? EMPTY_BROWSER_ANNOTATIONS
 }
 
+export function closeActiveBrowserPanelTab(options: {
+  panelOpen: boolean
+  ownerId?: string | null
+  onCloseLastTab?: (ownerId: string) => void
+}): boolean {
+  if (!options.panelOpen) {
+    return false
+  }
+
+  const state = useBrowserPanelStore.getState()
+  const ownerId = normalizeBrowserPanelOwnerId(options.ownerId ?? state.activeOwnerId)
+  const ownerState = getOwnerState(state, ownerId)
+  const currentTab = ownerState.tabs.find(tab => tab.id === ownerState.activeTabId)
+  if (!currentTab) {
+    return false
+  }
+
+  const closeResult = state.closeTab(currentTab.id, ownerId)
+  if (closeResult.closedLastTab) {
+    options.onCloseLastTab?.(ownerId)
+  }
+  return true
+}
+
 export function handleBrowserPanelTabShortcutInput(
   input: BrowserPanelTabShortcutInput,
   options: {
@@ -1795,21 +1819,17 @@ export function handleBrowserPanelTabShortcutInput(
     return false
   }
 
+  const key = input.key.toLowerCase()
+  if (key === 'w') {
+    return closeActiveBrowserPanelTab(options)
+  }
+
   const state = useBrowserPanelStore.getState()
   const ownerId = normalizeBrowserPanelOwnerId(options.ownerId ?? state.activeOwnerId)
   const ownerState = getOwnerState(state, ownerId)
   const currentTab = ownerState.tabs.find(tab => tab.id === ownerState.activeTabId)
   if (!currentTab) {
     return false
-  }
-
-  const key = input.key.toLowerCase()
-  if (key === 'w') {
-    const closeResult = state.closeTab(currentTab.id, ownerId)
-    if (closeResult.closedLastTab) {
-      options.onCloseLastTab?.(ownerId)
-    }
-    return true
   }
 
   if (!BROWSER_PANEL_TAB_SHORTCUT_KEYS.has(key)) {

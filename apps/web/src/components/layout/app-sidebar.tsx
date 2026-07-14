@@ -3,6 +3,7 @@ import { m } from 'motion/react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { AppNavigationControls } from '~/components/layout/app-navigation-controls'
 import { ChromeSideSheet } from '~/components/layout/chrome-side-sheet'
 import { CHROME_COLLAPSED_SIDEBAR_WIDTH } from '~/components/layout/layout-responsive'
 import { ResizeHandle } from '~/components/layout/resize-handle'
@@ -65,7 +66,14 @@ const AppSidebarContent = memo(({
   return (
     <>
       {reserveTopChrome && (
-        <div className="h-11 shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <div
+          className="flex h-11 shrink-0 items-center justify-end pr-2"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          <div className="mt-2">
+            {!collapsed && <AppNavigationControls />}
+          </div>
+        </div>
       )}
       <div
         className="relative flex flex-col flex-1 overflow-hidden"

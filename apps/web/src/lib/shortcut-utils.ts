@@ -20,7 +20,8 @@ export type ShortcutEntry = {
 
 export function matchesShortcut(event: KeyboardEvent, shortcut: ShortcutDefinition): boolean {
   const key = shortcut.key.toLowerCase()
-  if (event.key.toLowerCase() !== key) {
+  const letterKeyCode = /^[a-z]$/.test(key) ? `Key${key.toUpperCase()}` : null
+  if (event.key.toLowerCase() !== key && event.code !== letterKeyCode) {
     return false
   }
   const modUsesMeta = navigator.platform.toLowerCase().includes('mac')

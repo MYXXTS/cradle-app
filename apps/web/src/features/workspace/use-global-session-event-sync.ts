@@ -5,7 +5,6 @@ import { useEffect, useRef } from 'react'
 import {
   getSessionsByIdQueryKey,
 } from '~/api-gen/@tanstack/react-query.gen'
-import { toastManager } from '~/components/ui/toast'
 import { runtimeSessionStatusQueryKey } from '~/features/chat/runtime/use-runtime-session-status'
 import { createGlobalSessionEventSource } from '~/features/chat/transport/chat-event-tail-transport'
 import { getServerUrl } from '~/lib/electron'
@@ -41,7 +40,6 @@ export function useGlobalSessionEventSync(queryClient: QueryClient): void {
   }, [queryClient])
 
   useEffect(() => {
-    let interruptionToastShown = false
     const engine = new GlobalSessionSyncEngine({
       serverBaseUrl: getServerUrl(),
       eventSourceFactory: createGlobalSessionEventSource,
@@ -54,14 +52,6 @@ export function useGlobalSessionEventSync(queryClient: QueryClient): void {
         },
         onError: (error) => {
           console.warn('[global-session-sync-engine] event tail error', error)
-          if (!interruptionToastShown) {
-            interruptionToastShown = true
-            toastManager.add({
-              type: 'warning',
-              title: 'Connection interrupted',
-              description: 'Reconnecting and refreshing session lists.',
-            })
-          }
         },
       },
     })

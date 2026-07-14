@@ -28,6 +28,7 @@ import { Checkbox } from '~/components/ui/checkbox'
 import { Spinner } from '~/components/ui/spinner'
 import { toastManager } from '~/components/ui/toast'
 import { useLocalServers } from '~/features/browser/use-local-servers'
+import { useFeatureFlag } from '~/features/settings/use-app-preferences'
 import { useWorkDetail } from '~/features/work/use-work'
 import { apiErrorMessage } from '~/lib/api-error'
 import { openWorkspaceDiffs } from '~/navigation/navigation-commands'
@@ -46,6 +47,7 @@ export function SessionEnvironmentPanel({
   workId: string | null
 }) {
   const queryClient = useQueryClient()
+  const turnCheckpointsEnabled = useFeatureFlag('turnCheckpoints')
   const environmentQuery = useQuery({
     ...sessionEnvironmentApi.environmentQueryOptions({ path: { id: sessionId } }),
     refetchInterval: 5_000,
@@ -145,7 +147,7 @@ export function SessionEnvironmentPanel({
           </div>
         </section>
 
-        {environment.checkpoints.length > 0 && (
+        {turnCheckpointsEnabled && environment.checkpoints.length > 0 && (
           <section className="space-y-2">
             <SectionHeader icon={HistoryIcon} label="Turn checkpoints" />
             <div className="space-y-1.5">

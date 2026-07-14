@@ -25,6 +25,7 @@ import {
 import { chatSessionIdForSurface } from '~/navigation/surface-identity'
 import {
   BROWSER_PANEL_WEBVIEW_TAB_SHORTCUT_CHANNEL,
+  closeActiveBrowserPanelTab,
   handleBrowserPanelTabShortcut,
   handleBrowserPanelTabShortcutPayload,
   useBrowserPanelStore,
@@ -83,8 +84,16 @@ export function useGlobalEventListeners(
   )
   useShortcut(
     'surface.close',
-    { meta: true, key: 'w' },
+    { meta: true, key: 'w', allowInEditable: true },
     useCallback(() => {
+      const browserPanelState = useBrowserPanelStore.getState()
+      if (closeActiveBrowserPanelTab({
+        panelOpen: browserPanelState.open,
+        ownerId: browserPanelState.activeOwnerId,
+        onCloseLastTab: ownerId => useBrowserPanelStore.getState().setDockOpen(false, ownerId),
+      })) {
+        return
+      }
       if (isTearoffWindow) {
         void nativeIpc?.window.close().catch(() => {})
         return
@@ -109,6 +118,9 @@ export function useGlobalEventListeners(
   // Panel + tab keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (e.defaultPrevented) {
+        return
+      }
       // ── Tab shortcuts ──────────────────────────────────────────────
       const browserPanelState = useBrowserPanelStore.getState()
       handleBrowserPanelTabShortcut(e, {

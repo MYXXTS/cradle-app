@@ -22,7 +22,7 @@ import type { ChatContextPart } from '../context/chat-context-parts'
 
 const SERVER_BASE = getServerUrl()
 
-export type ChatThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ChatThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 export type ChatContinuationMode = 'queue' | 'steer'
 
 export interface ChatResponseRequestBody {
@@ -136,7 +136,7 @@ export interface ChatSteerBody {
   providerTargetId?: string
 }
 
-const ChatThinkingEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+const ChatThinkingEffortSchema = z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
 const ChatRuntimeSettingsSchema = z.record(
   z.string(),
   z.union([z.string(), z.number(), z.boolean()]),

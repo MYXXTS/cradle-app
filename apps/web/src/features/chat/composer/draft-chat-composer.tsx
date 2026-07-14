@@ -57,7 +57,7 @@ import { modelSupportsAttachments } from './composer-attachment-state'
 import { ComposerSlotStates } from './composer-slot-states'
 import { useComposerAppshotCapture } from './use-composer-appshot-capture'
 
-type ChatThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+type ChatThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 interface DraftClaudeAgentConfig {
   modelAliases: ClaudeAgentModelAliases
