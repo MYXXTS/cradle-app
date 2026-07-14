@@ -130,6 +130,7 @@ interface ResolvedGitRepository {
 
 const FIELD_SEP = '\x1F'
 const ROOT_REPOSITORY_PATH = '.'
+const CRADLE_INTERNAL_REFS = 'refs/cradle/*'
 const EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const RE_REMOTE_PREFIX = /^remotes\//
 const RE_REMOTE_BRANCH = /^[^/]+\/(.+)$/
@@ -368,7 +369,16 @@ export async function getGraph(
   const git = simpleGit(repository.absolutePath)
   try {
     const format = `%H${FIELD_SEP}%P${FIELD_SEP}%D${FIELD_SEP}%s${FIELD_SEP}%an${FIELD_SEP}%ae${FIELD_SEP}%at`
-    const raw = await git.raw(['log', '--all', `--pretty=format:${format}`, '-n', String(limit)])
+    const raw = await git.raw([
+      'log',
+      // Git applies --exclude to the next pseudo-ref option, so this must precede --all.
+      `--exclude=${CRADLE_INTERNAL_REFS}`,
+      '--all',
+      `--decorate-refs-exclude=${CRADLE_INTERNAL_REFS}`,
+      `--pretty=format:${format}`,
+      '-n',
+      String(limit),
+    ])
 
     return raw
       .split('\n')
