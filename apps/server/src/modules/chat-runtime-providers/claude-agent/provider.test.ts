@@ -1005,6 +1005,60 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     ]))
   })
 
+  it('projects SDK permission denials into the Claude alerts UI slot', async () => {
+    sdkMocks.query.mockReturnValue(createAsyncQuery([
+      {
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_denied_1',
+        decision_reason_type: 'mode',
+        decision_reason: 'Shell commands are disabled in plan mode.',
+        message: 'Permission denied.',
+        uuid: '00000000-0000-4000-8000-000000000003',
+        session_id: 'claude-session-denied',
+      },
+      {
+        type: 'result',
+        session_id: 'claude-session-denied',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ]))
+
+    const runtimeSession = createRuntimeSession()
+    const provider = new ClaudeAgentProvider({ readSecret: () => 'sk-ant-test' })
+    for await (const _chunk of provider.streamTurn({
+      runId: 'run-claude-agent-denied',
+      runtimeSession,
+      profile: createProfile(),
+      message: createUserMessage('Run a shell command'),
+      workspaceId: 'workspace-1',
+    })) {
+      // Drain stream.
+    }
+
+    const states = await provider.getUiSlotStates({
+      runtimeSession,
+      profile: createProfile(),
+      workspacePath: '/tmp/cradle-workspace',
+      workspaceId: 'workspace-1',
+    })
+    expect(states).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'alert',
+        slotId: 'claude-agent:alerts',
+        warningCount: 1,
+        errorCount: 0,
+        recentItems: [expect.objectContaining({
+          id: 'permission-denied:toolu_denied_1',
+          severity: 'warning',
+          message: 'Shell commands are disabled in plan mode.',
+          source: 'Claude Bash',
+        })],
+      }),
+    ]))
+  })
+
   it('leaves Claude disallowed tools empty and captures ExitPlanMode through Cradle', async () => {
     const requestToolApproval = vi.fn()
     sdkMocks.query.mockReturnValue(createAsyncQuery([
@@ -2301,6 +2355,43 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
           argumentHint: '',
           iconKey: 'crew',
           surfaces: ['runtimePanel'],
+        },
+        {
+          id: 'claude-agent:tool-activity',
+          name: 'tools',
+          label: 'Tool activity',
+          description: 'Show recent Claude tool activity.',
+          argumentHint: '',
+          aliases: ['activity'],
+          iconKey: 'tool-activity',
+          commandText: '/tools ',
+          surfaces: ['runtimePanel'],
+        },
+        {
+          id: 'claude-agent:alerts',
+          name: 'alerts',
+          label: 'Alerts',
+          description: 'Show recent Claude permission denials and runtime warnings.',
+          argumentHint: '',
+          aliases: ['warnings'],
+          iconKey: 'alert',
+          commandText: '/alerts ',
+          surfaces: ['runtimePanel'],
+        },
+        {
+          id: 'claude-agent:usage',
+          name: 'usage',
+          label: 'Usage',
+          description: 'Show current Claude usage and rate limit state.',
+          argumentHint: '',
+          iconKey: 'usage',
+          commandText: '/usage ',
+          commandAction: {
+            kind: 'uiAction',
+            actionId: 'cradle.runtime.usage',
+          },
+          requiresSession: true,
+          surfaces: ['slashCommand', 'runtimePanel'],
         },
       ],
       skills: [],

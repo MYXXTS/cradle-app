@@ -412,6 +412,8 @@ function readClaudeAgentEffort(
     case 'xhigh':
     case 'max':
       return override
+    case 'ultra':
+      return 'max'
     default:
       return configured
   }

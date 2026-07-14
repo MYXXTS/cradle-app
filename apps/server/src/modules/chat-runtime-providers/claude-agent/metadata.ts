@@ -13,6 +13,7 @@ import type {
   RuntimeSlashCommand,
   RuntimeUiSlot,
 } from '../../chat-runtime/runtime-provider-types'
+import { RUNTIME_USAGE_COMMAND_ACTION_ID } from '../../chat-runtime/runtime-provider-types'
 import { readRuntimeSettingsSchema } from '../../chat-runtime/runtime-settings-registry'
 import type { RuntimeKind } from '../../provider-contracts/types'
 
@@ -113,6 +114,46 @@ const CLAUDE_AGENT_CREW_SLOT: RuntimeUiSlot = {
   surfaces: ['runtimePanel'],
 }
 
+const CLAUDE_AGENT_TOOL_ACTIVITY_SLOT: RuntimeUiSlot = {
+  id: 'claude-agent:tool-activity',
+  name: 'tools',
+  label: 'Tool activity',
+  description: 'Show recent Claude tool activity.',
+  argumentHint: '',
+  aliases: ['activity'],
+  iconKey: 'tool-activity',
+  commandText: '/tools ',
+  surfaces: ['runtimePanel'],
+}
+
+const CLAUDE_AGENT_ALERTS_SLOT: RuntimeUiSlot = {
+  id: 'claude-agent:alerts',
+  name: 'alerts',
+  label: 'Alerts',
+  description: 'Show recent Claude permission denials and runtime warnings.',
+  argumentHint: '',
+  aliases: ['warnings'],
+  iconKey: 'alert',
+  commandText: '/alerts ',
+  surfaces: ['runtimePanel'],
+}
+
+const CLAUDE_AGENT_USAGE_SLOT: RuntimeUiSlot = {
+  id: 'claude-agent:usage',
+  name: 'usage',
+  label: 'Usage',
+  description: 'Show current Claude usage and rate limit state.',
+  argumentHint: '',
+  iconKey: 'usage',
+  commandText: '/usage ',
+  commandAction: {
+    kind: 'uiAction',
+    actionId: RUNTIME_USAGE_COMMAND_ACTION_ID,
+  },
+  requiresSession: true,
+  surfaces: ['slashCommand', 'runtimePanel'],
+}
+
 export function projectClaudeAgentPresentation(slashCommands: SlashCommand[]): RuntimePresentationCapabilities {
   return {
     runtimeKind: CLAUDE_AGENT_RUNTIME_KIND,
@@ -124,6 +165,9 @@ export function projectClaudeAgentPresentation(slashCommands: SlashCommand[]): R
       CLAUDE_AGENT_PROGRESS_SLOT,
       CLAUDE_AGENT_USER_INPUT_SLOT,
       CLAUDE_AGENT_CREW_SLOT,
+      CLAUDE_AGENT_TOOL_ACTIVITY_SLOT,
+      CLAUDE_AGENT_ALERTS_SLOT,
+      CLAUDE_AGENT_USAGE_SLOT,
     ],
     skills: [],
   }

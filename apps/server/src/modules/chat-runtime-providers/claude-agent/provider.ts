@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import type { AccountInfo, Options, Query, SDKAuthStatusMessage, SDKMessage, SDKRateLimitEvent, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { AccountInfo, Options, Query, SDKAuthStatusMessage, SDKMessage, SDKPermissionDeniedMessage, SDKRateLimitEvent, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { getSessionInfo, getSubagentMessages, listSubagents, query, renameSession } from '@anthropic-ai/claude-agent-sdk'
 import type { LangfuseGeneration } from '@langfuse/tracing'
 import { startObservation } from '@langfuse/tracing'
@@ -90,6 +90,7 @@ import {
   CLAUDE_AGENT_RUNTIME_DEFAULT_MODEL_SWITCH_ID,
   clearClaudeAgentCapturedPlan,
   clearClaudeAgentPendingModelSwitch,
+  projectClaudeAgentAlertUiSlotState,
   projectClaudeAgentCrewUiSlotState,
   projectClaudeAgentPlanUiSlotState,
   projectClaudeAgentProgressUiSlotState,
@@ -103,6 +104,7 @@ import {
   writeClaudeAgentCapturedPlan,
   writeClaudeAgentCrewCall,
   writeClaudeAgentPendingModelSwitch,
+  writeClaudeAgentPermissionDeniedSnapshot,
   writeClaudeAgentProgress,
   writeClaudeAgentRateLimitSnapshot,
   writeClaudeAgentTaskActivity,
@@ -359,6 +361,7 @@ export class ClaudeAgentProvider implements ChatRuntime {
     const progressState = projectClaudeAgentProgressUiSlotState(runtimeSession)
     const crewState = projectClaudeAgentCrewUiSlotState(runtimeSession)
     const toolActivityState = projectClaudeAgentToolActivityUiSlotState(runtimeSession)
+    const alertState = projectClaudeAgentAlertUiSlotState(runtimeSession)
     const compactState = await this.readCompactState({ ...input, runtimeSession })
     const states: RuntimeUiSlotState[] = []
     if (planState) {
@@ -372,6 +375,9 @@ export class ClaudeAgentProvider implements ChatRuntime {
     }
     if (toolActivityState) {
       states.push(toolActivityState)
+    }
+    if (alertState) {
+      states.push(alertState)
     }
     const usageState = projectClaudeAgentUsageUiSlotState(input.runtimeSession)
     if (usageState) {
@@ -1580,6 +1586,10 @@ export class ClaudeAgentProvider implements ChatRuntime {
     }
     if (message.type === 'rate_limit_event') {
       writeClaudeAgentRateLimitSnapshot(runtimeSession, (message as SDKRateLimitEvent).rate_limit_info)
+      return
+    }
+    if (message.type === 'system' && message.subtype === 'permission_denied') {
+      writeClaudeAgentPermissionDeniedSnapshot(runtimeSession, message as SDKPermissionDeniedMessage)
     }
   }
 
