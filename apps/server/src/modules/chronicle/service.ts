@@ -1,10 +1,8 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 
 import {
   chronicleAccessibilityEvents,
@@ -46,6 +44,7 @@ import { createLanguageModel, detectApiFormat } from '../chat-runtime-engine/pro
 import * as ProviderTargets from '../provider-targets/service'
 import { readSecret } from '../secrets/service'
 import * as DaemonManager from './daemon-manager'
+import { downloadModelResourceToFile } from './model-resource-download'
 
 interface ChronicleConfig {
   profileId: string
@@ -8342,7 +8341,25 @@ async function downloadModelResourceFile(file: ModelResourceFileManifest, target
     // Retry each URL up to 3 times with exponential backoff
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        await downloadToFile(url, targetPath, progressContext)
+        const completed = await downloadModelResourceToFile(url, targetPath, {
+          timeoutMs: ModelResourceFetchTimeoutMsSchema.parse(process.env.CRADLE_MODEL_RESOURCE_FETCH_TIMEOUT_MS),
+          onProgress: ({ totalBytes, downloadedBytes }) => {
+            emitDownloadProgress({
+              ...progressContext,
+              totalBytes,
+              downloadedBytes,
+              status: 'downloading',
+              startedAt: Date.now(),
+            })
+          },
+        })
+        emitDownloadProgress({
+          ...progressContext,
+          totalBytes: completed.totalBytes,
+          downloadedBytes: completed.downloadedBytes,
+          status: 'done',
+          startedAt: Date.now(),
+        })
         return
       }
       catch (error) {
@@ -8357,88 +8374,6 @@ async function downloadModelResourceFile(file: ModelResourceFileManifest, target
   const message = lastError instanceof Error ? lastError.message : 'no source URL'
   emitDownloadProgress({ ...progressContext, totalBytes: null, downloadedBytes: 0, status: 'error', error: message, startedAt: Date.now() })
   throw new Error(`Model resource download failed for ${file.path}: ${message}`)
-}
-
-async function downloadToFile(sourceUrl: string, targetPath: string, progressContext?: { category: string, file: string }): Promise<void> {
-  const parsed = new URL(sourceUrl)
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    throw new AppError({
-      code: 'chronicle_model_resource_url_invalid',
-      status: 400,
-      message: 'Model resource URL must use http or https',
-    })
-  }
-  const controller = new AbortController()
-  const timeoutMs = ModelResourceFetchTimeoutMsSchema.parse(process.env.CRADLE_MODEL_RESOURCE_FETCH_TIMEOUT_MS)
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  let response: Response
-  try {
-    response = await fetch(sourceUrl, {
-      headers: { 'User-Agent': 'Cradle/1.0' },
-      redirect: 'follow',
-      signal: controller.signal,
-    })
-  }
-  catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`Model resource download timed out after ${timeoutMs} ms`)
-    }
-    throw error
-  }
-  finally {
-    clearTimeout(timeout)
-  }
-  if (!response.ok) {
-    throw new Error(`Model resource download failed: ${response.status} ${response.statusText}`)
-  }
-  if (!response.body) {
-    throw new Error('Model resource download returned no body')
-  }
-
-  const contentLength = response.headers.get('content-length')
-  const totalBytes = contentLength ? Number.parseInt(contentLength, 10) : null
-
-  if (progressContext) {
-    emitDownloadProgress({
-      category: progressContext.category,
-      file: progressContext.file,
-      totalBytes,
-      downloadedBytes: 0,
-      status: 'downloading',
-      startedAt: Date.now(),
-    })
-  }
-
-  const nodeStream = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream)
-  const fileStream = createWriteStream(targetPath)
-
-  let downloadedBytes = 0
-  nodeStream.on('data', (chunk: Buffer) => {
-    downloadedBytes += chunk.length
-    if (progressContext) {
-      emitDownloadProgress({
-        category: progressContext.category,
-        file: progressContext.file,
-        totalBytes,
-        downloadedBytes,
-        status: 'downloading',
-        startedAt: Date.now(),
-      })
-    }
-  })
-
-  await pipeline(nodeStream, fileStream)
-
-  if (progressContext) {
-    emitDownloadProgress({
-      category: progressContext.category,
-      file: progressContext.file,
-      totalBytes,
-      downloadedBytes,
-      status: 'done',
-      startedAt: Date.now(),
-    })
-  }
 }
 
 async function readFrameImage(relativeOrAbsolutePath: string): Promise<Response | null> {
