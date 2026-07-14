@@ -72,6 +72,8 @@
   "thinking.minimal.label": "Minimal",
   "thinking.none.description": "Disable extended reasoning when the provider supports it.",
   "thinking.none.label": "None",
+  "thinking.ultra.description": "Enable proactive Codex multi-agent reasoning on supported models.",
+  "thinking.ultra.label": "Ultra",
   "thinking.xhigh.description": "Maximum reasoning budget for hard tasks.",
   "thinking.xhigh.label": "Extra High",
   "time.daysAgo": "{{count}}d ago",

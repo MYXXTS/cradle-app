@@ -159,6 +159,7 @@ export default {
   'thinking.minimal': 'Minimal',
   'thinking.none': 'None',
   'thinking.xhigh': 'Extra High',
+  'thinking.ultra': 'Ultra',
   'triage.archive': 'Archive',
   'triage.empty': 'No unread runs',
   'triage.needsReview': 'Needs review',

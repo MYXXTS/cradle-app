@@ -66,6 +66,8 @@
   "thinking.low.label": "Bajo",
   "thinking.max.description": "Máximo effort de Claude Agent en modelos compatibles.",
   "thinking.max.label": "Máximo",
+  "thinking.ultra.description": "Activa el razonamiento multiagente proactivo de Codex en modelos compatibles.",
+  "thinking.ultra.label": "Ultra",
   "thinking.medium.description": "Razonamiento equilibrado para el trabajo diario.",
   "thinking.medium.label": "Medio",
   "thinking.minimal.description": "Presupuesto mínimo de razonamiento para tareas directas.",

@@ -72,6 +72,8 @@ export default {
   'thinking.xhigh.label': 'Extra High',
   'thinking.max.description': 'Maximum Claude Agent effort on supported models.',
   'thinking.max.label': 'Max',
+  'thinking.ultra.description': 'Enable proactive Codex multi-agent reasoning on supported models.',
+  'thinking.ultra.label': 'Ultra',
   'thinking.low.description': 'Fast responses with light reasoning.',
   'thinking.low.label': 'Low',
   'thinking.medium.description': 'Balanced reasoning for everyday work.',
