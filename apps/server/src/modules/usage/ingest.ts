@@ -1,4 +1,5 @@
 import { usageLogs } from '@cradle/db'
+import { and, eq, isNull } from 'drizzle-orm'
 
 import { db } from '../../infra'
 import type { RuntimeUsageEvent } from '../chat-runtime/runtime-provider-types'
@@ -14,7 +15,42 @@ export interface RuntimeUsageEventContext {
 
 export function recordRuntimeUsageEvent(input: RuntimeUsageEventContext): 'inserted' | 'duplicate' {
   validateRuntimeUsageEventContext(input)
-  const result = db()
+  const result = insertRuntimeUsageEvent(db(), input)
+  return result.changes > 0 ? 'inserted' : 'duplicate'
+}
+
+export function replaceLegacyCodexUsage(input: {
+  sessionId: string
+  events: RuntimeUsageEventContext[]
+}): { inserted: number, duplicates: number } {
+  for (const event of input.events) {
+    validateRuntimeUsageEventContext(event)
+    if (event.sessionId !== input.sessionId) {
+      throw new Error('Codex usage reconciliation events must belong to one Cradle session.')
+    }
+  }
+
+  return db().transaction((tx) => {
+    let inserted = 0
+    let duplicates = 0
+    for (const event of input.events) {
+      const result = insertRuntimeUsageEvent(tx, event)
+      if (result.changes > 0) {
+        inserted += 1
+      }
+      else {
+        duplicates += 1
+      }
+    }
+    tx.delete(usageLogs)
+      .where(and(eq(usageLogs.sessionId, input.sessionId), isNull(usageLogs.providerThreadId)))
+      .run()
+    return { inserted, duplicates }
+  })
+}
+
+function insertRuntimeUsageEvent(database: ReturnType<typeof db>, input: RuntimeUsageEventContext) {
+  return database
     .insert(usageLogs)
     .values({
       id: input.event.id,
@@ -40,7 +76,6 @@ export function recordRuntimeUsageEvent(input: RuntimeUsageEventContext): 'inser
     })
     .onConflictDoNothing({ target: usageLogs.id })
     .run()
-  return result.changes > 0 ? 'inserted' : 'duplicate'
 }
 
 function validateRuntimeUsageEventContext(input: RuntimeUsageEventContext): void {

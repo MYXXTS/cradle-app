@@ -239,6 +239,13 @@
       "when": 1784124588570,
       "tag": "0033_classy_master_mold",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1784132428398,
+      "tag": "0034_modern_lyja",
+      "breakpoints": true
     }
   ]
 }

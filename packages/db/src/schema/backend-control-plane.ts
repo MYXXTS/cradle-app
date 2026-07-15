@@ -21,6 +21,10 @@ export const backendSessionBindings = sqliteTable(
     backendSessionId: text('backend_session_id'),
     backendStateSnapshot: text('backend_state_snapshot'),
     requestedModelId: text('requested_model_id'),
+    usageReconciliationStatus: text('usage_reconciliation_status', {
+      enum: ['pending', 'completed', 'blocked'],
+    }).notNull().default('pending'),
+    usageReconciliationAttemptedAt: int('usage_reconciliation_attempted_at'),
     ...timestamps(),
   },
   table => ({
@@ -28,6 +32,11 @@ export const backendSessionBindings = sqliteTable(
       table.providerTargetId,
     ),
     byRuntimeKind: index('backend_session_bindings_runtime_kind_idx').on(table.runtimeKind),
+    byUsageReconciliationStatus: index('backend_session_bindings_usage_reconciliation_status_idx').on(
+      table.runtimeKind,
+      table.usageReconciliationStatus,
+      table.updatedAt,
+    ),
   }),
 )
 

@@ -2,14 +2,15 @@ import { createReadStream, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 import { createInterface } from 'node:readline'
 
-import { backendSessionBindings } from '@cradle/db'
-import { and, desc, eq, isNotNull } from 'drizzle-orm'
+import { backendSessionBindings, usageLogs } from '@cradle/db'
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { db } from '../../../infra'
 import { createDedupeKey, OBSERVABILITY_CODES } from '../../observability/contract'
 import * as Observability from '../../observability/service'
-import { recordRuntimeUsageEvent } from '../../usage/ingest'
+import type { RuntimeUsageEventContext } from '../../usage/ingest'
+import { recordRuntimeUsageEvent, replaceLegacyCodexUsage } from '../../usage/ingest'
 import { CodexAppServerClient, resolveCodexAppServerHome } from './app-server/client'
 import type { Thread } from './app-server-protocol/v2/Thread'
 import type { ThreadListParams } from './app-server-protocol/v2/ThreadListParams'
@@ -91,6 +92,7 @@ export interface CodexUsageReconciliationSummary {
   inserted: number
   duplicates: number
   incidents: number
+  completed?: boolean
 }
 
 export interface ReconcileCodexSessionUsageInput {
@@ -98,6 +100,8 @@ export interface ReconcileCodexSessionUsageInput {
   sessionId: string
   providerSessionId: string
   providerTargetId: string | null
+  bindingId?: string
+  replaceLegacyUsage?: boolean
   runtimeHome?: string
   recordIncident?: (incident: CodexUsageReconciliationIncident) => void
 }
@@ -120,12 +124,11 @@ export async function reconcileCodexSessionUsage(
   }
 
   summary.threads = threads.length
+  const events: RuntimeUsageEventContext[] = []
   for (const thread of threads) {
     if (!thread.path) {
-      if (!thread.ephemeral) {
-        summary.incidents += 1
-        recordIncident({ reason: 'Codex native thread metadata is missing its rollout path.', threadId: thread.id })
-      }
+      summary.incidents += 1
+      recordIncident({ reason: 'Codex native thread metadata is missing its rollout path.', threadId: thread.id })
       continue
     }
     const result = await reconcileCodexRollout({
@@ -137,11 +140,27 @@ export async function reconcileCodexSessionUsage(
       providerTargetId: input.providerTargetId,
       recordIncident,
     })
-    summary.inserted += result.inserted
-    summary.duplicates += result.duplicates
+    events.push(...result.events)
     summary.incidents += result.incidents
   }
-  return summary
+  if (summary.incidents > 0) {
+    markBindingReconciliation(input.bindingId, 'blocked')
+    return { ...summary, completed: false }
+  }
+  if (events.length === 0 && hasLegacyCodexUsage(input.sessionId)) {
+    summary.incidents += 1
+    recordIncident({ reason: 'Codex usage reconciliation found no authoritative events to replace legacy usage.' })
+    markBindingReconciliation(input.bindingId, 'blocked')
+    return { ...summary, completed: false }
+  }
+
+  const persisted = input.replaceLegacyUsage
+    ? replaceLegacyCodexUsage({ sessionId: input.sessionId, events })
+    : persistUsageEvents(events)
+  summary.inserted += persisted.inserted
+  summary.duplicates += persisted.duplicates
+  markBindingReconciliation(input.bindingId, 'completed')
+  return { ...summary, completed: true }
 }
 
 export async function reconcileCradleCodexUsage(input: {
@@ -155,6 +174,7 @@ export async function reconcileCradleCodexUsage(input: {
     .where(and(
       eq(backendSessionBindings.runtimeKind, 'codex'),
       isNotNull(backendSessionBindings.backendSessionId),
+      eq(backendSessionBindings.usageReconciliationStatus, 'pending'),
     ))
     .orderBy(desc(backendSessionBindings.updatedAt))
     .limit(input.maxBindings ?? DEFAULT_MAX_BINDINGS)
@@ -176,6 +196,8 @@ export async function reconcileCradleCodexUsage(input: {
         sessionId: binding.chatSessionId,
         providerSessionId: binding.backendSessionId,
         providerTargetId: binding.providerTargetId,
+        bindingId: binding.id,
+        replaceLegacyUsage: true,
         runtimeHome: input.runtimeHome,
       })
       addSummary(summary, result)
@@ -238,8 +260,9 @@ async function reconcileCodexRollout(input: {
   providerSessionId: string
   providerTargetId: string | null
   recordIncident: (incident: CodexUsageReconciliationIncident) => void
-}): Promise<CodexUsageReconciliationSummary> {
+}): Promise<{ events: RuntimeUsageEventContext[], incidents: number }> {
   const summary = emptySummary()
+  const events: RuntimeUsageEventContext[] = []
   let rolloutPath: string
   try {
     rolloutPath = readContainedRolloutPath(input.runtimeHome, input.path)
@@ -247,7 +270,7 @@ async function reconcileCodexRollout(input: {
   catch (error) {
     summary.incidents += 1
     input.recordIncident({ reason: errorMessage(error), threadId: input.expectedThreadId })
-    return summary
+    return { events, incidents: summary.incidents }
   }
 
   let observedThreadId: string | null = null
@@ -376,7 +399,7 @@ async function reconcileCodexRollout(input: {
         last: toProtocolUsage(info.last_token_usage),
         total: toProtocolUsage(info.total_token_usage),
       })
-      const result = recordRuntimeUsageEvent({
+      events.push({
         event,
         sessionId: input.sessionId,
         runId: null,
@@ -384,7 +407,6 @@ async function reconcileCodexRollout(input: {
         providerTargetId: input.providerTargetId,
         providerSessionId: input.providerSessionId,
       })
-      summary[result === 'inserted' ? 'inserted' : 'duplicates'] += 1
     }
     catch (error) {
       summary.incidents += 1
@@ -395,7 +417,42 @@ async function reconcileCodexRollout(input: {
       })
     }
   }
-  return summary
+  return { events, incidents: summary.incidents }
+}
+
+function persistUsageEvents(events: RuntimeUsageEventContext[]): { inserted: number, duplicates: number } {
+  let inserted = 0
+  let duplicates = 0
+  for (const event of events) {
+    if (recordRuntimeUsageEvent(event) === 'inserted') {
+      inserted += 1
+    }
+    else {
+      duplicates += 1
+    }
+  }
+  return { inserted, duplicates }
+}
+
+function markBindingReconciliation(bindingId: string | undefined, status: 'completed' | 'blocked'): void {
+  if (!bindingId) {
+    return
+  }
+  db().update(backendSessionBindings).set({
+      usageReconciliationStatus: status,
+      usageReconciliationAttemptedAt: Math.floor(Date.now() / 1000),
+      updatedAt: Math.floor(Date.now() / 1000),
+    }).where(eq(backendSessionBindings.id, bindingId)).run()
+}
+
+function hasLegacyCodexUsage(sessionId: string): boolean {
+  return Boolean(
+    db().select({ id: usageLogs.id })
+      .from(usageLogs)
+      .where(and(eq(usageLogs.sessionId, sessionId), isNull(usageLogs.providerThreadId)))
+      .limit(1)
+      .get(),
+  )
 }
 
 function readContainedRolloutPath(runtimeHome: string, rolloutPath: string): string {

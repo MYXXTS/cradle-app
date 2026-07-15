@@ -11,8 +11,4 @@ ALTER TABLE `usage_logs` ADD `provider_total_reasoning_output_tokens` integer;--
 ALTER TABLE `usage_logs` ADD `provider_total_tokens` integer;--> statement-breakpoint
 CREATE INDEX `usage_logs_run_id_idx` ON `usage_logs` (`run_id`);--> statement-breakpoint
 CREATE INDEX `usage_logs_session_model_created_at_idx` ON `usage_logs` (`session_id`,`model_id`,`created_at`);--> statement-breakpoint
-CREATE INDEX `usage_logs_provider_thread_created_at_idx` ON `usage_logs` (`provider_thread_id`,`created_at`);--> statement-breakpoint
-DELETE FROM `usage_logs`
-WHERE `session_id` IN (
-  SELECT `id` FROM `sessions` WHERE `runtime_kind` = 'codex'
-);
+CREATE INDEX `usage_logs_provider_thread_created_at_idx` ON `usage_logs` (`provider_thread_id`,`created_at`);

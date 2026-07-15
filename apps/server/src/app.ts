@@ -256,7 +256,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     { initHostConnectorService, getHostConnectorService },
     { shutdownRemoteHostConnections },
     { shutdownImageOcr },
-    { reconcileCradleCodexUsage },
+    { CodexUsageReconciliationScheduler },
   ] = await Promise.all([
     import('./infra'),
     import('./modules/chat-runtime/runtime'),
@@ -275,7 +275,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     import('./modules/relay-transport/host-connector'),
     import('./modules/remote-hosts/service'),
     import('./modules/image-ocr/service'),
-    import('./modules/chat-runtime-providers/codex/usage-reconciliation'),
+    import('./modules/chat-runtime-providers/codex/usage-reconciliation-scheduler'),
   ])
   if (recoverPersistedRunsOnCreate) {
     recoverPersistedRunProjections()
@@ -298,6 +298,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
   reconcileExternalIssueSourceRegistrations()
 
   const runtimeResources = new RuntimeResourceRegistry()
+  const codexUsageReconciliation = new CodexUsageReconciliationScheduler()
   runtimeResources.register({
     name: 'download-center',
     phase: 'cancel',
@@ -309,6 +310,11 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     stop: flushAllActiveRunSnapshots,
   })
   runtimeResources.register({ name: 'active-chat-runs', phase: 'drain', stop: abortAllRuns })
+  runtimeResources.register({
+    name: 'codex-usage-reconciliation',
+    phase: 'cancel',
+    stop: () => codexUsageReconciliation.stop(),
+  })
   runtimeResources.register({
     name: 'side-conversations',
     phase: 'stop',
@@ -369,7 +375,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
 
   // Start chronicle daemon if enabled
   if (startBackgroundTasks) {
-    await reconcileCradleCodexUsage()
+    codexUsageReconciliation.start()
     BackgroundJobPoller.start()
     const chronicleRuntimeAllowed = chronicleService.isChronicleRuntimeAllowed()
     void refreshAllExternalProviderSources()

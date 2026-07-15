@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { db, shutdownInfra } from '../../infra'
-import { recordRuntimeUsageEvent } from './ingest'
+import { recordRuntimeUsageEvent, replaceLegacyCodexUsage } from './ingest'
 
 const previousDataDir = process.env.CRADLE_DATA_DIR
 let dataDir = ''
@@ -97,5 +97,43 @@ describe('recordRuntimeUsageEvent', () => {
       providerTargetId: null,
       providerSessionId: 'root-thread',
     })).toThrow('providerTurnId')
+  })
+
+  it('atomically replaces only legacy Codex summary rows after a verified session replay', () => {
+    db().insert(sessions).values({ id: 'session-1', title: 'Session', runtimeKind: 'codex' }).run()
+    db().insert(usageLogs).values({
+      id: 'legacy-summary',
+      sessionId: 'session-1',
+      modelId: 'gpt-5.6-sol',
+      promptTokens: 90,
+      completionTokens: 10,
+      totalTokens: 100,
+      createdAt: 1_700_000_000,
+    }).run()
+
+    const result = replaceLegacyCodexUsage({
+      sessionId: 'session-1',
+      events: [{
+        event: {
+          id: 'event-1',
+          providerThreadId: 'thread-1',
+          providerTurnId: 'turn-1',
+          modelId: 'gpt-5.6-sol',
+          occurredAt: 1_789_000_000,
+          usage: { promptTokens: 200, completionTokens: 30, totalTokens: 230 },
+          providerTotal: { promptTokens: 200, completionTokens: 30, totalTokens: 230 },
+        },
+        sessionId: 'session-1',
+        runId: null,
+        messageId: null,
+        providerTargetId: null,
+        providerSessionId: 'thread-1',
+      }],
+    })
+
+    expect(result).toEqual({ inserted: 1, duplicates: 0 })
+    expect(db().select().from(usageLogs).all()).toEqual([
+      expect.objectContaining({ id: 'event-1', providerThreadId: 'thread-1' }),
+    ])
   })
 })

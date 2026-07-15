@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { backendSessionBindings, sessions, usageLogs } from '@cradle/db'
+import { eq } from 'drizzle-orm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db, shutdownInfra } from '../../../infra'
@@ -213,6 +214,77 @@ describe('codex usage reconciliation', () => {
 
     expect(result).toMatchObject({ bindings: 1, inserted: 1, incidents: 0 })
     expect(client.request).not.toHaveBeenCalledWith('thread/read', expect.objectContaining({ threadId: 'other-thread' }))
+    expect(db().select().from(backendSessionBindings).where(eq(backendSessionBindings.id, 'binding-codex')).get()).toEqual(
+      expect.objectContaining({ usageReconciliationStatus: 'completed' }),
+    )
+  })
+
+  it('keeps legacy usage and blocks only the ambiguous Cradle binding', async () => {
+    const rolloutPath = writeRollout('ambiguous.jsonl', [
+      sessionMeta('root-thread'),
+      JSON.stringify({ type: 'turn_context', timestamp: '2026-07-15T10:00:01.000Z', payload: { turn_id: 'turn-1' } }),
+      tokenCount('2026-07-15T10:00:02.000Z', usage(100, 10), usage(100, 10)),
+    ])
+    db().insert(backendSessionBindings).values({
+      id: 'binding-codex',
+      chatSessionId: 'session-1',
+      runtimeKind: 'codex',
+      backendSessionId: 'root-thread',
+    }).run()
+    db().insert(usageLogs).values({
+      id: 'legacy-summary',
+      sessionId: 'session-1',
+      modelId: 'gpt-5.6-sol',
+      promptTokens: 90,
+      completionTokens: 10,
+      totalTokens: 100,
+      createdAt: 1_700_000_000,
+    }).run()
+
+    const result = await reconcileCradleCodexUsage({
+      createClient: () => fakeClient(rootThread('root-thread', rolloutPath)),
+      runtimeHome,
+    })
+
+    expect(result).toMatchObject({ bindings: 1, inserted: 0, incidents: 2 })
+    expect(db().select().from(usageLogs).all()).toEqual([
+      expect.objectContaining({ id: 'legacy-summary', providerThreadId: null }),
+    ])
+    expect(db().select().from(backendSessionBindings).where(eq(backendSessionBindings.id, 'binding-codex')).get()).toEqual(
+      expect.objectContaining({ usageReconciliationStatus: 'blocked' }),
+    )
+  })
+
+  it('keeps legacy usage when the rollout has no authoritative usage events', async () => {
+    const rolloutPath = writeRollout('empty.jsonl', [sessionMeta('root-thread')])
+    db().insert(backendSessionBindings).values({
+      id: 'binding-codex',
+      chatSessionId: 'session-1',
+      runtimeKind: 'codex',
+      backendSessionId: 'root-thread',
+    }).run()
+    db().insert(usageLogs).values({
+      id: 'legacy-summary',
+      sessionId: 'session-1',
+      modelId: 'gpt-5.6-sol',
+      promptTokens: 90,
+      completionTokens: 10,
+      totalTokens: 100,
+      createdAt: 1_700_000_000,
+    }).run()
+
+    const result = await reconcileCradleCodexUsage({
+      createClient: () => fakeClient(rootThread('root-thread', rolloutPath)),
+      runtimeHome,
+    })
+
+    expect(result).toMatchObject({ bindings: 1, inserted: 0, incidents: 1 })
+    expect(db().select().from(usageLogs).all()).toEqual([
+      expect.objectContaining({ id: 'legacy-summary', providerThreadId: null }),
+    ])
+    expect(db().select().from(backendSessionBindings).where(eq(backendSessionBindings.id, 'binding-codex')).get()).toEqual(
+      expect.objectContaining({ usageReconciliationStatus: 'blocked' }),
+    )
   })
 })
 

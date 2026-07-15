@@ -1,0 +1,3 @@
+ALTER TABLE `backend_session_bindings` ADD `usage_reconciliation_status` text DEFAULT 'pending' NOT NULL;--> statement-breakpoint
+ALTER TABLE `backend_session_bindings` ADD `usage_reconciliation_attempted_at` integer;--> statement-breakpoint
+CREATE INDEX `backend_session_bindings_usage_reconciliation_status_idx` ON `backend_session_bindings` (`runtime_kind`,`usage_reconciliation_status`,`updated_at`);
