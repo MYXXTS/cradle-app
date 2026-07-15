@@ -1,6 +1,27 @@
 import { t } from 'elysia'
 
+const tokenUsageBreakdown = t.Object({
+  inputTokens: t.Number(),
+  cachedInputTokens: t.Number(),
+  outputTokens: t.Number(),
+  reasoningOutputTokens: t.Number(),
+  totalTokens: t.Number(),
+})
+
 export const UsageModel = {
+  localUsageSnapshot: t.Object({
+    generatedAt: t.Number(),
+    usage: tokenUsageBreakdown,
+    providers: t.Array(t.Object({
+      providerKind: t.Union([t.Literal('codex'), t.Literal('claude-agent')]),
+      status: t.Union([t.Literal('available'), t.Literal('unavailable'), t.Literal('error')]),
+      sourceRootCount: t.Number(),
+      sessionCount: t.Number(),
+      lastActivityAt: t.Union([t.Number(), t.Null()]),
+      usage: tokenUsageBreakdown,
+    })),
+  }),
+
   dailyUsage: t.Object({
     date: t.String(),
     promptTokens: t.Number(),

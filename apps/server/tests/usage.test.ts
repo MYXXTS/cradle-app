@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { clearLocalUsageSnapshotCache, configureLocalUsageSources } from '../src/modules/usage/local/service'
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix))
@@ -28,6 +29,109 @@ function isoDaysAgo(daysAgo: number): string {
 }
 
 describe('usage capability', () => {
+  it('returns machine-local provider usage from configured archive sources', async () => {
+    const dataDir = makeTempDir('cradle-local-usage-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    process.env.CRADLE_DATA_DIR = dataDir
+    let app: Awaited<ReturnType<typeof createServerApp>> | undefined
+
+    try {
+      app = await createServerApp()
+      configureLocalUsageSources([
+        {
+          providerKind: 'codex',
+          readSummary: async () => ({
+            providerKind: 'codex',
+            status: 'available',
+            sourceRootCount: 2,
+            sessionCount: 3,
+            lastActivityAt: 1_789_000_000_000,
+            usage: {
+              inputTokens: 100,
+              cachedInputTokens: 80,
+              outputTokens: 20,
+              reasoningOutputTokens: 10,
+              totalTokens: 120,
+            },
+          }),
+        },
+        {
+          providerKind: 'claude-agent',
+          readSummary: async () => ({
+            providerKind: 'claude-agent',
+            status: 'available',
+            sourceRootCount: 1,
+            sessionCount: 2,
+            lastActivityAt: 1_789_000_100_000,
+            usage: {
+              inputTokens: 40,
+              cachedInputTokens: 15,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+              totalTokens: 45,
+            },
+          }),
+        },
+      ])
+
+      const response = await app.handle(new Request('http://localhost/usage/local-summary'))
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({
+        generatedAt: expect.any(Number),
+        usage: {
+          inputTokens: 140,
+          cachedInputTokens: 95,
+          outputTokens: 25,
+          reasoningOutputTokens: 10,
+          totalTokens: 165,
+        },
+        providers: [
+          {
+            providerKind: 'codex',
+            status: 'available',
+            sourceRootCount: 2,
+            sessionCount: 3,
+            lastActivityAt: 1_789_000_000_000,
+            usage: {
+              inputTokens: 100,
+              cachedInputTokens: 80,
+              outputTokens: 20,
+              reasoningOutputTokens: 10,
+              totalTokens: 120,
+            },
+          },
+          {
+            providerKind: 'claude-agent',
+            status: 'available',
+            sourceRootCount: 1,
+            sessionCount: 2,
+            lastActivityAt: 1_789_000_100_000,
+            usage: {
+              inputTokens: 40,
+              cachedInputTokens: 15,
+              outputTokens: 5,
+              reasoningOutputTokens: 0,
+              totalTokens: 45,
+            },
+          },
+        ],
+      })
+    }
+    finally {
+      configureLocalUsageSources([])
+      clearLocalUsageSnapshotCache()
+      shutdownInfra()
+      rmSync(dataDir, { recursive: true, force: true })
+      if (previousDataDir === undefined) {
+        delete process.env.CRADLE_DATA_DIR
+      }
+      else {
+        process.env.CRADLE_DATA_DIR = previousDataDir
+      }
+    }
+  })
+
   it('aggregates daily usage, summary, stats, and session totals', async () => {
     const dataDir = makeTempDir('cradle-data-')
     const workspaceRoot = makeTempDir('cradle-workspace-')

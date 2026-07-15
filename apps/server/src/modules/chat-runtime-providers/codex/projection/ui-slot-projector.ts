@@ -4,7 +4,7 @@
  * Position: Codex provider package owner for runtime UI slot projection.
  */
 
-import type { RuntimeAlertUiSlotState, RuntimeApprovalsUiSlotState, RuntimeBackgroundTerminal, RuntimeCompactUiSlotState, RuntimeConfigUiSlotState, RuntimeCrewAgentItem, RuntimeCrewCallItem, RuntimeCrewUiSlotState, RuntimeDiffUiSlotState, RuntimeFilesystemUiSlotState, RuntimeMcpUiSlotState, RuntimeModelUiSlotState, RuntimePlanUiSlotState, RuntimePluginUiSlotState, RuntimeReasoningUiSlotState, RuntimeSearchUiSlotState, RuntimeSkillsUiSlotState, RuntimeStatusUiSlotState, RuntimeTerminalUiSlotState, RuntimeToolActivityStatus, RuntimeToolActivityUiSlotState, RuntimeUiSlot, RuntimeUiSlotState, RuntimeUsageUiSlotState } from '../../../chat-runtime/runtime-provider-types'
+import type { RuntimeAlertUiSlotState, RuntimeApprovalsUiSlotState, RuntimeBackgroundTerminal, RuntimeCompactUiSlotState, RuntimeConfigUiSlotState, RuntimeCrewAgentItem, RuntimeCrewCallItem, RuntimeCrewUiSlotState, RuntimeDiffUiSlotState, RuntimeFilesystemUiSlotState, RuntimeMcpUiSlotState, RuntimeModelUiSlotState, RuntimePlanUiSlotState, RuntimePluginUiSlotState, RuntimeReasoningUiSlotState, RuntimeSearchUiSlotState, RuntimeSkillsUiSlotState, RuntimeStatusUiSlotState, RuntimeTerminalUiSlotState, RuntimeTokenUsageBreakdown, RuntimeToolActivityStatus, RuntimeToolActivityUiSlotState, RuntimeUiSlot, RuntimeUiSlotState, RuntimeUsageUiSlotState } from '../../../chat-runtime/runtime-provider-types'
 import {
   RUNTIME_CODE_REVIEW_COMMAND_ACTION_ID,
   RUNTIME_USAGE_COMMAND_ACTION_ID,
@@ -35,6 +35,7 @@ import type {
   CodexThreadStatus,
   ThreadGoalGetResponse,
 } from '../types'
+import { readCodexSessionTreeUsage } from './session-tree-usage'
 import {
   isCodexGoalStatus,
   normalizeMcpAuthStatus,
@@ -488,6 +489,7 @@ function supportsSlot(
 
 export interface CodexUiSlotStateProjectionInput {
   client: CodexAppServerClientLike
+  liveUsageByThreadId?: ReadonlyMap<string, RuntimeTokenUsageBreakdown>
   threadId: string
   providerStateSnapshot: string | null | undefined
   goal: ThreadGoalGetResponse['goal'] | undefined
@@ -515,6 +517,12 @@ export async function projectCodexUiSlotStates(
     snapshot,
     input.collaborationModes,
   )
+  const sessionTreeUsage = await readCodexSessionTreeUsage(input.client, input.threadId, {
+    liveUsageByThreadId: input.liveUsageByThreadId,
+  }).catch(() => ({
+    subagentTotal: { totalTokens: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 },
+    subagentCount: 0,
+  }))
   const slotStates = [
     projectCodexStatusState(input.threadId, snapshot),
     projectCodexModelState(
@@ -529,6 +537,7 @@ export async function projectCodexUiSlotStates(
       input.threadId,
       readCodexCompactSnapshot(input.providerStateSnapshot),
       input.configResponse,
+      sessionTreeUsage,
     ),
     projectCodexPlanState(input.threadId, snapshot),
     projectCodexToolActivityState(input.threadId, snapshot),
@@ -715,6 +724,7 @@ function projectCodexCompactState(
   threadId: string,
   snapshot: CodexCompactSnapshot | null,
   configResponse: CodexConfigReadResponse | null,
+  sessionTreeUsage: { subagentTotal: RuntimeCompactUiSlotState['subagentTotal'], subagentCount: number },
 ): RuntimeCompactUiSlotState | null {
   if (!snapshot || snapshot.threadId !== threadId) {
     return null
@@ -751,6 +761,15 @@ function projectCodexCompactState(
     isCompactRelevant: status !== 'idle' || last.totalTokens > 0,
     total,
     last,
+    treeTotal: {
+      totalTokens: total.totalTokens + sessionTreeUsage.subagentTotal.totalTokens,
+      inputTokens: total.inputTokens + sessionTreeUsage.subagentTotal.inputTokens,
+      cachedInputTokens: total.cachedInputTokens + sessionTreeUsage.subagentTotal.cachedInputTokens,
+      outputTokens: total.outputTokens + sessionTreeUsage.subagentTotal.outputTokens,
+      reasoningOutputTokens: total.reasoningOutputTokens + sessionTreeUsage.subagentTotal.reasoningOutputTokens,
+    },
+    subagentTotal: sessionTreeUsage.subagentTotal,
+    subagentCount: sessionTreeUsage.subagentCount,
     modelContextWindow,
     autoCompactTokenLimit,
     usagePercent,

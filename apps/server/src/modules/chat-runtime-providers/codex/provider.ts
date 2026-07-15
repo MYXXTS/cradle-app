@@ -39,6 +39,7 @@ import type {
   RuntimeContextUsage,
   RuntimePresentationCapabilities,
   RuntimeSession,
+  RuntimeTokenUsageBreakdown,
   RuntimeUiSlotState,
   StartChatSessionInput,
   SteerTurnInput,
@@ -117,6 +118,7 @@ import { projectCodexEstimatedContextUsage } from './projection/context-usage-pr
 import {
   clearCodexGoalSnapshot,
   hasActiveGoal,
+  normalizeTokenUsageBreakdown,
   pauseCodexGoalSnapshot,
   projectCodexGoalSnapshotFromGoal,
   projectCodexProviderStateSnapshot,
@@ -235,6 +237,11 @@ export class CodexProvider implements ChatRuntime {
   readonly goalContinuation = createCodexGoalContinuation()
 
   private readonly activeTurns = new CodexActiveTurnRegistry()
+  private readonly liveThreadUsageByClient = new WeakMap<
+    CodexAppServerClientLike,
+    Map<string, RuntimeTokenUsageBreakdown>
+  >()
+
   private _lastUsage: TokenUsage | null = null
   private _lastModelId: string | null = null
 
@@ -678,6 +685,7 @@ export class CodexProvider implements ChatRuntime {
         : []
       return await projectCodexUiSlotStates({
         client,
+        liveUsageByThreadId: this.liveThreadUsageByClient.get(client),
         threadId: runtimeSession.providerSessionId,
         providerStateSnapshot: runtimeSession.providerStateSnapshot,
         goal: goalResult.status === 'fulfilled' ? goalResult.value.goal : undefined,
@@ -1346,11 +1354,14 @@ export class CodexProvider implements ChatRuntime {
         mapperState,
         diagnostics,
         readGoal: () => readCodexProviderSnapshot(turnInput.runtimeSession.providerStateSnapshot).codex?.goal ?? null,
-        onProviderNotification: providerNotification => publishProviderThreadEvent(
-          turnInput.onProviderThreadEvent,
-          providerNotification,
-          input.providerThreadMapperStates,
-        ),
+        onProviderNotification: (providerNotification) => {
+          this.captureLiveThreadUsage(input.client, providerNotification)
+          publishProviderThreadEvent(
+            turnInput.onProviderThreadEvent,
+            providerNotification,
+            input.providerThreadMapperStates,
+          )
+        },
       })) {
         const { notification } = event
         for (const chunk of event.chunks) {
@@ -1878,6 +1889,25 @@ export class CodexProvider implements ChatRuntime {
     if (usage) {
       this._lastUsage = usage
     }
+  }
+
+  private captureLiveThreadUsage(
+    client: CodexAppServerClientLike,
+    notification: CodexAppServerMessage,
+  ): void {
+    if (notification.method !== 'thread/tokenUsage/updated') {
+      return
+    }
+    const params = notification.params as ThreadTokenUsageUpdatedNotificationParams | undefined
+    if (!params?.threadId || !params.tokenUsage?.total) {
+      return
+    }
+    let usageByThreadId = this.liveThreadUsageByClient.get(client)
+    if (!usageByThreadId) {
+      usageByThreadId = new Map()
+      this.liveThreadUsageByClient.set(client, usageByThreadId)
+    }
+    usageByThreadId.set(params.threadId, normalizeTokenUsageBreakdown(params.tokenUsage.total))
   }
 }
 

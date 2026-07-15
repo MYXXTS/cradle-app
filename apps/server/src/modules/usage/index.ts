@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia'
 
+import { getLocalUsageSnapshot } from './local/service'
 import { UsageModel } from './model'
 import * as Usage from './service'
 
@@ -7,6 +8,15 @@ export const usage = new Elysia({
   prefix: '/usage',
   detail: { tags: ['usage'] },
 })
+  .get('/local-summary', () => getLocalUsageSnapshot(), {
+    detail: {
+      'summary': 'Get local provider archive usage summary',
+      'x-cradle-cli': {
+        command: ['usage', 'local-summary'],
+      },
+    },
+    response: { 200: UsageModel.localUsageSnapshot },
+  })
   .get('/daily', ({ query }) => Usage.getDailyUsage(query.days), {
     detail: {
       'summary': 'Get daily usage',

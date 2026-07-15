@@ -379,6 +379,9 @@ export interface RuntimeCompactUiSlotState {
   isCompactRelevant: boolean
   total: RuntimeTokenUsageBreakdown
   last: RuntimeTokenUsageBreakdown
+  treeTotal: RuntimeTokenUsageBreakdown
+  subagentTotal: RuntimeTokenUsageBreakdown
+  subagentCount: number
   modelContextWindow: number | null
   autoCompactTokenLimit: number | null
   usagePercent: number | null

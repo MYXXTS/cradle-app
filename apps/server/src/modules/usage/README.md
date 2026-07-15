@@ -1,6 +1,6 @@
 # Usage Module
 
-Provides read-model analytics for `usage_logs` including daily totals, hourly patterns, dashboard summary, streak stats, per-session totals, recent session feed rows, and cost summaries.
+Provides two explicitly separate usage views. `GET /usage/local-summary` reads provider-native Codex and Claude archives to report machine-local lifetime totals without a Cradle usage table. Existing routes remain read-model analytics over `usage_logs` and represent Cradle-attributed activity, not the authoritative machine total.
 Token and cost breakdowns use `sessions.agentId` for Agent attribution and `usage_logs.providerTargetId` for provider-target attribution.
 Route metadata includes `x-cradle-cli` descriptors for generated CLI commands.
 
