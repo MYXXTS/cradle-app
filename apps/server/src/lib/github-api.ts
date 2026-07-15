@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { execSync } from 'node:child_process'
 
 import { z } from 'zod'
@@ -908,6 +909,65 @@ export interface GitHubSearchPullRequestPage {
 
 const SEARCH_PULL_REQUESTS_PAGE_SIZE = 25
 
+const ReviewingPullRequestCursorSchema = z.object({
+  version: z.literal(1),
+  requestedAfter: z.string().nullable(),
+  requestedDone: z.boolean(),
+  reviewedAfter: z.string().nullable(),
+  reviewedDone: z.boolean(),
+})
+
+type ReviewingPullRequestCursor = z.infer<typeof ReviewingPullRequestCursorSchema>
+
+const INITIAL_REVIEWING_CURSOR: ReviewingPullRequestCursor = {
+  version: 1,
+  requestedAfter: null,
+  requestedDone: false,
+  reviewedAfter: null,
+  reviewedDone: false,
+}
+
+function decodeReviewingCursor(after: string | null): ReviewingPullRequestCursor {
+  if (!after) {
+    return INITIAL_REVIEWING_CURSOR
+  }
+
+  try {
+    return ReviewingPullRequestCursorSchema.parse(
+      JSON.parse(Buffer.from(after, 'base64url').toString('utf8')),
+    )
+  }
+  catch {
+    throw new GitHubApiError({
+      status: 422,
+      path: '/pull-requests/reviewing',
+      message: 'Invalid reviewing pull request cursor.',
+    })
+  }
+}
+
+function encodeReviewingCursor(cursor: ReviewingPullRequestCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url')
+}
+
+function pullRequestSearchKey(pullRequest: GitHubSearchPullRequest): string {
+  return `${pullRequest.owner}/${pullRequest.repo}#${pullRequest.number}`
+}
+
+function mergePullRequestSearchPages(
+  requestedPage: GitHubSearchPullRequestPage | null,
+  reviewedPage: GitHubSearchPullRequestPage | null,
+): GitHubSearchPullRequest[] {
+  const pullRequests = new Map<string, GitHubSearchPullRequest>()
+  for (const pullRequest of [...(requestedPage?.items ?? []), ...(reviewedPage?.items ?? [])]) {
+    const key = pullRequestSearchKey(pullRequest)
+    if (!pullRequests.has(key)) {
+      pullRequests.set(key, pullRequest)
+    }
+  }
+  return [...pullRequests.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+}
+
 /**
  * Fetches a single page of the given search query, most-recently-updated
  * first. Callers drive pagination explicitly via `after` - there is no
@@ -943,12 +1003,36 @@ export function searchAuthoredPullRequests(login: string, after: string | null =
 }
 
 export function searchReviewingPullRequests(login: string, after: string | null = null): Promise<GitHubSearchPullRequestPage> {
+  const cursor = decodeReviewingCursor(after)
   return cachedFetch({
-    cacheKey: `search-reviewing:login:${login}:${after ?? 'first'}`,
+    cacheKey: `search-reviewing:v2:login:${login}:${after ?? 'first'}`,
     ttlS: 60,
     etag: false,
     fetcher: async () => {
-      const data = await searchPullRequestsPage(`is:pr (review-requested:${login} OR reviewed-by:${login})`, after)
+      const [requestedPage, reviewedPage] = await Promise.all([
+        cursor.requestedDone
+          ? Promise.resolve(null)
+          : searchPullRequestsPage(`is:pr review-requested:${login}`, cursor.requestedAfter),
+        cursor.reviewedDone
+          ? Promise.resolve(null)
+          : searchPullRequestsPage(
+              `is:pr reviewed-by:${login} -review-requested:${login}`,
+              cursor.reviewedAfter,
+            ),
+      ])
+      const nextCursor: ReviewingPullRequestCursor = {
+        version: 1,
+        requestedAfter: requestedPage?.endCursor ?? cursor.requestedAfter,
+        requestedDone: cursor.requestedDone || requestedPage?.hasNextPage === false,
+        reviewedAfter: reviewedPage?.endCursor ?? cursor.reviewedAfter,
+        reviewedDone: cursor.reviewedDone || reviewedPage?.hasNextPage === false,
+      }
+      const hasNextPage = !nextCursor.requestedDone || !nextCursor.reviewedDone
+      const data: GitHubSearchPullRequestPage = {
+        items: mergePullRequestSearchPages(requestedPage, reviewedPage),
+        hasNextPage,
+        endCursor: hasNextPage ? encodeReviewingCursor(nextCursor) : null,
+      }
       return { data, etag: null, status: 200 }
     },
   }).then(data => data!)

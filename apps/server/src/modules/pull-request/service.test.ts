@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetTokenCache } from '../../lib/github-api'
 import { isForceWithLeaseRejection, resolveDeliveryPushArgs } from './delivery-push'
 import { parseGitHubOwnerRepo } from './github-remote'
-import { fetchPullRequestDetailByRef } from './service'
+import { fetchPullRequestDetailByRef, listReviewingPullRequests } from './service'
 
 const originalGitHubToken = process.env.GH_TOKEN
 
@@ -135,6 +135,134 @@ describe('fetchPullRequestDetailByRef', () => {
       { login: 'pending', avatarUrl: 'https://avatars.example/pending', url: 'https://github.com/pending' },
       { login: 'reviewed', avatarUrl: 'https://avatars.example/reviewed', url: 'https://github.com/reviewed' },
       { login: 'submitted', avatarUrl: 'https://avatars.example/submitted', url: 'https://github.com/submitted' },
+    ])
+  })
+})
+
+function searchPullRequestNode(options: {
+  number: number
+  updatedAt: string
+}) {
+  return {
+    number: options.number,
+    title: `Pull request ${options.number}`,
+    url: `https://github.com/cradle/app/pull/${options.number}`,
+    isDraft: false,
+    state: 'OPEN',
+    headRefName: `feature-${options.number}`,
+    baseRefName: 'main',
+    additions: 1,
+    deletions: 0,
+    createdAt: '2026-07-01T00:00:00Z',
+    updatedAt: options.updatedAt,
+    repository: { name: 'app', owner: { login: 'cradle' } },
+    author: {
+      login: 'author',
+      avatarUrl: 'https://avatars.example/author',
+      url: 'https://github.com/author',
+    },
+    commits: { nodes: [] },
+  }
+}
+
+function searchResponse(options: {
+  nodes: ReturnType<typeof searchPullRequestNode>[]
+  hasNextPage: boolean
+  endCursor: string | null
+}): Response {
+  return new Response(JSON.stringify({
+    data: {
+      search: {
+        nodes: options.nodes,
+        pageInfo: {
+          hasNextPage: options.hasNextPage,
+          endCursor: options.endCursor,
+        },
+      },
+    },
+  }), { status: 200 })
+}
+
+describe('listReviewingPullRequests', () => {
+  beforeEach(() => {
+    process.env.GH_TOKEN = 'test-token'
+    resetTokenCache()
+  })
+
+  afterEach(() => {
+    if (originalGitHubToken === undefined) {
+      delete process.env.GH_TOKEN
+    }
+    else {
+      process.env.GH_TOKEN = originalGitHubToken
+    }
+    resetTokenCache()
+    vi.unstubAllGlobals()
+  })
+
+  it('merges requested and completed review searches with independent cursors', async () => {
+    const sharedPullRequest = searchPullRequestNode({
+      number: 1,
+      updatedAt: '2026-07-15T03:00:00Z',
+    })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(searchResponse({
+        nodes: [sharedPullRequest],
+        hasNextPage: true,
+        endCursor: 'requested-page-1',
+      }))
+      .mockResolvedValueOnce(searchResponse({
+        nodes: [
+          sharedPullRequest,
+          searchPullRequestNode({ number: 2, updatedAt: '2026-07-15T02:00:00Z' }),
+        ],
+        hasNextPage: false,
+        endCursor: null,
+      }))
+      .mockResolvedValueOnce(searchResponse({
+        nodes: [searchPullRequestNode({ number: 3, updatedAt: '2026-07-15T01:00:00Z' })],
+        hasNextPage: false,
+        endCursor: null,
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const firstPage = await listReviewingPullRequests('review-feed-pagination-test')
+
+    expect(firstPage.items.map(item => item.number)).toEqual([1, 2])
+    expect(firstPage.hasNextPage).toBe(true)
+    expect(firstPage.endCursor).not.toBeNull()
+
+    const secondPage = await listReviewingPullRequests(
+      'review-feed-pagination-test',
+      firstPage.endCursor ?? undefined,
+    )
+
+    expect(secondPage.items.map(item => item.number)).toEqual([3])
+    expect(secondPage).toMatchObject({ hasNextPage: false, endCursor: null })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    const requests = fetchMock.mock.calls.map(([, init]) => {
+      const body = JSON.parse(String(init?.body)) as {
+        variables: { searchQuery: string, first: number, after: string | null }
+      }
+      return body.variables
+    })
+    expect(requests).toEqual([
+      {
+        searchQuery: 'is:pr review-requested:review-feed-pagination-test sort:updated-desc',
+        first: 25,
+        after: null,
+      },
+      {
+        searchQuery: 'is:pr reviewed-by:review-feed-pagination-test -review-requested:review-feed-pagination-test sort:updated-desc',
+        first: 25,
+        after: null,
+      },
+      {
+        searchQuery: 'is:pr review-requested:review-feed-pagination-test sort:updated-desc',
+        first: 25,
+        after: 'requested-page-1',
+      },
     ])
   })
 })

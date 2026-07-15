@@ -728,7 +728,7 @@ export async function listReviewingPullRequests(login: string, after?: string): 
     return { items: page.items.map(toSearchView), hasNextPage: page.hasNextPage, endCursor: page.endCursor }
   }
   catch (error) {
-    mapGitHubError(error, 'Failed to list pull requests you are requested to review.')
+    mapGitHubError(error, 'Failed to list pull requests you review.')
   }
 }
 

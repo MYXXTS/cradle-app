@@ -113,8 +113,15 @@ export function useCradlePullRequests() {
     const workByRef = indexWorksByPullRequestRef(workQuery.data ?? [])
     const authored = toEntries(authoredItems, 'authored', workByRef)
     const authoredRefs = new Set(authored.map(entry => entry.id))
+    const reviewingByRef = new Map<string, PullRequestView>()
+    for (const pullRequest of reviewingItems) {
+      const ref = pullRequestRefKey(pullRequest)
+      if (!reviewingByRef.has(ref)) {
+        reviewingByRef.set(ref, pullRequest)
+      }
+    }
     const reviewing = toEntries(
-      reviewingItems.filter(pullRequest => !authoredRefs.has(pullRequestRefKey(pullRequest))),
+      [...reviewingByRef.values()].filter(pullRequest => !authoredRefs.has(pullRequestRefKey(pullRequest))),
       'reviewing',
       workByRef,
     )
