@@ -69,8 +69,6 @@ export default {
   'session.action.showLess': 'Show fewer',
   'session.action.unpin': 'Unpin',
   'session.aria.error': 'Session error',
-  'session.aria.isolated': 'Running in worktree',
-  'session.aria.isolatedBranch': 'Running in worktree ({{branch}})',
   'session.aria.remote': 'Runs on remote host {{hostName}}',
   'session.aria.menu': 'Session menu',
   'session.aria.newReply': 'New reply',

@@ -2044,6 +2044,16 @@ export const zDeleteIssuesByIdContextRefsByIndexPath = z.object({
     index: z.string()
 });
 
+export const zPostImageOcrRecognizeBody = z.object({
+    files: z.array(z.object({
+        type: z.string(),
+        mediaType: z.string().min(1),
+        filename: z.string().optional(),
+        url: z.string().min(1),
+        providerMetadata: z.unknown().optional()
+    })).min(1).max(8)
+});
+
 export const zGetKanbanBoardsQuery = z.object({
     workspaceId: z.string().optional()
 });

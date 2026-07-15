@@ -1,8 +1,9 @@
 # Work feature
 
 This feature owns the web projection of a local Work container: Work queries,
-the Work-owned conversation surface, header/sidebar chrome, and the Right Aside
-handoff/delivery panel.
+the Work-owned conversation surface, header chrome, and the Right Aside
+handoff/delivery panel. Workspace owns the unified Session sidebar and decorates
+primary Work Session rows with Work status metadata.
 
 Work reuses the primary Session conversation renderer. It does not fork Chat
 Runtime state or create a second stream owner. Preparing is local-only; Draft PR

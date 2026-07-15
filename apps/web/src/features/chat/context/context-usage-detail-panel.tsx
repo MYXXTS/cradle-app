@@ -13,6 +13,7 @@ import type {
   ChatRuntimeContextUsageSection,
 } from '../capabilities/chat-capabilities'
 import { getChatRuntimeContextUsage } from '../capabilities/chat-capabilities'
+import { SessionProcessedUsage } from './session-processed-usage'
 
 interface ContextUsageDetailPanelProps {
   sessionId: string | null
@@ -193,6 +194,8 @@ export function ContextUsageDetailPanel({
                     <span className="tabular-nums">{readLimitDistanceLabel(aggregate)}</span>
                   </div>
                 </div>
+
+                {compactState ? <SessionProcessedUsage compactState={compactState} /> : null}
 
                 {sections.length > 0
                   ? <ContextSectionList sections={sections} shareTotal={sectionShareTotal} />

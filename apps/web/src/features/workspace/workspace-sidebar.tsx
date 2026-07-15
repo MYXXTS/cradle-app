@@ -14,7 +14,6 @@ import {
   FilterLine as ListFilterIcon,
   FolderLine as FolderClosedIcon,
   FolderOpenLine as FolderOpenIcon,
-  GitBranchLine as WorktreeIcon,
   GitCompareLine as FileDiffIcon,
   GitPullRequestLine as WorkIcon,
   LoadingLine,
@@ -114,6 +113,11 @@ import { useDirectoryPicker } from '~/features/filesystem/directory-picker-provi
 import { KanbanSidebar } from '~/features/kanban/kanban-sidebar'
 import { PluginsSidebar } from '~/features/plugins/plugins-sidebar'
 import {
+  STATUS_ICON,
+  STATUS_ICON_CLASS,
+  statusKind,
+} from '~/features/pull-requests/status-meta'
+import {
   fetchRemoteUpstreamJson,
   remoteHostUpstreamQueryKey,
 } from '~/features/remote-hosts/upstream-fetch'
@@ -124,7 +128,6 @@ import { SettingsRow } from '~/features/settings/settings-row'
 import { useFeatureFlag } from '~/features/settings/use-app-preferences'
 import type { WorkSummary } from '~/features/work/use-work'
 import { useWorkspaceWorks } from '~/features/work/use-work'
-import { WorkSidebarSection } from '~/features/work/work-sidebar-section'
 import { MigrateWorkspaceDialog } from '~/features/workspace/migrate-workspace-dialog'
 import { ensureRemoteWorkspaceForPath } from '~/features/workspace/remote-workspace-import'
 import type { Workspace } from '~/features/workspace/types'
@@ -190,6 +193,7 @@ import type {
 import { useWorkspaceSidebarUiStore } from './workspace-sidebar-ui-store'
 
 type WorkspaceTranslation = TFunction<'workspace'>
+type WorkTranslation = TFunction<'work'>
 
 const SESSION_REVEAL_BATCH_SIZE = 64
 const SESSION_REVEAL_DELAY_MS = 16
@@ -367,14 +371,12 @@ type SessionMenuAnchor
       getBoundingClientRect: () => DOMRect
     }
 
-type SessionMenuSurface = 'button' | 'context'
 type RuntimeIconByKind = ReadonlyMap<RuntimeKind, RuntimeIconDescriptor>
 
 type SessionMenuRequest = {
   sessionId: string
   workId: string | null
   anchor: SessionMenuAnchor
-  surface: SessionMenuSurface
 }
 
 type SessionMenuState = {
@@ -382,7 +384,6 @@ type SessionMenuState = {
   sessionId: string | null
   workId: string | null
   anchor: SessionMenuAnchor | null
-  surface: SessionMenuSurface
 }
 
 const CLOSED_SESSION_MENU_STATE: SessionMenuState = {
@@ -390,7 +391,6 @@ const CLOSED_SESSION_MENU_STATE: SessionMenuState = {
   sessionId: null,
   workId: null,
   anchor: null,
-  surface: 'button',
 }
 
 function createPointMenuAnchor(clientX: number, clientY: number): SessionMenuAnchor {
@@ -754,10 +754,10 @@ function SessionActionsMenu({
           align="start"
           anchor={state.anchor}
           side="bottom"
-          sideOffset={state.surface === 'context' ? 0 : 4}
+          sideOffset={0}
         >
-          <SessionMenuActionItems groups={actionGroups} testIdSurface={state.surface} />
-          {session && !work
+          <SessionMenuActionItems groups={actionGroups} testIdSurface="context" />
+          {session
             ? (
                 <SessionGroupMenuItems
                   session={session}
@@ -1686,12 +1686,14 @@ SessionUnreadIndicator.displayName = 'SessionUnreadIndicator'
 const SessionItem = memo(
   ({
     session,
+    work,
     isStreaming,
     attentionKind,
     hasError,
     isRenaming,
     runtimeIcon,
     t,
+    tWork,
     onPrepareSessionOpen,
     onPrefetchSession,
     onRenameCommit,
@@ -1699,12 +1701,14 @@ const SessionItem = memo(
     onOpenSessionMenu,
   }: {
     session: WorkspaceSession
+    work: WorkSummary | null
     isStreaming: boolean
     attentionKind: SessionAttentionKind | null
     hasError: boolean
     isRenaming: boolean
     runtimeIcon: RuntimeIconDescriptor | undefined
     t: WorkspaceTranslation
+    tWork: WorkTranslation
     onPrepareSessionOpen: (session: WorkspaceSession) => void
     onPrefetchSession: (sessionId: string) => void
     onRenameCommit: (session: WorkspaceSession, nextTitle: string) => Promise<void>
@@ -1712,7 +1716,7 @@ const SessionItem = memo(
     onOpenSessionMenu: (request: SessionMenuRequest) => void
   }) => {
     const previewCard = usePreviewCard()
-    const sessionSurfaceId = chatSurfaceId(session.id)
+    const sessionSurfaceId = work ? workSurfaceId(work.id) : chatSurfaceId(session.id)
     const active = useIsActiveSurfaceId(sessionSurfaceId)
     const isUnread = session.unread
     // System-generated sessions (anything other than `manual`) are always
@@ -1720,13 +1724,39 @@ const SessionItem = memo(
     // Running/error/unread states only affect the right-side indicators,
     // not the row opacity. The exception is the currently active session.
     const isManual = isManualSession(session)
-    const dimmed = !isManual && !active
+    const dimmed = !work && !isManual && !active
     const isRegeneratingTitle = useTitleRegenerationStore(state =>
       state.regeneratingSessionIds.has(session.id))
     const dragScreenPointerRef = useRef<ScreenCoordinates | null>(null)
     const dragCleanupRef = useRef<(() => void) | null>(null)
     const dragWasTornOffRef = useRef(false)
-    const sessionTitle = session.title ?? t('session.fallbackTitle')
+    const sessionTitle = session.title?.trim() || work?.title || t('session.fallbackTitle')
+    const workActivityLabel = work ? tWork(`aside.activity.${work.activity}`) : null
+    const workPullRequestLabel = work?.pullRequest
+      ? work.pullRequest.merged
+        ? tWork('sidebar.merged', { number: work.pullRequest.number })
+        : work.pullRequest.isDraft
+          ? tWork('sidebar.draft', { number: work.pullRequest.number })
+          : tWork('sidebar.ready', { number: work.pullRequest.number })
+      : null
+    const workPullRequestStatus = work?.pullRequest ? statusKind(work.pullRequest) : null
+    const WorkLeadingIcon = workPullRequestStatus ? STATUS_ICON[workPullRequestStatus] : WorkIcon
+    const workLeadingIconClass = workPullRequestStatus
+      ? STATUS_ICON_CLASS[workPullRequestStatus]
+      : 'text-muted-foreground'
+    const workActivityDotClass
+      = work?.activity === 'blocked'
+        ? 'bg-destructive'
+        : work?.activity === 'waiting'
+          ? 'bg-warning'
+          : null
+    const workStateLabel = work && workActivityLabel
+      ? workPullRequestLabel
+        ? work.activity === 'idle'
+          ? workPullRequestLabel
+          : `${workPullRequestLabel} · ${workActivityLabel}`
+        : workActivityLabel
+      : null
     const trailingIndicator = isStreaming
       ? attentionKind === 'userInput'
         ? (
@@ -1806,8 +1836,19 @@ const SessionItem = memo(
       prepareSessionOpen()
       const screenX = window.screenX + Math.round(window.outerWidth / 2)
       const screenY = window.screenY + Math.round(window.outerHeight / 2)
+      if (work) {
+        void openTearoffSurfaceWindow({
+          id: workSurfaceId(work.id),
+          kind: 'work',
+          title: sessionTitle,
+          route: { to: '/work/$workId', params: { workId: work.id } },
+          order: 0,
+          closable: true,
+        }, { screenX, screenY, detachSurface: true })
+        return
+      }
       void openTearoffChatSessionWindow(session.id, { screenX, screenY, detachSurface: true })
-    }, [prepareSessionOpen, session.id])
+    }, [prepareSessionOpen, session.id, sessionTitle, work])
 
     function handleSessionDoubleClick(e: React.MouseEvent<HTMLButtonElement>) {
       e.preventDefault()
@@ -1889,25 +1930,24 @@ const SessionItem = memo(
       return releaseSessionDrag
     }, [releaseSessionDrag])
 
-    const openSessionMenu = (anchor: SessionMenuAnchor, surface: SessionMenuSurface) => {
+    const openSessionMenu = (anchor: SessionMenuAnchor) => {
       onOpenSessionMenu({
         sessionId: session.id,
-        workId: null,
+        workId: work?.id ?? null,
         anchor,
-        surface,
       })
     }
 
     const handleOpenButtonMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault()
       event.stopPropagation()
-      openSessionMenu(event.currentTarget, 'button')
+      openSessionMenu(event.currentTarget)
     }
 
     const handleSessionContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
       event.preventDefault()
       event.stopPropagation()
-      openSessionMenu(createPointMenuAnchor(event.clientX, event.clientY), 'context')
+      openSessionMenu(createPointMenuAnchor(event.clientX, event.clientY))
     }
 
     const handleSessionKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -1918,12 +1958,12 @@ const SessionItem = memo(
       event.preventDefault()
       event.stopPropagation()
       const rect = event.currentTarget.getBoundingClientRect()
-      openSessionMenu(createPointMenuAnchor(rect.left + 24, rect.top + rect.height / 2), 'context')
+      openSessionMenu(createPointMenuAnchor(rect.left + 24, rect.top + rect.height / 2))
     }
 
     const itemContent = (
       <div
-        draggable={!isRenaming}
+        draggable={!isRenaming && !work}
         onDragStart={handleDragStart}
         onDrag={handleDrag}
         onDragEnd={handleDragEnd}
@@ -1938,7 +1978,7 @@ const SessionItem = memo(
         onPointerLeave={isRenaming ? undefined : previewCard.hide}
         className={cn(
           'group relative isolate flex min-w-0 w-full items-center rounded-lg text-left text-xs hover:bg-accent/50 [content-visibility:auto] [contain-intrinsic-block-size:30px]',
-          !isRenaming && 'cursor-grab active:cursor-grabbing',
+          !isRenaming && !work && 'cursor-grab active:cursor-grabbing',
         )}
         data-testid={`session-item-${session.id}`}
         data-session-pinned={session.pinned ? 'true' : 'false'}
@@ -1963,7 +2003,12 @@ const SessionItem = memo(
               onClick={() => {
                 previewCard.dismiss()
                 prepareSessionOpen()
-                openChatSession(session.id)
+                if (work) {
+                  openWork(work.id)
+                }
+                else {
+                  openChatSession(session.id)
+                }
               }}
               onDoubleClick={isElectron ? handleSessionDoubleClick : undefined}
               onFocus={prefetchSession}
@@ -1981,20 +2026,54 @@ const SessionItem = memo(
                 && 'opacity-60 transition-opacity group-hover:opacity-100 focus-visible:opacity-100',
               )}
             >
-              {hasError
-? (
+              {work
+                ? (
+                    <span
+                      className={cn(
+                        'relative shrink-0',
+                        workLeadingIconClass,
+                        work.pullRequest && 'mr-1.5',
+                      )}
+                      title={workStateLabel ?? undefined}
+                      data-testid={`work-status-${work.id}`}
+                    >
+                      <WorkLeadingIcon className="size-3.5" aria-hidden="true" />
+                      {workActivityDotClass
+                        ? (
+                            <span
+                              className={cn(
+                                'absolute -right-0.5 -top-0.5 size-1.5 rounded-full outline outline-2 outline-background',
+                                workActivityDotClass,
+                              )}
+                              aria-hidden="true"
+                            />
+                          )
+                        : null}
+                      {work.pullRequest
+                        ? (
+                            <span className="absolute -right-2 -bottom-0.5 min-w-3 rounded-full bg-gray-200 dark:bg-gray-800 px-0.5 text-center text-[7px] font-medium leading-2.5 text-muted-foreground tabular-nums">
+                              #
+{work.pullRequest.number}
+                            </span>
+                          )
+                        : null}
+                      {workStateLabel ? <span className="sr-only">{workStateLabel}</span> : null}
+                    </span>
+                  )
+                : hasError
+                  ? (
                 <CircleAlertIcon
                   className="size-3.5 shrink-0 !text-destructive/80"
                   aria-label={t('session.aria.error')}
                   data-testid={`session-error-indicator-${session.id}`}
                 />
-              )
-: (
+                    )
+                  : (
                 <RuntimeIcon
                   icon={runtimeIcon}
                   className="size-3.5 shrink-0 text-muted-foreground/70"
                 />
-              )}
+                    )}
               {session.pinned
 ? (
                 <PinIcon
@@ -2027,24 +2106,8 @@ const SessionItem = memo(
               {trailingIndicator}
             </button>
             <div className="group/menu relative z-10 mr-0.5 size-6 shrink-0">
-              {session.worktreeId
+              {session.execution.kind === 'remote-host'
                 ? (
-                  <span
-                    className="pointer-events-none absolute inset-0 grid place-items-center text-muted-foreground/70 opacity-100 group-hover:opacity-0 group-focus-within/menu:opacity-0"
-                    title={
-                      session.worktreeBranch
-                        ? t('session.aria.isolatedBranch', { branch: session.worktreeBranch })
-                        : t('session.aria.isolated')
-                    }
-                    aria-label={t('session.aria.isolated')}
-                    role="img"
-                    data-testid={`session-isolated-indicator-${session.id}`}
-                  >
-                    <WorktreeIcon className="size-3.5" aria-hidden="true" />
-                  </span>
-                )
-                : session.execution.kind === 'remote-host'
-                  ? (
                     <span
                       className="pointer-events-none absolute inset-0 grid place-items-center text-muted-foreground/70 opacity-100 group-hover:opacity-0 group-focus-within/menu:opacity-0"
                       title={t('session.aria.remote', { hostName: session.execution.hostId })}
@@ -2055,7 +2118,7 @@ const SessionItem = memo(
                       <ServerIcon className="size-3.5" aria-hidden="true" />
                     </span>
                   )
-                  : null}
+                : null}
               <button
                 type="button"
                 className="absolute inset-0 grid place-items-center rounded-md text-muted-foreground/50 opacity-0 hover:bg-accent/80 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100"
@@ -2079,12 +2142,14 @@ SessionItem.displayName = 'SessionItem'
 
 interface SessionListProps {
   sessions: WorkspaceSession[]
+  workByPrimarySessionId: ReadonlyMap<string, WorkSummary>
   renamingSessionId: string | null
   locallyStreamingSessionIds: Set<string>
   sessionAttentionBySessionId: Map<string, SessionAttentionKind>
   locallyErroredSessionIds: Set<string>
   runtimeIconByKind: RuntimeIconByKind
   t: WorkspaceTranslation
+  tWork: WorkTranslation
   onPrepareSessionOpen: (session: WorkspaceSession) => void
   onPrefetchSession: (sessionId: string) => void
   onRenameCommit: (session: WorkspaceSession, nextTitle: string) => Promise<void>
@@ -2095,12 +2160,14 @@ interface SessionListProps {
 const SessionListRows = memo(
   ({
     sessions,
+    workByPrimarySessionId,
     renamingSessionId,
     locallyStreamingSessionIds,
     sessionAttentionBySessionId,
     locallyErroredSessionIds,
     runtimeIconByKind,
     t,
+    tWork,
     onPrepareSessionOpen,
     onPrefetchSession,
     onRenameCommit,
@@ -2114,6 +2181,7 @@ const SessionListRows = memo(
           <SessionItem
             key={session.id}
             session={session}
+            work={workByPrimarySessionId.get(session.id) ?? null}
             isStreaming={isStreaming}
             attentionKind={sessionAttentionBySessionId.get(session.id) ?? null}
             hasError={
@@ -2123,6 +2191,7 @@ const SessionListRows = memo(
             isRenaming={session.id === renamingSessionId}
             runtimeIcon={runtimeIconByKind.get(session.runtimeKind)}
             t={t}
+            tWork={tWork}
             onPrepareSessionOpen={onPrepareSessionOpen}
             onPrefetchSession={onPrefetchSession}
             onRenameCommit={onRenameCommit}
@@ -2246,6 +2315,7 @@ WorkspaceGroupDisclosure.displayName = 'WorkspaceGroupDisclosure'
 function WorkspaceSessionListSection({
   workspaceId,
   sortedSessions,
+  workByPrimarySessionId,
   renamingSessionId,
   retainedSessionIds,
   locallyStreamingSessionIds,
@@ -2253,6 +2323,7 @@ function WorkspaceSessionListSection({
   locallyErroredSessionIds,
   runtimeIconByKind,
   t,
+  tWork,
   onPrepareSessionOpen,
   onPrefetchSession,
   onRenameCommit,
@@ -2261,6 +2332,7 @@ function WorkspaceSessionListSection({
 }: {
   workspaceId: string
   sortedSessions: WorkspaceSession[]
+  workByPrimarySessionId: ReadonlyMap<string, WorkSummary>
   renamingSessionId: string | null
   retainedSessionIds: Set<string>
   locallyStreamingSessionIds: Set<string>
@@ -2268,6 +2340,7 @@ function WorkspaceSessionListSection({
   locallyErroredSessionIds: Set<string>
   runtimeIconByKind: RuntimeIconByKind
   t: WorkspaceTranslation
+  tWork: WorkTranslation
   onPrepareSessionOpen: (session: WorkspaceSession) => void
   onPrefetchSession: (sessionId: string) => void
   onRenameCommit: (session: WorkspaceSession, nextTitle: string) => Promise<void>
@@ -2360,12 +2433,14 @@ function WorkspaceSessionListSection({
         )}
         <SessionListRows
           sessions={visibleSessions}
+          workByPrimarySessionId={workByPrimarySessionId}
           renamingSessionId={renamingSessionId}
           locallyStreamingSessionIds={locallyStreamingSessionIds}
           sessionAttentionBySessionId={sessionAttentionBySessionId}
           locallyErroredSessionIds={locallyErroredSessionIds}
           runtimeIconByKind={runtimeIconByKind}
           t={t}
+          tWork={tWork}
           onPrepareSessionOpen={onPrepareSessionOpen}
           onPrefetchSession={onPrefetchSession}
           onRenameCommit={onRenameCommit}
@@ -2417,6 +2492,7 @@ const WorkspaceGroup = memo(
     onTogglePin: (id: string, pinned: boolean) => void
   }) => {
     const { t } = useTranslation('workspace')
+    const { t: tWork } = useTranslation('work')
     const queryClient = useQueryClient()
     const [renameOpen, setRenameOpen] = useState(false)
     const [migrateOpen, setMigrateOpen] = useState(false)
@@ -2516,13 +2592,14 @@ const WorkspaceGroup = memo(
     const activeMenuWork = sessionMenuState.workId
       ? (workspaceWorks.find(work => work.id === sessionMenuState.workId) ?? null)
       : null
-    const primaryWorkSessionIds = useMemo(
-      () => new Set(workspaceWorks.map(work => work.primarySessionId)),
+    const workByPrimarySessionId = useMemo(
+      () => new Map(workspaceWorks.map(work => [work.primarySessionId, work])),
       [workspaceWorks],
     )
-    const ordinarySessions = useMemo(
-      () => sortedSessions.filter(session => session.origin !== 'work' && !primaryWorkSessionIds.has(session.id)),
-      [primaryWorkSessionIds, sortedSessions],
+    const sidebarSessions = useMemo(
+      () => sortedSessions.filter(session =>
+        session.origin !== 'work' || workByPrimarySessionId.has(session.id)),
+      [sortedSessions, workByPrimarySessionId],
     )
     const { data: sessionGroups = [] } = useSessionGroups(workspace.id)
     const createSessionGroup = useCreateSessionGroup(workspace.id)
@@ -2534,8 +2611,8 @@ const WorkspaceGroup = memo(
     const [createGroupSeedSession, setCreateGroupSeedSession] = useState<WorkspaceSession | null>(null)
     const [renameGroupTarget, setRenameGroupTarget] = useState<WorkspaceSessionGroup | null>(null)
     const { grouped: groupedSessions, ungrouped: ungroupedSessions } = useMemo(
-      () => partitionWorkspaceSessions(ordinarySessions, sessionGroups),
-      [ordinarySessions, sessionGroups],
+      () => partitionWorkspaceSessions(sidebarSessions, sessionGroups),
+      [sessionGroups, sidebarSessions],
     )
     const sortSessionsForList = useCallback((items: WorkspaceSession[]) => {
       return items.toSorted((a, b) => {
@@ -3071,14 +3148,6 @@ const WorkspaceGroup = memo(
         )}
       >
         <div className="flex min-w-0 flex-col">
-          <WorkSidebarSection
-            works={workspaceWorks}
-            sessionsById={sessionsById}
-            renamingSessionId={renamingSessionId}
-            onRenameCommit={handleRenameSession}
-            onRenameCancel={handleRenameCancel}
-            onOpenMenu={handleOpenSessionMenu}
-          />
           {groupedSessions.map(({ group, sessions: groupSessions }) => (
             <WorkspaceSessionGroupSection
               key={group.id}
@@ -3092,6 +3161,7 @@ const WorkspaceGroup = memo(
               <WorkspaceSessionListSection
                 workspaceId={workspace.id}
                 sortedSessions={sortSessionsForList(groupSessions)}
+                workByPrimarySessionId={workByPrimarySessionId}
                 renamingSessionId={renamingSessionId}
                 retainedSessionIds={retainedSessionIds}
                 locallyStreamingSessionIds={locallyStreamingSessionIds}
@@ -3099,6 +3169,7 @@ const WorkspaceGroup = memo(
                 locallyErroredSessionIds={locallyErroredSessionIds}
                 runtimeIconByKind={runtimeIconByKind}
                 t={t}
+                tWork={tWork}
                 onPrepareSessionOpen={handlePrepareSessionOpen}
                 onPrefetchSession={prefetchSession}
                 onRenameCommit={handleRenameSession}
@@ -3111,6 +3182,7 @@ const WorkspaceGroup = memo(
             <WorkspaceSessionListSection
               workspaceId={workspace.id}
               sortedSessions={sortSessionsForList(ungroupedSessions)}
+              workByPrimarySessionId={workByPrimarySessionId}
               renamingSessionId={renamingSessionId}
               retainedSessionIds={retainedSessionIds}
               locallyStreamingSessionIds={locallyStreamingSessionIds}
@@ -3118,6 +3190,7 @@ const WorkspaceGroup = memo(
               locallyErroredSessionIds={locallyErroredSessionIds}
               runtimeIconByKind={runtimeIconByKind}
               t={t}
+              tWork={tWork}
               onPrepareSessionOpen={handlePrepareSessionOpen}
               onPrefetchSession={prefetchSession}
               onRenameCommit={handleRenameSession}

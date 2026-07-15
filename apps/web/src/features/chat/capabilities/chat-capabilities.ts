@@ -149,6 +149,9 @@ export interface ChatRuntimeCompactUiSlotState {
   isCompactRelevant: boolean
   total: ChatRuntimeTokenUsageBreakdown
   last: ChatRuntimeTokenUsageBreakdown
+  treeTotal: ChatRuntimeTokenUsageBreakdown
+  subagentTotal: ChatRuntimeTokenUsageBreakdown
+  subagentCount: number
   modelContextWindow: number | null
   autoCompactTokenLimit: number | null
   usagePercent: number | null

@@ -1,26 +1,28 @@
 // Reads global Usage API data for dashboard and profile surfaces.
 import { useQuery } from '@tanstack/react-query'
 
-import {
-  getUsageCostDailyOptions,
-  getUsageCostSummaryOptions,
-  getUsageDailyByModelOptions,
-  getUsageDailyOptions,
-  getUsagePatternsHourlyOptions,
-  getUsageSessionsRecentOptions,
-  getUsageStatsOptions,
-  getUsageSummaryOptions,
-} from '~/api-gen/@tanstack/react-query.gen'
 import type {
   GetUsageCostDailyResponse,
   GetUsageCostSummaryResponse,
   GetUsageDailyByModelResponse,
   GetUsageDailyResponse,
+  GetUsageLocalSummaryResponse,
   GetUsagePatternsHourlyResponse,
   GetUsageSessionsRecentResponse,
   GetUsageStatsResponse,
   GetUsageSummaryResponse,
-} from '~/api-gen/types.gen'
+} from './api/usage'
+import {
+  getUsageCostDailyOptions,
+  getUsageCostSummaryOptions,
+  getUsageDailyByModelOptions,
+  getUsageDailyOptions,
+  getUsageLocalSummaryOptions,
+  getUsagePatternsHourlyOptions,
+  getUsageSessionsRecentOptions,
+  getUsageStatsOptions,
+  getUsageSummaryOptions,
+} from './api/usage'
 
 export type DailyUsage = GetUsageDailyResponse[number]
 export type DailyUsageByModel = GetUsageDailyByModelResponse[number]
@@ -30,6 +32,7 @@ export type UsageSummary = GetUsageSummaryResponse
 export type UsageStats = GetUsageStatsResponse
 export type CostSummary = GetUsageCostSummaryResponse
 export type DailyCost = GetUsageCostDailyResponse[number]
+export type LocalUsageSummary = GetUsageLocalSummaryResponse
 
 const EMPTY_DAILY_USAGE: GetUsageDailyResponse = []
 const EMPTY_DAILY_USAGE_BY_MODEL: GetUsageDailyByModelResponse = []
@@ -38,6 +41,7 @@ const EMPTY_RECENT_SESSIONS: GetUsageSessionsRecentResponse = []
 const EMPTY_DAILY_COST: GetUsageCostDailyResponse = []
 
 export function useUsageOverview() {
+  const localSummaryQuery = useQuery({ ...getUsageLocalSummaryOptions() })
   const dailyQuery = useQuery({
     ...getUsageDailyOptions({ query: { days: '365' } }),
   })
@@ -66,6 +70,8 @@ export function useUsageOverview() {
   const summary = summaryQuery.data ?? null
 
   return {
+    localSummaryQuery,
+    localSummary: localSummaryQuery.data ?? null,
     dailyQuery,
     dailyByModelQuery,
     summaryQuery,
