@@ -1,5 +1,10 @@
 # Plan 025 — Authoritative usage fields per runtime provider
 
+> **已取代，请勿执行**：Plan 053 取代本计划。Codex `tokenUsage.total` 是
+> thread-lifetime cumulative，而不是独立 run total；逐 run 写入会重复计算之前 turns。
+> Machine archive 与 session-tree 方案见
+> `plans/053-local-archive-and-session-tree-usage.md`。
+
 > **Executor instructions**: Follow step by step; verify each. Honor STOP conditions. Update `plans/README.md`.
 >
 > **Principle**: Cradle must **not invent token totals**. At run finalization, persist exactly the upstream SDK / app-server **authoritative final usage** for that user-visible run. Dashboard aggregation (`usage_logs` → daily/summary/cost) stays as-is; fixes belong at the provider → `insertRunUsage` boundary.

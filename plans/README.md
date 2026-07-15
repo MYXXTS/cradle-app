@@ -19,6 +19,15 @@ chat-session-scoped app-server processes with one provider-target-owned host tha
 multiplexes isolated threads. It was requested as a focused plan and does not
 reopen the wider audit.
 
+2026-07-15 在 commit `3fad235` 上补充 Plan 053：以 Provider-native local archive
+summary 与 Codex root-plus-descendant session-tree usage 取代 Plan 025 的 run-final
+cumulative 方案。本计划来自聚焦请求，不重启全仓审计，也不删除 Cradle-attributed
+`usage_logs` analytics。
+
+2026-07-15 在同一 commit 上补充 Plan 054：修复 Web 内页 multiplex WebSocket 的
+half-open 收包中断、transport seq/run cursor 混淆与不可恢复 end handling。它是已完成
+Plan 014 的后续 breaking protocol refactor，不涉及 Desktop、滚动 UI 或 DB schema。
+
 Each executor: read the plan fully before starting, run its drift check, honor its
 STOP conditions, and update your row below when done. Plans are self-contained —
 they do not assume you saw the audit or any other plan.
@@ -53,7 +62,7 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 021  | Restore server dependency direction (infra≠modules)      | P3       | M      | 019        | REJECTED (superseded by enforced domain boundaries in Plan 041)                        |
 | 023  | Consolidate web data-fetching onto generated hooks       | P3       | L      | 022        | REJECTED (superseded by feature gateways in Plan 040)                                  |
 | 024  | Rebuild the chat core on native Event Sourcing           | P2       | XL     | —          | DONE                                                                                   |
-| 025  | Authoritative usage fields per runtime provider          | P1       | M      | —          | TODO                                                                                   |
+| 025  | Authoritative usage fields per runtime provider          | P1       | M      | —          | REJECTED（Plan 053 已取代；run-final cumulative 会重复计算历史） |
 | 026  | Publish plugin SDK + open marketplace to any repo        | P2       | M      | —          | DONE                                                                                   |
 | 027  | Persisted, live-reloadable external plugin sources        | P1       | L      | 026        | DONE                                                                                   |
 | 028  | Mirror dynamic plugin sources into the desktop layer      | P2       | M      | 027        | DONE                                                                                   |
@@ -81,10 +90,18 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 050  | Own Session projection and cache coherence               | P0       | L      | 040        | TODO                                                                                  |
 | 051  | Own Issue–execution association end to end               | P0       | L      | 050        | TODO                                                                                  |
 | 052  | Make Codex app-server provider-owned and thread-multiplexed | P0     | XL     | 041        | TODO                                                                                  |
+| 053  | Make local archives and Codex session trees authoritative for usage | P0 | L | — | IN PROGRESS（core implementation and focused archive/tree/service/API tests landed; live child overlay and per-file memo remain） |
+| 054  | Make WebSocket run streams resumable and liveness-aware   | P0       | L      | 024, 040   | TODO                                                                                  |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
 ## Follow-up notes
+
+- 2026-07-15，Plan 053：否决 Plan 025 将最新 Codex `tokenUsage.total` 逐 run
+  持久化的方案；该值是 native thread cumulative，后续 run 已包含之前 turns。Plan 053
+  改为每个 native archive 只取一个 final cumulative 作为 machine total，明确保留
+  `usage_logs` 的 Cradle-attributed 语义，并聚合 root Codex thread 与任意深度 native
+  descendants 作为当前 Chat usage。
 
 - 2026-07-05, Plan 001: `DesktopBrowserManager` now updates already-attached `WebContentsView` bounds without re-adding the child view, hides attached views via `setVisible(false)`, and keeps destruction removal on the runtime cleanup path. Renderer bounds sync now uses one rAF frame and no longer pauses for ordinary layout drag/animation; `nativeBoundsPaused` is retained only for browser-panel closing. Native surface layering is centralized through a reference-counted suppression store, browser address suggestions use occlusion props, and global `Dialog` / `AlertDialog` / `Sheet` primitives suppress the native browser surface while open. Legacy browser backend/script/annotation-overlay files were already absent; `setBorderRadius` was confirmed present in Electron 42.4.1 types but skipped because there is no current native viewport radius requirement. Verification passed `pnpm typecheck`, `pnpm test` (245 files / 1345 tests), full `pnpm --filter @cradle/web test` (71 files / 302 tests), focused browser web tests, root Vitest for `apps/desktop/src/main/browser-manager.test.ts`, local ESLint for `browser-panel.test.tsx`, and `git diff --check`. `pnpm lint` was run and still fails on existing repository-wide lint debt outside Plan 001 paths; `react-doctor --diff` exits 1 on existing `file-tree.tsx` / `await-panel.tsx` findings but remains at score 70 with no Plan 001 file findings. The originally listed desktop filtered Vitest command is not usable in this repo state because it resolves root project config paths from `apps/desktop`.
 - 2026-07-05, Plan 013: root `pnpm test` now includes `node`, `apps/server`, and `apps/web` Vitest projects. The newly exposed `src/components/editor/markdown-editor.test.tsx` i18n provider gap was fixed, and root test now passes 238 files / 1310 tests.
@@ -168,6 +185,7 @@ splitting until this track is stable.
 - 050 follows 040 and repairs the concrete snapshot-gap stale-cache bug before consolidating all Session projection semantics. It must land before association cache work.
 - 051 follows 050 so Issue association mutations reuse the Session projection gateway. Server-side workspace invariants and participant-owned writes are mandatory before Web cache reconciliation.
 - 052 follows completed Plan 041's lifecycle ownership rules and is independent of Plans 042-051. Its internal order is mandatory: characterize isolation -> retain idle hosts -> establish the provider host/router -> move session env to thread config -> bind/resume threads -> migrate all callers -> ratchet docs/tests. Do not land a rollback-only resume patch first.
+- 054 follows completed Plans 024 and 040: chat-runtime owns the run cursor/log, while persisted Session projections remain the recovery authority when exact in-memory replay is impossible. It does not depend on unfinished Plans 044 or 050, but those plans must preserve its terminal-publication and snapshot-recovery contracts.
 - 040 supersedes blocked Plan 023: generated clients remain transport infrastructure, while feature-owned gateways own query/error/invalidation semantics.
 - 041 supersedes blocked Plans 020 and 021: dependency enforcement and lifecycle ownership precede god-file extraction.
 

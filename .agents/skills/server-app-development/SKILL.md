@@ -1,6 +1,6 @@
 ---
 name: server-app-development
-description: Use when modifying Cradle apps/server Elysia modules, adding or changing HTTP routes, TypeBox schemas, OpenAPI details, x-cradle-cli command metadata, module README files, or server-side capability ownership.
+description: Use when modifying Cradle apps/server Elysia modules, adding or changing HTTP routes, TypeBox schemas, OpenAPI details, x-cradle-cli command metadata, module README files, server-side capability ownership, or server-owned downloads and artifact installation flows.
 ---
 
 # Server App Development
@@ -15,6 +15,24 @@ Every server feature needs a clear owner and namespace:
 - Keep shared HTTP/runtime concerns under `src/http`, `src/config`, `src/errors`, `src/database`, or `src/infra`.
 - Modules may read other namespaces when needed, but should not write data owned by another product namespace.
 - If a route is for a generated CLI command, the server route still owns the API contract; the CLI only projects that contract.
+
+## Download Workflow
+
+新增或修改涉及远程文件下载的 Server 能力时，默认先评估并优先复用 `DownloadCenterService`，不要直接增加 `fetch()`、`arrayBuffer()`、手写 HTTP stream 或新的下载队列。以下场景应接入 Download Center：HTTP(S) artifact 下载需要排队、进度、取消、重试、大小限制、checksum 校验、断点续传或临时 artifact 交接。
+
+- 由业务 owner 构造 `DownloadRequest`：使用稳定的 `owner.namespace`、`resourceType`、`resourceId` 和面向用户的 `displayName`，并明确 `sources`、`integrity` 与 `maxBytes`。不要让 Download Center 推断业务身份。
+- 从 `apps/server/src/app.ts` 注入现有 Download Center；不要在业务 module 内创建第二个实例或第二套任务存储。
+- 让 Download Center 拥有队列、传输、重试状态、校验、临时 artifact 和任务历史；让业务 owner 继续拥有 URL/manifest 发现、安装、解压、信任判断、资源状态、最终发布与卸载。
+- 仅在业务 owner 已复制或发布 artifact、或失败清理已完成后调用 `release()`。一旦取得 artifact，使用 `try/finally` 或等价的结构覆盖成功与失败路径，避免遗留 staging artifact。
+- 由 owner 操作触发 retry，因为只有 owner 知道下载完成后如何继续业务流程。不要新增脱离 owner 的通用 retry/install route。
+- 不要向 Web、CLI 或公共 task view 暴露 source URL、authorization headers、filesystem artifact path、resume metadata 或原始错误堆栈。
+- 不要为了复用而把 Git clone、`npm pack`、长连接 stream 或其他协议专属 transport 伪装成普通 artifact 下载。若现有 Download Center contract 无法表达所需语义，保留 owner transport，并在该 module 的 `README.md` 记录具体不兼容点；不要仅以实现方便作为绕过理由。
+
+修改下载接入时，除 owner 的 focused tests 外，运行：
+
+```bash
+pnpm --filter @cradle/server exec vitest run tests/download-center.test.ts
+```
 
 ## Route Workflow
 

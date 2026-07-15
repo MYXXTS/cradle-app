@@ -1,5 +1,5 @@
-import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+// eslint-disable-next-line import-sort/imports, unicorn/prefer-node-protocol -- Electron sandbox preload only permits the unprefixed url module.
+import { pathToFileURL } from 'url'
 
 import type { DownloadTaskView } from '@cradle/download-center'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -184,7 +184,8 @@ const cradleElectron = {
   browser: {
     getWebviewConfig: (input: { threadId: string }) => ({
       partition: browserSessionPartition(input.threadId),
-      preloadUrl: pathToFileURL(path.join(__dirname, 'browser-panel.js')).toString(),
+      // eslint-disable-next-line node/no-path-concat -- Importing node:path is unavailable in Electron sandbox preload.
+      preloadUrl: pathToFileURL(`${__dirname}/browser-panel.js`).toString(),
     }),
     open: (input: unknown) => ipcRenderer.invoke('desktop:browser-open', input),
     close: (input: unknown) => ipcRenderer.invoke('desktop:browser-close', input),

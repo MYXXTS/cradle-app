@@ -31,15 +31,15 @@ Cradle is a desktop-first platform for managing AI agents and their workflows. I
 
 ## Features
 
-- **Agent Management** — Create and configure agent profiles with custom identities, provider bindings, and skill sets
-- **Chat Runtime** — Real-time chat with multi-provider support: Claude, OpenAI-compatible, Codex, and more
-- **Issue Tracking** — Built-in Kanban board with workflow statuses, milestones, comments, and agent delegation
-- **Session Management** — Persistent sessions with await support for external events like CI or human approval
-- **Long-term Memory** — Persistent agent knowledge that carries across sessions
-- **Git Integration** — Repository status, branch management, and commits from within the app
-- **Terminal** — Shell interaction inside the desktop app
-- **Plugin System** — Extend Cradle with official and community plugins
-- **Multi-provider Support** — Anthropic, OpenAI, and any OpenAI-compatible endpoint
+Cradle currently spans **20 major product areas**, grouped into five workflows:
+
+- **Agent execution** — Multi-provider chat runtimes, agent profiles, models, skills, tools, MCP, and persistent session lifecycle
+- **Development workflow** — Workspaces, search and context, isolated Work containers, terminal, editor, Git, worktrees, diff review, and Pull Request delivery
+- **Coordination** — Issues, Kanban, agent delegation, scheduled automation, background artifacts, session awaits, and workflow rules
+- **Knowledge and operations** — Chronicle memory, local activity capture, usage and cost analytics, search, observability, and support diagnostics
+- **Platform and extensions** — Plugin Marketplace, integrations, built-in Browser and Appshot, remote hosts, relay transport, downloads, and desktop updates
+
+See the [Feature Catalog](./documentations/content/docs/features/index.mdx) for the complete inventory and counting method.
 
 ## Details
 
