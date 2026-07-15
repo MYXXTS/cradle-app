@@ -314,7 +314,12 @@ function parseProviderConfigText(text: string): ParseResult {
       const urls: ParsedUrl[] = jsonUrl ? [{ url: jsonUrl, kind: classifyUrl(jsonUrl) }] : []
       const providers: ParsedProvider[] = []
       if (jsonUrl) {
-        const kind = newapiChannel ? 'universal' : (classifyUrl(jsonUrl) === 'unknown' ? 'openai-compatible' : classifyUrl(jsonUrl))
+        const classified = classifyUrl(jsonUrl)
+        const kind: ApiProviderKind = newapiChannel
+          ? 'universal'
+          : classified === 'unknown'
+            ? 'openai-compatible'
+            : classified
         providers.push({
           providerKind: kind,
           name: hostnameFromUrl(jsonUrl),

@@ -28,6 +28,7 @@ const DEFAULT_FEATURE_FLAGS = {
   continueBlockedCodexGoals: false,
   blockCodexAppServerLogInserts: false,
   nativeProviderSkillProjection: false,
+  turnCheckpoints: false,
 }
 
 export type WorkspaceRecognition = {

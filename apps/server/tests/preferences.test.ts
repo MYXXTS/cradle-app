@@ -47,6 +47,7 @@ describe('preferences capability', () => {
           continueBlockedCodexGoals: false,
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
+          turnCheckpoints: false,
         },
         worktreeCleanup: {
           maxWorktrees: 25,
@@ -77,6 +78,7 @@ describe('preferences capability', () => {
           continueBlockedCodexGoals: false,
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
+          turnCheckpoints: false,
         },
         worktreeCleanup: {
           maxWorktrees: 25,
@@ -93,6 +95,7 @@ describe('preferences capability', () => {
           continueBlockedCodexGoals: false,
           blockCodexAppServerLogInserts: false,
           nativeProviderSkillProjection: false,
+          turnCheckpoints: false,
         },
         worktreeCleanup: {
           maxWorktrees: 25,

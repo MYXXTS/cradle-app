@@ -374,7 +374,11 @@ export interface GitHubCombinedStatus {
 
 export interface GitHubPullRequestReview {
   id: number
-  user: GitHubPullRequestAuthor | null
+  user: {
+    login: string
+    avatar_url?: string
+    html_url?: string
+  } | null
   state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING'
   commit_id: string
   submitted_at: string | null
@@ -639,9 +643,17 @@ const GitHubCombinedStatusSchema = z.object({
   statuses: z.array(GitHubCommitStatusSchema),
 }).passthrough()
 
+// Reviews only need login for aggregation; avatar/html urls are optional so
+// lightweight fixtures and partial GitHub payloads still parse cleanly.
+const GitHubReviewUserSchema = z.object({
+  login: z.string(),
+  avatar_url: z.string().optional(),
+  html_url: z.string().optional(),
+}).passthrough()
+
 const GitHubPullRequestReviewSchema = z.object({
   id: z.number().finite(),
-  user: GitHubUserSchema.nullable(),
+  user: GitHubReviewUserSchema.nullable(),
   state: z.enum(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING']),
   commit_id: z.string(),
   submitted_at: z.string().nullable(),

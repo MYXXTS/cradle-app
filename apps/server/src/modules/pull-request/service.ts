@@ -582,8 +582,8 @@ export async function fetchPullRequestDetailByRef(
     if (review.user) {
       reviewers.set(review.user.login, {
         login: review.user.login,
-        avatarUrl: review.user.avatar_url,
-        url: review.user.html_url,
+        avatarUrl: review.user.avatar_url ?? '',
+        url: review.user.html_url ?? '',
       })
     }
   }

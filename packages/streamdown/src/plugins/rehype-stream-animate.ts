@@ -19,7 +19,11 @@ const BLOCK_TAGS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'bloc
 const SKIP_TAGS = new Set(['pre', 'code', 'table', 'svg', 'math'])
 
 function hasClass(node: Element, cls: string): boolean {
-  return String(node.properties?.className ?? '').includes(cls)
+  const className = node.properties?.className
+  if (Array.isArray(className)) {
+    return className.map(String).includes(cls)
+  }
+  return String(className ?? '').split(/\s+/).includes(cls)
 }
 
 /**
@@ -56,7 +60,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
         return {
           type: 'element',
           tagName: 'span',
-          properties: { className: 'stream-char stream-char-revealed' },
+          properties: { className: ['stream-char', 'stream-char-revealed'] },
           children: [{ type: 'text', value: char }],
         }
       }
@@ -67,7 +71,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
           return {
             type: 'element',
             tagName: 'span',
-            properties: { className: 'stream-char stream-char-revealed' },
+            properties: { className: ['stream-char', 'stream-char-revealed'] },
             children: [{ type: 'text', value: char }],
           }
         }
@@ -77,7 +81,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
           return {
             type: 'element',
             tagName: 'span',
-            properties: { className: 'stream-char stream-char-revealed' },
+            properties: { className: ['stream-char', 'stream-char-revealed'] },
             children: [{ type: 'text', value: char }],
           }
         }
@@ -87,7 +91,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
           type: 'element',
           tagName: 'span',
           properties: {
-            className: 'stream-char',
+            className: ['stream-char'],
             style: `animation-delay:${delay}ms`,
           },
           children: [{ type: 'text', value: char }],
@@ -97,7 +101,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
       return {
         type: 'element',
         tagName: 'span',
-        properties: { className: 'stream-char stream-char-revealed' },
+        properties: { className: ['stream-char', 'stream-char-revealed'] },
         children: [{ type: 'text', value: char }],
       }
     }
@@ -107,7 +111,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
         return {
           type: 'element',
           tagName: 'span',
-          properties: { className: 'stream-word stream-word-revealed' },
+          properties: { className: ['stream-word', 'stream-word-revealed'] },
           children: [{ type: 'text', value: word }],
         }
       }
@@ -118,7 +122,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
           return {
             type: 'element',
             tagName: 'span',
-            properties: { className: 'stream-word stream-word-revealed' },
+            properties: { className: ['stream-word', 'stream-word-revealed'] },
             children: [{ type: 'text', value: word }],
           }
         }
@@ -128,7 +132,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
           return {
             type: 'element',
             tagName: 'span',
-            properties: { className: 'stream-word stream-word-revealed' },
+            properties: { className: ['stream-word', 'stream-word-revealed'] },
             children: [{ type: 'text', value: word }],
           }
         }
@@ -138,7 +142,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
           type: 'element',
           tagName: 'span',
           properties: {
-            className: 'stream-word',
+            className: ['stream-word'],
             style: `animation-delay:${delay}ms`,
           },
           children: [{ type: 'text', value: word }],
@@ -148,7 +152,7 @@ const rehypeStreamAnimate: Plugin<[RehypeStreamAnimateOptions], Root> = (options
       return {
         type: 'element',
         tagName: 'span',
-        properties: { className: 'stream-word stream-word-revealed' },
+        properties: { className: ['stream-word', 'stream-word-revealed'] },
         children: [{ type: 'text', value: word }],
       }
     }

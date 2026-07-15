@@ -91,10 +91,17 @@ const PLATFORM_MAP: Partial<Record<string, PlatformKey>> = {
 }
 
 export class AcpRegistry {
-  constructor(private readonly fetchFn: typeof fetch = fetch) {}
+  // Resolve fetch at call time so test spies on globalThis.fetch are honored.
+  // Capturing `fetch` in the constructor default would freeze the pre-spy value
+  // for the module-scoped registry used by the ACP service.
+  constructor(private readonly fetchFn?: typeof fetch) {}
+
+  private resolveFetch(): typeof fetch {
+    return this.fetchFn ?? globalThis.fetch.bind(globalThis)
+  }
 
   async fetchRegistry(): Promise<RegistryAgent[]> {
-    const response = await this.fetchFn(ACP_REGISTRY_URL)
+    const response = await this.resolveFetch()(ACP_REGISTRY_URL)
     if (!response.ok) {
       throw new Error(`ACP registry fetch failed with HTTP ${response.status}`)
     }
