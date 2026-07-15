@@ -124,6 +124,124 @@ describe('gitHub session-await sources', () => {
     })
   })
 
+  it('waits while a GitHub Actions workflow for the target head is still running', async () => {
+    installGitHubFetch({
+      '/repos/acme/app/pulls/42': {
+        number: 42,
+        title: 'Ship feature',
+        state: 'open',
+        merged: false,
+        mergeable: true,
+        head: { sha: 'head-sha', ref: 'feature' },
+        base: { ref: 'main' },
+      },
+      '/repos/acme/app/commits/head-sha/check-runs?per_page=100&page=1': {
+        total_count: 0,
+        check_runs: [],
+      },
+      '/repos/acme/app/commits/head-sha/status': {
+        state: 'success',
+        total_count: 1,
+        statuses: [{ context: 'Vercel', state: 'success', description: 'ready', target_url: null }],
+      },
+      '/repos/acme/app/actions/runs?head_sha=head-sha&per_page=100&page=1': {
+        total_count: 1,
+        workflow_runs: [{
+          id: 201,
+          name: 'CI',
+          display_title: 'Ship feature',
+          run_number: 8842,
+          run_attempt: 1,
+          status: 'in_progress',
+          conclusion: null,
+          head_sha: 'head-sha',
+          html_url: 'https://github.com/acme/app/actions/runs/201',
+          created_at: '2026-05-20T09:58:00Z',
+          updated_at: '2026-05-20T09:58:01Z',
+        }],
+      },
+    })
+
+    const [result] = await githubCISource.checkPending([
+      awaitRow({ repo: 'acme/app', pr: 42, headSha: 'head-sha' }),
+    ])
+
+    expect(result).toEqual({ awaitId: 'await-1', matched: false })
+  })
+
+  it('reports a completed GitHub Actions workflow failure', async () => {
+    installGitHubFetch({
+      '/repos/acme/app/pulls/42': {
+        number: 42,
+        title: 'Ship feature',
+        state: 'open',
+        merged: false,
+        mergeable: true,
+        head: { sha: 'head-sha', ref: 'feature' },
+        base: { ref: 'main' },
+      },
+      '/repos/acme/app/commits/head-sha/check-runs?per_page=100&page=1': {
+        total_count: 0,
+        check_runs: [],
+      },
+      '/repos/acme/app/commits/head-sha/status': {
+        state: 'success',
+        total_count: 1,
+        statuses: [{ context: 'Vercel', state: 'success', description: 'ready', target_url: null }],
+      },
+      '/repos/acme/app/actions/runs?head_sha=head-sha&per_page=100&page=1': {
+        total_count: 1,
+        workflow_runs: [{
+          id: 201,
+          name: 'CI',
+          display_title: 'Ship feature',
+          run_number: 8842,
+          run_attempt: 1,
+          status: 'completed',
+          conclusion: 'failure',
+          head_sha: 'head-sha',
+          html_url: 'https://github.com/acme/app/actions/runs/201',
+          created_at: '2026-05-20T09:58:00Z',
+          updated_at: '2026-05-20T09:59:01Z',
+        }],
+      },
+    })
+
+    const [result] = await githubCISource.checkPending([
+      awaitRow({ repo: 'acme/app', pr: 42, headSha: 'head-sha' }),
+    ])
+
+    expect(result.matched).toBe(true)
+    expect(result.resumeText).toContain('CI: failure')
+    expect(JSON.parse(result.resumePayloadJson ?? '{}')).toMatchObject({
+      allSuccess: false,
+      workflowFailureCount: 1,
+      workflowRuns: [{ id: 201, conclusion: 'failure' }],
+    })
+  })
+
+  it('resolves a CI await when its pull request is merged', async () => {
+    installGitHubFetch({
+      '/repos/acme/app/pulls/42': {
+        number: 42,
+        title: 'Ship feature',
+        state: 'closed',
+        merged: true,
+        mergeable: null,
+        head: { sha: 'head-sha', ref: 'feature' },
+        base: { ref: 'main' },
+      },
+    })
+
+    const [result] = await githubCISource.checkPending([
+      awaitRow({ repo: 'acme/app', pr: 42, headSha: 'head-sha' }),
+    ])
+
+    expect(result.matched).toBe(true)
+    expect(result.resumeText).toContain('was merged')
+    expect(JSON.parse(result.resumePayloadJson ?? '{}')).toMatchObject({ outcome: 'merged' })
+  })
+
   it('resumes with a failure payload when any check or status fails', async () => {
     installGitHubFetch({
       '/repos/acme/app/commits/bad-sha/check-runs?per_page=100&page=1': {
@@ -438,6 +556,59 @@ describe('gitHub session-await sources', () => {
       kind: 'github-review',
       approvedCount: 1,
       changesRequestedCount: 0,
+    })
+  })
+
+  it('resolves a review await when its pull request is merged without approval', async () => {
+    installGitHubFetch({
+      '/repos/acme/app/pulls/42': {
+        number: 42,
+        title: 'Ship feature',
+        state: 'closed',
+        merged: true,
+        mergeable: null,
+        head: { sha: 'head-sha', ref: 'feature' },
+        base: { ref: 'main' },
+      },
+    })
+
+    const [result] = await githubReviewSource.checkPending([
+      awaitRow(
+        { repo: 'acme/app', pr: 42, mode: 'approved', headSha: 'head-sha' },
+        { source: 'github-review' },
+      ),
+    ])
+
+    expect(result.matched).toBe(true)
+    expect(result.resumeText).toContain('was merged')
+    expect(JSON.parse(result.resumePayloadJson ?? '{}')).toMatchObject({ outcome: 'merged' })
+  })
+
+  it('supersedes a review await when the pull request head changes', async () => {
+    installGitHubFetch({
+      '/repos/acme/app/pulls/42': {
+        number: 42,
+        title: 'Ship feature',
+        state: 'open',
+        merged: false,
+        mergeable: true,
+        head: { sha: 'new-head-sha', ref: 'feature' },
+        base: { ref: 'main' },
+      },
+    })
+
+    const [result] = await githubReviewSource.checkPending([
+      awaitRow(
+        { repo: 'acme/app', pr: 42, mode: 'approved', headSha: 'old-head-sha' },
+        { source: 'github-review' },
+      ),
+    ])
+
+    expect(result.matched).toBe(true)
+    expect(JSON.parse(result.resumePayloadJson ?? '{}')).toMatchObject({
+      outcome: 'superseded',
+      headSha: 'old-head-sha',
+      currentHeadSha: 'new-head-sha',
     })
   })
 

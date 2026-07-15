@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,6 +12,7 @@ import { db, shutdownInfra } from '../src/infra'
 import * as AgentInteraction from '../src/modules/agent-interaction-runtime/service'
 import * as Issue from '../src/modules/issue/service'
 import { issueAgentRunTrackingTestHooks } from '../src/modules/issue-agent/service'
+import * as Work from '../src/modules/work/service'
 
 interface AgentSessionView {
   id: string
@@ -47,6 +49,18 @@ function makeTempDir(prefix: string): string {
 
 function localWorkspaceLocatorJson(path: string): string {
   return JSON.stringify({ hostId: 'local', path })
+}
+
+function initializeGitRepository(repositoryPath: string): void {
+  execFileSync('git', ['init'], { cwd: repositoryPath })
+  execFileSync('git', ['config', 'user.email', 'issue-agent-test@example.com'], {
+    cwd: repositoryPath,
+  })
+  execFileSync('git', ['config', 'user.name', 'Issue Agent Test'], { cwd: repositoryPath })
+  execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repositoryPath })
+  writeFileSync(join(repositoryPath, 'README.md'), '# Issue Agent Test\n')
+  execFileSync('git', ['add', 'README.md'], { cwd: repositoryPath })
+  execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: repositoryPath })
 }
 
 async function createProfile(app: ElysiaApp) {
@@ -768,6 +782,99 @@ describe('issue-agent capability', () => {
         delete process.env.CRADLE_CREDENTIAL_SECRET
       }
  else {
+        process.env.CRADLE_CREDENTIAL_SECRET = previousSecret
+      }
+    }
+  })
+
+  it('runs isolated delegations and their reruns as Work sessions', async () => {
+    const dataDir = makeTempDir('cradle-data-')
+    const workspaceRoot = makeTempDir('cradle-workspace-')
+    const previousDataDir = process.env.CRADLE_DATA_DIR
+    const previousSecret = process.env.CRADLE_CREDENTIAL_SECRET
+    process.env.CRADLE_DATA_DIR = dataDir
+    process.env.CRADLE_CREDENTIAL_SECRET = 'issue-agent-secret'
+    initializeGitRepository(workspaceRoot)
+
+    const completionBodies: string[] = []
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = new Request(input).url
+      if (!url.endsWith('/chat/completions')) {
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      completionBodies.push(String(init?.body ?? ''))
+      return createChatCompletionResponse('Completed delegated Work run')
+    })
+
+    try {
+      const app = await createServerApp()
+      db()
+        .insert(workspaces)
+        .values({
+          id: 'workspace-issue-agent-work',
+          name: 'Workspace Issue Agent Work',
+          locatorJson: localWorkspaceLocatorJson(workspaceRoot),
+        })
+        .run()
+
+      await createProfile(app)
+      const agent = await createAgent(app)
+      const issue = await createIssue(app, 'workspace-issue-agent-work')
+
+      const delegateRes = await app.handle(
+        new Request(`http://localhost/issues/${encodeURIComponent(issue.id)}/delegation`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agentId: agent.id, runInIsolation: true }),
+        }),
+      )
+      expect(delegateRes.status).toBe(200)
+      const delegatedSession = (await delegateRes.json()) as AgentSessionView
+
+      const sessionsAfterDelegate = await waitForSessionStatus(app, issue.id, 'completed')
+      const firstChatSessionId = sessionsAfterDelegate[0]?.chatSessionId
+      expect(firstChatSessionId).toBeTruthy()
+      const firstWork = Work.getBySessionId(firstChatSessionId!)
+      expect(firstWork).toEqual(expect.objectContaining({ linkedIssueId: issue.id }))
+      expect(firstWork?.preparedAt).toBeNull()
+      expect(completionBodies[0]).toContain('work_prepare')
+
+      const rerunRes = await app.handle(
+        new Request(
+          `http://localhost/issue-agent-sessions/${encodeURIComponent(delegatedSession.id)}/rerun`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({}),
+          },
+        ),
+      )
+      expect(rerunRes.status).toBe(200)
+
+      const sessionsAfterRerun = await waitForSessionStatus(app, issue.id, 'completed')
+      const rerunChatSessionId = sessionsAfterRerun[0]?.chatSessionId
+      expect(rerunChatSessionId).toBeTruthy()
+      expect(rerunChatSessionId).not.toBe(firstChatSessionId)
+      const rerunWork = Work.getBySessionId(rerunChatSessionId!)
+      expect(rerunWork).toEqual(expect.objectContaining({ linkedIssueId: issue.id }))
+      expect(rerunWork?.preparedAt).toBeNull()
+      expect(completionBodies[1]).toContain('work_prepare')
+    }
+    finally {
+      fetchSpy.mockRestore()
+      shutdownInfra()
+      rmSync(dataDir, { recursive: true, force: true })
+      rmSync(workspaceRoot, { recursive: true, force: true })
+      if (previousDataDir === undefined) {
+        delete process.env.CRADLE_DATA_DIR
+      }
+      else {
+        process.env.CRADLE_DATA_DIR = previousDataDir
+      }
+      if (previousSecret === undefined) {
+        delete process.env.CRADLE_CREDENTIAL_SECRET
+      }
+      else {
         process.env.CRADLE_CREDENTIAL_SECRET = previousSecret
       }
     }

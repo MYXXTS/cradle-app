@@ -45,6 +45,9 @@ interface ResolvedReviewTarget {
   prTitle: string | null
   mode: GitHubReviewMode
   headSha: string
+  currentHeadSha: string
+  prState: 'open' | 'closed'
+  merged: boolean
 }
 
 interface ReviewAggregate {
@@ -64,6 +67,7 @@ const GitHubReviewFilterSchema = z.object({
   pr: z.number().int().positive(),
   mode: GitHubReviewModeSchema.default('approved'),
   headSha: z.string().min(1).optional(),
+  workId: z.string().min(1).optional(),
 }).transform(({ repo, ...filter }) => ({
   ...filter,
   owner: repo.owner,
@@ -89,6 +93,46 @@ async function resolveTarget(filter: GitHubReviewFilter): Promise<ResolvedReview
     prTitle: prData.title,
     mode: filter.mode,
     headSha: filter.headSha ?? prData.head.sha,
+    currentHeadSha: prData.head.sha,
+    prState: prData.state,
+    merged: prData.merged,
+  }
+}
+
+function buildTerminalResult(awaitId: string, target: ResolvedReviewTarget): CheckResult | null {
+  const outcome = target.merged
+    ? 'merged'
+    : target.prState === 'closed'
+      ? 'closed'
+      : target.currentHeadSha !== target.headSha
+        ? 'superseded'
+        : null
+  if (!outcome) {
+    return null
+  }
+
+  const resumeText = outcome === 'merged'
+    ? `GitHub PR #${target.prNumber} was merged before the review await matched.`
+    : outcome === 'closed'
+      ? `GitHub PR #${target.prNumber} was closed before the review await matched.`
+      : `GitHub PR #${target.prNumber} moved to a new head commit before the review await matched.`
+
+  return {
+    awaitId,
+    matched: true,
+    resumeText,
+    resumePayloadJson: JSON.stringify({
+      kind: 'github-review',
+      repo: `${target.owner}/${target.repo}`,
+      pr: target.prNumber,
+      mode: target.mode,
+      headSha: target.headSha,
+      currentHeadSha: target.currentHeadSha,
+      outcome,
+      approvedCount: 0,
+      changesRequestedCount: 0,
+      reviews: [],
+    }),
   }
 }
 
@@ -196,6 +240,12 @@ export const githubReviewSource: SessionAwaitSource = {
       }
       if (!target) {
         results.push({ awaitId: row.id, matched: false, transientError: 'Unable to resolve GitHub review target' })
+        continue
+      }
+
+      const terminalResult = buildTerminalResult(row.id, target)
+      if (terminalResult) {
+        results.push(terminalResult)
         continue
       }
 

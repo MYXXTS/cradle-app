@@ -10,12 +10,12 @@
 - **poller.ts**: Source registry, explicit single-cycle runner, immediate run requests, interval tick, expiry handling, timer awaits, source checks, empty resume guard, permanent source failure handling, and bounded trigger concurrency.
 - **types.ts**: Source adapter and await lifecycle TypeScript contracts; matched source results must carry non-empty resume text.
 - **../../lib/github-api.ts**: Shared GitHub REST API boundary, token resolution, ETag cache, rate-limit tracking, missing-target classification, PR/check/status/review/workflow-run/workflow-job fetch helpers. Session await and external issue source refresh both consume this host-owned GitHub access boundary.
-- **sources/github-ci.ts**: `github-ci` source. Supports `{ repo, pr }`, `{ repo, sha }`, and `{ repo, runs_id }` filters, validates target visibility during registration, resolves PR head SHAs or single check-run head SHAs, aggregates check runs plus legacy commit statuses, and exposes live CI status with optional GitHub Actions job steps.
-- **sources/github-review.ts**: `github-review` source. Supports `{ repo, pr, mode }` filters, validates PR visibility during registration, and waits for PR review signals on the current PR head.
+- **sources/github-ci.ts**: `github-ci` source. Supports `{ repo, pr }`, `{ repo, sha }`, and `{ repo, runs_id }` filters, validates target visibility during registration, resolves PR head SHAs or single check-run head SHAs, aggregates check runs plus legacy commit statuses, and exposes live CI status with optional GitHub Actions job steps. PR filters may pin `headSha` so one await represents one delivery attempt.
+- **sources/github-review.ts**: `github-review` source. Supports `{ repo, pr, mode }` filters, validates PR visibility during registration, and waits for PR review signals on a pinned or current PR head.
 
 ## GitHub Sources
 
-`github-ci` waits for all visible check runs and commit statuses on the resolved ref to complete. A CI filter must target exactly one of `{ pr }`, `{ sha }`, or `{ runs_id }`. With `{ repo, runs_id }`, it waits only for that GitHub check run ID and does not fold in sibling checks or legacy statuses from the same commit. It treats `success`, `neutral`, and `skipped` check conclusions as passing; `success` commit statuses as passing; pending signals as still pending; and any failure/error/cancelled/action-required signal as a completed failure. If no checks or statuses appear, it waits for `allowNoChecksAfterSeconds` or the default grace period before resuming with `noCIConfigured`.
+`github-ci` waits for all visible check runs and commit statuses on the resolved ref to complete. A CI filter must target exactly one of `{ pr }`, `{ sha }`, or `{ runs_id }`. With `{ repo, runs_id }`, it waits only for that GitHub check run ID and does not fold in sibling checks or legacy statuses from the same commit. It treats `success`, `neutral`, and `skipped` check conclusions as passing; `success` commit statuses as passing; pending signals as still pending; and any failure/error/cancelled/action-required signal as a completed failure. GitHub Actions workflow runs for the same head are also lifecycle barriers: queued or running workflows prevent early success, while a completed failed workflow produces a failure result. If no checks or statuses appear, it waits for `allowNoChecksAfterSeconds` or the default grace period before resuming with `noCIConfigured`.
 
 GitHub await creation performs a read-only preflight against the target repo plus PR or commit. GitHub 404 and 422 responses are treated as non-retryable missing or inaccessible targets, so the create route returns `github_await_target_invalid` instead of registering an await that would poll forever. Other GitHub API failures return `github_await_validation_unavailable` and do not create the await. Existing pending awaits use the same missing-target classification in the poller and live-status route, then move to `failed` rather than remaining pending indefinitely.
 
@@ -26,6 +26,8 @@ The `github-ci` live-status route also reads GitHub Actions workflow runs for th
 - `approved`: at least one current-head approval and no current-head changes-requested review.
 - `changes-requested`: at least one current-head changes-requested review.
 - `reviewed`: any current-head submitted review signal.
+
+Work-owned GitHub awaits include `workId` and pin `headSha`. A repeated submission for the same head is idempotent; a new head cancels the older Work-owned subscriptions and registers new ones. A pinned PR await also resolves when the PR is merged or closed, or when its head changes, so an event subscription cannot remain pending after its target lifecycle ends.
 
 These sources intentionally do not claim exact branch-protection equivalence. Required checks, required review counts, code owners, stale dismissal rules, and rulesets need separate GitHub permissions and should be modeled as a later source or explicit mode.
 

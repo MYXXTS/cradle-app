@@ -395,42 +395,72 @@ function requireHandoffValue(value: string | null | undefined, field: string): s
   return normalized
 }
 
+function requirePullRequestHeadSha(pullRequest: PullRequest.SessionPullRequestView): string {
+  if (!pullRequest.headSha) {
+    throw new AppError({
+      code: 'work_pull_request_head_unavailable',
+      status: 502,
+      message: 'GitHub did not return the pull request head commit.',
+    })
+  }
+  return pullRequest.headSha
+}
+
 async function registerWorkAwaits(
+  workId: string,
   sessionId: string,
   workspaceId: string,
-  pr: { owner: string, repo: string, number: number },
+  pr: { owner: string, repo: string, number: number, headSha: string },
 ): Promise<void> {
   const existing = SessionAwait.listBySession(sessionId)
-  if (existing.length > 0) {
-    return
-  }
-
   const ciFilter = JSON.stringify({
     repo: `${pr.owner}/${pr.repo}`,
     pr: pr.number,
+    headSha: pr.headSha,
+    workId,
   })
   const reviewFilter = JSON.stringify({
     repo: `${pr.owner}/${pr.repo}`,
     pr: pr.number,
     mode: 'approved',
+    headSha: pr.headSha,
+    workId,
   })
 
-  await Promise.all([
-    SessionAwait.register({
+  const desired = [
+    { source: 'github-ci', filterJson: ciFilter, reason: `CI checks for PR #${pr.number}` },
+    { source: 'github-review', filterJson: reviewFilter, reason: `Review approval for PR #${pr.number}` },
+  ] as const
+
+  const pending = existing.filter(row => row.status === 'pending')
+  const desiredKeys = new Set(desired.map(item => `${item.source}:${item.filterJson}`))
+  const stale: string[] = []
+  for (const row of pending) {
+    const filter = JSON.parse(row.filterJson) as { repo?: string, pr?: number, workId?: string }
+    const belongsToWork = filter.workId === workId
+      || (filter.workId === undefined
+        && filter.repo === `${pr.owner}/${pr.repo}`
+        && filter.pr === pr.number)
+    if (belongsToWork
+      && (row.source === 'github-ci' || row.source === 'github-review')
+      && !desiredKeys.has(`${row.source}:${row.filterJson}`)) {
+      stale.push(row.id)
+    }
+  }
+
+  await Promise.all(desired
+    .filter(item => !pending.some(row => row.source === item.source && row.filterJson === item.filterJson))
+    .map(item => SessionAwait.register({
       chatSessionId: sessionId,
       workspaceId,
-      source: 'github-ci' satisfies SessionAwaitSource['source'],
-      filterJson: ciFilter,
-      reason: `CI checks for PR #${pr.number}`,
-    }),
-    SessionAwait.register({
-      chatSessionId: sessionId,
-      workspaceId,
-      source: 'github-review' satisfies SessionAwaitSource['source'],
-      filterJson: reviewFilter,
-      reason: `Review approval for PR #${pr.number}`,
-    }),
-  ])
+      source: item.source satisfies SessionAwaitSource['source'],
+      filterJson: item.filterJson,
+      reason: item.reason,
+    })))
+
+  for (const awaitId of stale) {
+    SessionAwait.cancel(awaitId)
+  }
 }
 
 export async function submit(input: {
@@ -459,14 +489,19 @@ export async function submit(input: {
     })
   }
 
-  let pr: { owner: string, repo: string, number: number }
+  let pr: { owner: string, repo: string, number: number, headSha: string }
   if (existing) {
-    await PullRequest.updatePullRequest({
+    const updated = await PullRequest.updatePullRequest({
       sessionId: primaryThread.id,
       title,
       body,
     })
-    pr = { owner: existing.owner, repo: existing.repo, number: existing.number }
+    pr = {
+      owner: updated.owner,
+      repo: updated.repo,
+      number: updated.number,
+      headSha: requirePullRequestHeadSha(updated),
+    }
   }
   else {
     const created = await PullRequest.createDraftPullRequest({
@@ -475,10 +510,15 @@ export async function submit(input: {
       body,
       base: input.base,
     })
-    pr = { owner: created.owner, repo: created.repo, number: created.number }
+    pr = {
+      owner: created.owner,
+      repo: created.repo,
+      number: created.number,
+      headSha: requirePullRequestHeadSha(created),
+    }
   }
 
-  await registerWorkAwaits(primaryThread.id, primaryThread.workspaceId!, pr)
+  await registerWorkAwaits(work.id, primaryThread.id, primaryThread.workspaceId!, pr)
 
   const timestamp = nextTimestampAfter(work.preparedAt, work.lastSubmittedAt)
   db().update(works).set({

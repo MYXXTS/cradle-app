@@ -9,9 +9,8 @@ import * as AgentInteraction from '../agent-interaction-runtime/service'
 import * as ChatRuntime from '../chat-runtime/runtime'
 import * as Issue from '../issue/service'
 import * as Session from '../session/service'
-import * as WorkflowRules from '../workflow-rules/service'
 import * as Work from '../work/service'
-import * as Worktree from '../worktree/service'
+import * as WorkflowRules from '../workflow-rules/service'
 
 // ── types ──
 
@@ -19,7 +18,6 @@ interface ActiveAgentRun {
   runId: string
   chatSessionId: string | null
   aborted: boolean
-  workId?: string
 }
 
 interface IssueAgentSessionView extends AgentSession {
@@ -216,9 +214,6 @@ function settleTrackedRunCompletion(
       body: 'Completed work on issue',
       signal: 'run.completed',
     })
-    if (tracked.workId) {
-      void prepareWorkAfterCompletion(tracked.workId, agentSessionId)
-    }
     return true
   }
 
@@ -243,34 +238,6 @@ function settleTrackedRunCompletion(
     })
   }
   return true
-}
-
-
-async function prepareWorkAfterCompletion(workId: string, agentSessionId: string): Promise<void> {
-  try {
-    await Work.prepare({
-      id: workId,
-      title: 'Completed issue work',
-      summary: 'Automatically prepared after issue agent completion.',
-      testPlan: 'Reviewed by issue agent.',
-    })
-    AgentInteraction.createActivity({
-      agentSessionId,
-      type: 'response',
-      body: 'Work prepared for review',
-      signal: 'work.prepared',
-    })
-  }
-  catch {
-    // prepare can fail if the checkout is clean with no commits ahead —
-    // that is fine; the Work is still available for manual preparation.
-    AgentInteraction.createActivity({
-      agentSessionId,
-      type: 'thought',
-      body: 'Work auto-prepare skipped (no deliverable changes or already prepared).',
-      signal: 'work.prepare.skipped',
-    })
-  }
 }
 
 function hasQueuedContinuationWork(chatSessionId: string): boolean {
@@ -390,7 +357,7 @@ async function cancelChatSessionContinuationWork(chatSessionId: string): Promise
 
 async function runSession(
   agentSessionId: string,
-  options: { runInIsolation?: boolean } = {},
+  options: { runAsWork?: boolean } = {},
 ): Promise<void> {
   let trackedRunId = PENDING_RUN_ID
   try {
@@ -427,7 +394,7 @@ async function runSession(
 
     let chatSessionId: string
 
-    if (options.runInIsolation) {
+    if (options.runAsWork) {
       const workDetail = await Work.create({
         workspaceId: issue.workspaceId,
         title: `Issue: ${issue.title}`,
@@ -440,14 +407,11 @@ async function runSession(
         configJson: JSON.stringify({ permissionMode: 'bypassPermissions' }),
       })
       chatSessionId = workDetail.primaryThread.id
-      activeRuns.set(agentSessionId, {
-        ...activeRuns.get(agentSessionId)!,
-        workId: workDetail.work.id,
-      })
       if (consumePendingRunAbort(agentSessionId)) {
         return
       }
-    } else {
+    }
+ else {
       const created = await Session.create({
         workspaceId: issue.workspaceId,
         title: `Issue: ${issue.title}`,
@@ -491,7 +455,7 @@ async function runSession(
 
     activeRuns.set(agentSessionId, {
       runId: run.runId,
-      chatSessionId: chatSessionId,
+      chatSessionId,
       aborted: false,
     })
 
@@ -774,7 +738,7 @@ export async function delegateIssue(input: {
     return createdSession
   })
 
-  void runSession(session.id, { runInIsolation: input.runInIsolation })
+  void runSession(session.id, { runAsWork: input.runInIsolation === true })
 
   return { ...session, isCurrentDelegation: true }
 }
@@ -793,7 +757,10 @@ export async function rerunSession(input: {
   }
 
   const refreshed = AgentInteraction.updateSessionStatus(session.id, 'created') ?? session
-  void runSession(session.id)
+  const runAsWork = session.chatSessionId
+    ? Work.getBySessionId(session.chatSessionId) !== null
+    : false
+  void runSession(session.id, { runAsWork })
 
   const delegation = getDelegation(session.issueId)
   return { ...refreshed, isCurrentDelegation: delegation.agentSessionId === session.id }

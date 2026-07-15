@@ -105,6 +105,9 @@ interface ResolvedCITarget {
   ref: string
   baseBranch: string | null
   checkRunId: number | null
+  currentHeadSha: string | null
+  prState: 'open' | 'closed' | null
+  merged: boolean
 }
 
 interface AggregatedCI {
@@ -115,6 +118,12 @@ interface AggregatedCI {
   failureCount: number
   allCompleted: boolean
   allPassed: boolean
+}
+
+interface AggregatedWorkflowRuns {
+  workflowRuns: GitHubWorkflowRun[]
+  pendingCount: number
+  failureCount: number
 }
 
 const DEFAULT_NO_CHECKS_GRACE_SECONDS = 300
@@ -135,12 +144,16 @@ const GitHubCIFilterSchema = z.object({
   runId: z.number().int().positive().optional(),
   checkRunId: z.number().int().positive().optional(),
   mode: z.literal('all').optional(),
+  headSha: z.string().min(1).optional(),
+  workId: z.string().min(1).optional(),
   allowNoChecksAfterSeconds: z.number().int().nonnegative().default(DEFAULT_NO_CHECKS_GRACE_SECONDS),
 }).transform((filter) => {
   const checkRunId = filter.runs_id ?? filter.checkRunId ?? filter.runId
   return { ...filter, checkRunId }
 }).refine(filter => [filter.pr, filter.sha, filter.checkRunId].filter(value => value !== undefined).length === 1, {
   message: 'GitHub CI filter requires exactly one of pr, sha, or runs_id',
+}).refine(filter => filter.headSha === undefined || filter.pr !== undefined, {
+  message: 'GitHub CI headSha requires a PR target',
 }).transform(({ repo, ...filter }) => ({
   ...filter,
   owner: repo.owner,
@@ -158,6 +171,9 @@ async function resolveTarget(filter: GitHubCIFilter): Promise<ResolvedCITarget |
   let ref = filter.sha
   let prTitle: string | null = null
   let baseBranch: string | null = null
+  let currentHeadSha: string | null = null
+  let prState: 'open' | 'closed' | null = null
+  let merged = false
   if (filter.checkRunId) {
     const checkRun = await fetchCheckRun(filter.owner, filter.repo, filter.checkRunId)
     if (!checkRun) {
@@ -170,9 +186,12 @@ async function resolveTarget(filter: GitHubCIFilter): Promise<ResolvedCITarget |
     if (!prData) {
       return null
     }
-    ref = prData.head.sha
+    ref = filter.headSha ?? prData.head.sha
     prTitle = prData.title
     baseBranch = prData.base.ref
+    currentHeadSha = prData.head.sha
+    prState = prData.state
+    merged = prData.merged
   }
 
   if (!ref && !filter.checkRunId) {
@@ -187,6 +206,46 @@ async function resolveTarget(filter: GitHubCIFilter): Promise<ResolvedCITarget |
     ref: ref ?? '',
     baseBranch,
     checkRunId: filter.checkRunId ?? null,
+    currentHeadSha,
+    prState,
+    merged,
+  }
+}
+
+function buildTerminalResult(awaitId: string, target: ResolvedCITarget): CheckResult | null {
+  if (!target.prNumber || !target.currentHeadSha) {
+    return null
+  }
+
+  const outcome = target.merged
+    ? 'merged'
+    : target.prState === 'closed'
+      ? 'closed'
+      : target.currentHeadSha !== target.ref
+        ? 'superseded'
+        : null
+  if (!outcome) {
+    return null
+  }
+
+  const resumeText = outcome === 'merged'
+    ? `GitHub PR #${target.prNumber} was merged before the CI await matched.`
+    : outcome === 'closed'
+      ? `GitHub PR #${target.prNumber} was closed before the CI await matched.`
+      : `GitHub PR #${target.prNumber} moved to a new head commit before the CI await matched.`
+
+  return {
+    awaitId,
+    matched: true,
+    resumeText,
+    resumePayloadJson: JSON.stringify({
+      kind: 'github-ci',
+      repo: `${target.owner}/${target.repo}`,
+      pr: target.prNumber,
+      ref: target.ref,
+      currentHeadSha: target.currentHeadSha,
+      outcome,
+    }),
   }
 }
 
@@ -235,6 +294,40 @@ function aggregateCI(checkRuns: GitHubCheckRun[], statuses: GitHubCommitStatus[]
     allCompleted,
     allPassed,
   }
+}
+
+function aggregateWorkflowRuns(workflowRuns: GitHubWorkflowRun[]): AggregatedWorkflowRuns {
+  let pendingCount = 0
+  let failureCount = 0
+
+  for (const run of workflowRuns) {
+    if (run.status !== 'completed') {
+      pendingCount++
+      continue
+    }
+    if (!run.conclusion || !PASSING_CHECK_CONCLUSIONS.has(run.conclusion)) {
+      failureCount++
+    }
+  }
+
+  return { workflowRuns, pendingCount, failureCount }
+}
+
+async function fetchAggregatedWorkflowRuns(target: ResolvedCITarget): Promise<AggregatedWorkflowRuns | null> {
+  if (target.checkRunId || !target.ref) {
+    return { workflowRuns: [], pendingCount: 0, failureCount: 0 }
+  }
+  let response: Awaited<ReturnType<typeof fetchWorkflowRunsForHead>>
+  try {
+    response = await fetchWorkflowRunsForHead(target.owner, target.repo, target.ref)
+  }
+  catch (error) {
+    if (isGitHubMissingTarget(error)) {
+      return { workflowRuns: [], pendingCount: 0, failureCount: 0 }
+    }
+    throw error
+  }
+  return response ? aggregateWorkflowRuns(response.workflow_runs) : null
 }
 
 function filterBypassedCI(
@@ -451,9 +544,19 @@ export const githubCISource: SessionAwaitSource = {
         continue
       }
 
+      const terminalResult = buildTerminalResult(row.id, target)
+      if (terminalResult) {
+        results.push(terminalResult)
+        continue
+      }
+
       let aggregate: AggregatedCI | null
+      let workflowAggregate: AggregatedWorkflowRuns | null
       try {
-        aggregate = await fetchAggregatedCI(target)
+        ;[aggregate, workflowAggregate] = await Promise.all([
+          fetchAggregatedCI(target),
+          fetchAggregatedWorkflowRuns(target),
+        ])
       }
       catch (err) {
         if (isGitHubMissingTarget(err)) {
@@ -465,6 +568,15 @@ export const githubCISource: SessionAwaitSource = {
       }
       if (!aggregate) {
         results.push({ awaitId: row.id, matched: false, transientError: 'GitHub CI API unavailable' })
+        continue
+      }
+      if (!workflowAggregate) {
+        results.push({ awaitId: row.id, matched: false, transientError: 'GitHub Actions API unavailable' })
+        continue
+      }
+
+      if (workflowAggregate.pendingCount) {
+        results.push({ awaitId: row.id, matched: false })
         continue
       }
 
@@ -499,10 +611,25 @@ export const githubCISource: SessionAwaitSource = {
       results.push({
         awaitId: row.id,
         matched: true,
-        resumeText: aggregate.allPassed
+        resumeText: aggregate.allPassed && !workflowAggregate.failureCount
           ? `GitHub checks passed. All ${aggregate.totalCount} checks/statuses succeeded.`
-          : `GitHub checks completed with failures. ${buildSummary(aggregate)}`,
-        resumePayloadJson: buildCIResumePayload(target, aggregate),
+          : `GitHub checks completed with failures. ${[
+              buildSummary(aggregate),
+              ...workflowAggregate.workflowRuns
+                .filter(run => run.status === 'completed' && (!run.conclusion || !PASSING_CHECK_CONCLUSIONS.has(run.conclusion)))
+                .map(run => `${run.name ?? `Workflow ${run.id}`}: ${run.conclusion ?? 'unknown'}`),
+            ].filter(Boolean).join(', ')}`,
+        resumePayloadJson: JSON.stringify({
+          ...JSON.parse(buildCIResumePayload(target, aggregate)),
+          allSuccess: aggregate.allPassed && !workflowAggregate.failureCount,
+          workflowFailureCount: workflowAggregate.failureCount,
+          workflowRuns: workflowAggregate.workflowRuns.map(run => ({
+            id: run.id,
+            name: run.name,
+            status: run.status,
+            conclusion: run.conclusion,
+          })),
+        }),
       })
     }
 
@@ -610,6 +737,9 @@ export async function fetchLiveCIStatus(filterJson: string): Promise<LiveCIStatu
   }
 
   const workflowRuns = await fetchWorkflowRuns(target)
+  const workflowPending = workflowRuns.some(run => run.status !== 'completed')
+  const workflowFailure = workflowRuns.some(run =>
+    run.status === 'completed' && (!run.conclusion || !PASSING_CHECK_CONCLUSIONS.has(run.conclusion)))
 
   const requiredContexts = target.baseBranch
     ? (await fetchBranchProtection(target.owner, target.repo, target.baseBranch))?.requiredContexts ?? []
@@ -632,11 +762,11 @@ export async function fetchLiveCIStatus(filterJson: string): Promise<LiveCIStatu
       targetUrl: s.target_url,
     })),
     totalCount: aggregate.totalCount,
-    pendingCount: aggregate.pendingCount,
-    failureCount: aggregate.failureCount,
-    allCompleted: aggregate.allCompleted,
-    allPassed: aggregate.allPassed,
-    noCIConfigured: aggregate.totalCount === 0,
+    pendingCount: Math.max(aggregate.pendingCount, workflowPending ? 1 : 0),
+    failureCount: Math.max(aggregate.failureCount, workflowFailure ? 1 : 0),
+    allCompleted: aggregate.allCompleted && !workflowPending,
+    allPassed: aggregate.allPassed && !workflowPending && !workflowFailure,
+    noCIConfigured: aggregate.totalCount === 0 && workflowRuns.length === 0,
     hasToken: true,
   }
 }

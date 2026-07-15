@@ -421,17 +421,28 @@ describe('work delivery control', () => {
       chatSessionId: SESSION_ID,
       workspaceId: WORKSPACE_ID,
       source: 'github-ci',
-      filterJson: JSON.stringify({ repo: 'acme/cradle', pr: 42 }),
+      filterJson: JSON.stringify({
+        repo: 'acme/cradle',
+        pr: 42,
+        headSha: 'head-sha',
+        workId: WORK_ID,
+      }),
     }))
     expect(registerSpy).toHaveBeenCalledWith(expect.objectContaining({
       chatSessionId: SESSION_ID,
       workspaceId: WORKSPACE_ID,
       source: 'github-review',
-      filterJson: JSON.stringify({ repo: 'acme/cradle', pr: 42, mode: 'approved' }),
+      filterJson: JSON.stringify({
+        repo: 'acme/cradle',
+        pr: 42,
+        mode: 'approved',
+        headSha: 'head-sha',
+        workId: WORK_ID,
+      }),
     }))
   })
 
-  it('does not re-register Session Awaits if they already exist', async () => {
+  it('does not re-register Session Awaits for the same Work submission', async () => {
     seedWork()
     mockHealthyDetailReads()
     db().update(works).set({
@@ -441,18 +452,112 @@ describe('work delivery control', () => {
       preparedAt: 10,
     }).run()
     vi.spyOn(PullRequest, 'createDraftPullRequest').mockResolvedValue(OPEN_PULL_REQUEST)
-    db().insert(sessionAwaits).values({
-      id: 'existing-await',
-      chatSessionId: SESSION_ID,
-      workspaceId: WORKSPACE_ID,
-      source: 'github-ci',
-      filterJson: JSON.stringify({ repo: 'acme/cradle', pr: 42 }),
-    }).run()
+    db().insert(sessionAwaits).values([
+      {
+        id: 'existing-ci-await',
+        chatSessionId: SESSION_ID,
+        workspaceId: WORKSPACE_ID,
+        source: 'github-ci',
+        filterJson: JSON.stringify({
+          repo: 'acme/cradle',
+          pr: 42,
+          headSha: 'head-sha',
+          workId: WORK_ID,
+        }),
+      },
+      {
+        id: 'existing-review-await',
+        chatSessionId: SESSION_ID,
+        workspaceId: WORKSPACE_ID,
+        source: 'github-review',
+        filterJson: JSON.stringify({
+          repo: 'acme/cradle',
+          pr: 42,
+          mode: 'approved',
+          headSha: 'head-sha',
+          workId: WORK_ID,
+        }),
+      },
+    ]).run()
     const registerSpy = vi.spyOn(SessionAwait, 'register')
 
     await Work.submit({ id: WORK_ID })
 
     expect(registerSpy).not.toHaveBeenCalled()
+  })
+
+  it('replaces pending Session Awaits when a Work submission moves to a new head', async () => {
+    seedWork()
+    const { pullRequest } = mockHealthyDetailReads()
+    pullRequest.mockResolvedValue({ ...OPEN_PULL_REQUEST, headSha: 'old-head-sha' })
+    db().update(works).set({
+      handoffTitle: 'Updated title',
+      handoffSummary: 'Updated summary.',
+      handoffTestPlan: 'Run updated tests.',
+      preparedAt: 20,
+      lastSubmittedAt: 10,
+    }).run()
+    vi.spyOn(PullRequest, 'updatePullRequest').mockResolvedValue({
+      ...OPEN_PULL_REQUEST,
+      title: 'Updated title',
+      headSha: 'new-head-sha',
+      updatedAt: 20,
+    })
+    db().insert(sessionAwaits).values([
+      {
+        id: 'old-ci-await',
+        chatSessionId: SESSION_ID,
+        workspaceId: WORKSPACE_ID,
+        source: 'github-ci',
+        filterJson: JSON.stringify({
+          repo: 'acme/cradle',
+          pr: 42,
+          headSha: 'old-head-sha',
+          workId: WORK_ID,
+        }),
+      },
+      {
+        id: 'old-review-await',
+        chatSessionId: SESSION_ID,
+        workspaceId: WORKSPACE_ID,
+        source: 'github-review',
+        filterJson: JSON.stringify({
+          repo: 'acme/cradle',
+          pr: 42,
+          mode: 'approved',
+          headSha: 'old-head-sha',
+          workId: WORK_ID,
+        }),
+      },
+    ]).run()
+    const registerSpy = mockSessionAwaitRegister()
+
+    await Work.submit({ id: WORK_ID })
+
+    expect(db().select().from(sessionAwaits).where(eq(sessionAwaits.id, 'old-ci-await')).get()?.status)
+      .toBe('cancelled')
+    expect(db().select().from(sessionAwaits).where(eq(sessionAwaits.id, 'old-review-await')).get()?.status)
+      .toBe('cancelled')
+    expect(registerSpy).toHaveBeenCalledTimes(2)
+    expect(registerSpy).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'github-ci',
+      filterJson: JSON.stringify({
+        repo: 'acme/cradle',
+        pr: 42,
+        headSha: 'new-head-sha',
+        workId: WORK_ID,
+      }),
+    }))
+    expect(registerSpy).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'github-review',
+      filterJson: JSON.stringify({
+        repo: 'acme/cradle',
+        pr: 42,
+        mode: 'approved',
+        headSha: 'new-head-sha',
+        workId: WORK_ID,
+      }),
+    }))
   })
 
   it('rejects creation before Session persistence when the source checkout is dirty', async () => {
