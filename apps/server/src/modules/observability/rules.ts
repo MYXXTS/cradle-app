@@ -71,6 +71,19 @@ export function evaluateIncidentRules(input: IncidentRuleInput): IncidentRuleRes
     })
   }
 
+  if (event.code === OBSERVABILITY_CODES.chatUsageIngestionFailed && isErrorSeverity(event.severity)) {
+    results.push({
+      incident: createIncidentFromEvent({
+        dedupeKey: EventDedupeKeySchema.parse(event),
+        code: event.code,
+        severity: event.severity,
+        source: event.source,
+        message: 'Chat usage ingestion failed',
+        event,
+      }),
+    })
+  }
+
   if (event.code === OBSERVABILITY_CODES.domainEventHandlerFailed && isErrorSeverity(event.severity)) {
     results.push({
       incident: createIncidentFromEvent({

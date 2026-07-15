@@ -27,6 +27,7 @@ export interface RecordedRuntimeStepUsage {
 }
 
 export function insertRunUsage(input: {
+  runId: string
   sessionId: string
   messageId: string
   providerTargetId: string | null
@@ -37,6 +38,7 @@ export function insertRunUsage(input: {
     .insert(usageLogs)
     .values({
       id: randomUUID(),
+      runId: input.runId,
       sessionId: input.sessionId,
       messageId: input.messageId,
       providerTargetId: input.providerTargetId,

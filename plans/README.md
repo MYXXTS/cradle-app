@@ -19,11 +19,6 @@ chat-session-scoped app-server processes with one provider-target-owned host tha
 multiplexes isolated threads. It was requested as a focused plan and does not
 reopen the wider audit.
 
-2026-07-15 在 commit `3fad235` 上补充 Plan 053：以 Provider-native local archive
-summary 与 Codex root-plus-descendant session-tree usage 取代 Plan 025 的 run-final
-cumulative 方案。本计划来自聚焦请求，不重启全仓审计，也不删除 Cradle-attributed
-`usage_logs` analytics。
-
 2026-07-15 在同一 commit 上补充 Plan 054：修复 Web 内页 multiplex WebSocket 的
 half-open 收包中断、transport seq/run cursor 混淆与不可恢复 end handling。它是已完成
 Plan 014 的后续 breaking protocol refactor，不涉及 Desktop、滚动 UI 或 DB schema。
@@ -62,7 +57,7 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 021  | Restore server dependency direction (infra≠modules)      | P3       | M      | 019        | REJECTED (superseded by enforced domain boundaries in Plan 041)                        |
 | 023  | Consolidate web data-fetching onto generated hooks       | P3       | L      | 022        | REJECTED (superseded by feature gateways in Plan 040)                                  |
 | 024  | Rebuild the chat core on native Event Sourcing           | P2       | XL     | —          | DONE                                                                                   |
-| 025  | Authoritative usage fields per runtime provider          | P1       | M      | —          | REJECTED（Plan 053 已取代；run-final cumulative 会重复计算历史） |
+| 025  | Authoritative usage fields per runtime provider          | P1       | M      | —          | REJECTED（Codex run-final cumulative 会重复历史；Plan 055 改为逐调用事实）             |
 | 026  | Publish plugin SDK + open marketplace to any repo        | P2       | M      | —          | DONE                                                                                   |
 | 027  | Persisted, live-reloadable external plugin sources        | P1       | L      | 026        | DONE                                                                                   |
 | 028  | Mirror dynamic plugin sources into the desktop layer      | P2       | M      | 027        | DONE                                                                                   |
@@ -90,18 +85,29 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 050  | Own Session projection and cache coherence               | P0       | L      | 040        | TODO                                                                                  |
 | 051  | Own Issue–execution association end to end               | P0       | L      | 050        | TODO                                                                                  |
 | 052  | Make Codex app-server provider-owned and thread-multiplexed | P0     | XL     | 041        | TODO                                                                                  |
-| 053  | Make local archives and Codex session trees authoritative for usage | P0 | L | — | IN PROGRESS（core implementation and focused archive/tree/service/API tests landed; live child overlay and per-file memo remain） |
 | 054  | Make WebSocket run streams resumable and liveness-aware   | P0       | L      | 024, 040   | TODO                                                                                  |
+| 055  | Record authoritative Cradle Codex model-call usage in `usage_logs` | P0 | L | operator cleanup of 053 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
 ## Follow-up notes
 
-- 2026-07-15，Plan 053：否决 Plan 025 将最新 Codex `tokenUsage.total` 逐 run
-  持久化的方案；该值是 native thread cumulative，后续 run 已包含之前 turns。Plan 053
-  改为每个 native archive 只取一个 final cumulative 作为 machine total，明确保留
-  `usage_logs` 的 Cradle-attributed 语义，并聚合 root Codex thread 与任意深度 native
-  descendants 作为当前 Chat usage。
+- 2026-07-15，Plan 055 完成：Codex `thread/tokenUsage/updated` 在 root filtering 前投影为
+  deterministic per-call usage events，TurnExecutor 附加 Cradle session/run/message/provider identity，
+  Usage owner 通过现有 `usage_logs` 幂等入账；Codex 不再写 run-final summary。启动与 turn-terminal
+  reconciliation 只从 Codex `backend_session_bindings` 和 Cradle dedicated Codex runtime home 出发，
+  使用 native root/descendant metadata、`session_meta`、`turn_context`、`model_reroute` 与 `token_count`
+  恢复相同 event id；歧义、越界或缺失 identity 记录 incident 并跳过。Usage turn counts 改为 distinct
+  logical turn，session usage 增加 generated `byModel` projection。Server/Web typecheck、114 个 scoped tests、
+  Server module boundary、Web API boundary、scoped lint 与 diff integrity 通过。完整 Server suite 为
+  1082 passed / 1 skipped / 32 failed；失败来自 sandbox local-listen、Git GPG，以及并行的
+  preferences/remote/Chronicle/OpenCode baseline。完整 lint 仅剩 `documentations/next-env.d.ts` 两个范围外
+  error 与既有 warnings；Plan 055 文件 lint clean。
+
+- 2026-07-15，Plan 055 取代 Plan 025 与已移除的 Plan 053 方向：只统计 Cradle-owned
+  Codex，将现有 `usage_logs` 深化为逐模型调用事实表，并要求每条 Codex event 都有确定的
+  Cradle session、Provider thread/turn 与 model。明确排除全局 `~/.codex`、Claude
+  transcripts、single-writer 机制与平行 usage event table。
 
 - 2026-07-05, Plan 001: `DesktopBrowserManager` now updates already-attached `WebContentsView` bounds without re-adding the child view, hides attached views via `setVisible(false)`, and keeps destruction removal on the runtime cleanup path. Renderer bounds sync now uses one rAF frame and no longer pauses for ordinary layout drag/animation; `nativeBoundsPaused` is retained only for browser-panel closing. Native surface layering is centralized through a reference-counted suppression store, browser address suggestions use occlusion props, and global `Dialog` / `AlertDialog` / `Sheet` primitives suppress the native browser surface while open. Legacy browser backend/script/annotation-overlay files were already absent; `setBorderRadius` was confirmed present in Electron 42.4.1 types but skipped because there is no current native viewport radius requirement. Verification passed `pnpm typecheck`, `pnpm test` (245 files / 1345 tests), full `pnpm --filter @cradle/web test` (71 files / 302 tests), focused browser web tests, root Vitest for `apps/desktop/src/main/browser-manager.test.ts`, local ESLint for `browser-panel.test.tsx`, and `git diff --check`. `pnpm lint` was run and still fails on existing repository-wide lint debt outside Plan 001 paths; `react-doctor --diff` exits 1 on existing `file-tree.tsx` / `await-panel.tsx` findings but remains at score 70 with no Plan 001 file findings. The originally listed desktop filtered Vitest command is not usable in this repo state because it resolves root project config paths from `apps/desktop`.
 - 2026-07-05, Plan 013: root `pnpm test` now includes `node`, `apps/server`, and `apps/web` Vitest projects. The newly exposed `src/components/editor/markdown-editor.test.tsx` i18n provider gap was fixed, and root test now passes 238 files / 1310 tests.

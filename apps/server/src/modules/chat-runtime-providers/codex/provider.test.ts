@@ -2153,31 +2153,16 @@ describe('codexProvider app-server integration', () => {
 
   it('projects Codex token usage notifications into compact UI slot state', async () => {
     const client = new FakeCodexAppServerClient({})
-    client.threadListData = [{
-      id: 'subagent-thread-1',
-      sessionId: 'codex-thread-1',
-      parentThreadId: 'codex-thread-1',
-      path: null,
-      source: {
-        subAgent: {
-          thread_spawn: {
-            parent_thread_id: 'codex-thread-1',
-            depth: 1,
-            agent_path: null,
-            agent_nickname: 'worker-1',
-            agent_role: 'worker',
-          },
-        },
-      },
-    }]
     const provider = createProvider(client)
     const runtimeSession = createRuntimeSession('codex-thread-1')
+    const onUsageEvent = vi.fn()
     const stream = provider.streamTurn({
       runId: 'run-codex-test',
       runtimeSession,
       profile: createProfile(),
       message: createUserMessage('Summarize the repo'),
       workspaceId: 'workspace-1',
+      onUsageEvent,
     })
 
     const firstChunkPromise = stream.next()
@@ -2204,54 +2189,6 @@ describe('codexProvider app-server integration', () => {
             inputTokens: 3_000,
             cachedInputTokens: 1_000,
             outputTokens: 1_000,
-            reasoningOutputTokens: 250,
-          },
-          modelContextWindow: 200_000,
-        },
-      },
-    })
-    client.pushNotification({
-      method: 'thread/tokenUsage/updated',
-      params: {
-        threadId: 'subagent-thread-1',
-        turnId: 'subagent-turn-1',
-        tokenUsage: {
-          total: {
-            totalTokens: 6_000,
-            inputTokens: 5_000,
-            cachedInputTokens: 2_000,
-            outputTokens: 1_000,
-            reasoningOutputTokens: 500,
-          },
-          last: {
-            totalTokens: 1_000,
-            inputTokens: 500,
-            cachedInputTokens: 250,
-            outputTokens: 500,
-            reasoningOutputTokens: 250,
-          },
-          modelContextWindow: 200_000,
-        },
-      },
-    })
-    client.pushNotification({
-      method: 'thread/tokenUsage/updated',
-      params: {
-        threadId: 'subagent-thread-1',
-        turnId: 'subagent-turn-1',
-        tokenUsage: {
-          total: {
-            totalTokens: 7_000,
-            inputTokens: 5_500,
-            cachedInputTokens: 2_500,
-            outputTokens: 1_500,
-            reasoningOutputTokens: 750,
-          },
-          last: {
-            totalTokens: 1_500,
-            inputTokens: 1_000,
-            cachedInputTokens: 500,
-            outputTokens: 500,
             reasoningOutputTokens: 250,
           },
           modelContextWindow: 200_000,
@@ -2304,6 +2241,18 @@ describe('codexProvider app-server integration', () => {
       reasoningOutputTokens: 250,
     })
     expect(provider.lastModelId).toBe('gpt-5-codex')
+    expect(onUsageEvent).toHaveBeenCalledWith(expect.objectContaining({
+      providerThreadId: 'codex-thread-1',
+      providerTurnId: 'codex-turn-1',
+      modelId: 'gpt-5-codex',
+      usage: {
+        promptTokens: 3_000,
+        completionTokens: 1_000,
+        totalTokens: 4_000,
+        cachedInputTokens: 1_000,
+        reasoningOutputTokens: 250,
+      },
+    }))
 
     await expect(provider.getUiSlotStates({
       runtimeSession,
@@ -2324,9 +2273,6 @@ describe('codexProvider app-server integration', () => {
         usagePercent: 2,
         total: expect.objectContaining({ totalTokens: 128_000 }),
         last: expect.objectContaining({ totalTokens: 4_000 }),
-        treeTotal: expect.objectContaining({ totalTokens: 135_000 }),
-        subagentTotal: expect.objectContaining({ totalTokens: 7_000 }),
-        subagentCount: 1,
       }),
     ]))
   })

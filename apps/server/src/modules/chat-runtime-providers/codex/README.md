@@ -29,6 +29,8 @@ Codex UI slots are projected from the app-server capability manifest and declare
 - `turn/`: Single-turn orchestration helpers: active-turn registry, stream-turn context preparation, input projection, notification-to-`UIMessageChunk` mapping, stream diagnostics, stream iteration, thread lifecycle/history injection, title generation, shell command execution, and transcript/native-history projection.
 - `projection/`: Cradle-owned provider projections: provider snapshot state, context usage, and runtime UI slot state.
 - `tools/`: Codex tool identifier and app-server item payload mapper.
+- `usage-event-projector.ts`: Projects native per-call usage notifications into deterministic runtime usage events before root-thread filtering.
+- `usage-reconciliation.ts`: Replays only Cradle-bound root/descendant rollouts from the dedicated Cradle Codex runtime home into the same usage event identities used by the live path.
 - `app-server-protocol/`: Generated TypeScript bindings from `codex app-server generate-ts --experimental --out apps/server/src/modules/chat-runtime-providers/codex/app-server-protocol`. Do not edit generated files by hand.
 
 本地资源从同一个 Codex release 同步完整 `codex` 与独立 `codex-app-server`：协议生成固定使用前者的 `codex app-server generate-ts`，Desktop 发行包只携带后者。运行时优先使用独立二进制的 stdio transport，并设置 `--session-source cli`。非 Desktop 环境按 `CRADLE_CODEX_APP_SERVER_PATH`、`PATH` 中的 `codex-app-server`、最后 `codex app-server` 的顺序解析；最后一种 fallback 仍由 Codex 报告为 VSCode session source。

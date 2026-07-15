@@ -324,6 +324,8 @@ export async function createRun(
       pendingStreamingSnapshotMessageJson: null,
       queueItemId: input.queueItemId,
       runtimeSettings,
+      usageEventCount: 0,
+      usageEventAggregate: null,
       internalContinuation: input.internalContinuation,
       runSnapshotId: null,
       runSnapshotSeq: 0,

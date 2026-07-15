@@ -4,6 +4,7 @@ import { observeAiGeneration } from '../../../telemetry/ai-observability'
 import { createDedupeKey, OBSERVABILITY_CODES } from '../../observability/contract'
 import * as Observability from '../../observability/service'
 import { readDurableProviderRuntimeBinding } from '../../provider-runtime/service'
+import { recordRuntimeUsageEvent } from '../../usage/ingest'
 import {
   compactStoredMessageSnapshot,
   truncateSnapshotPayload,
@@ -15,6 +16,7 @@ import type {
   RuntimeGoalContinuationOptions,
   RuntimeProviderTargetProfile,
   RuntimeSettings,
+  TokenUsage,
 } from '../runtime-provider-types'
 import { attachBinding, isProviderTargetAvailable } from '../runtime-session-context'
 import { providerThreadStreamStore } from '../stream/live-run-streams'
@@ -206,7 +208,9 @@ export async function executeRun(
         shouldFinalizeDiagnostics,
         deps,
       )
-      const usage = activeRun.runtime.totalUsage ?? activeRun.runtime.lastUsage ?? null
+      const usage = activeRun.runtime.usageAccounting === 'provider-events'
+        ? activeRun.usageEventAggregate
+        : activeRun.runtime.totalUsage ?? activeRun.runtime.lastUsage ?? null
       return {
         modelId: actualModelId,
         usage,
@@ -278,6 +282,31 @@ async function pumpRuntimeStream(
           })
         })
       },
+      onUsageEvent: async (event) => {
+        const providerSessionId = activeRun.runtimeSession.providerSessionId
+        if (!providerSessionId) {
+          recordUsageIngestionFailure(activeRun, 'Runtime usage event arrived before provider session identity was available.')
+          throw new Error('Runtime usage event requires a provider session identity.')
+        }
+        try {
+          const result = recordRuntimeUsageEvent({
+            event,
+            sessionId: activeRun.sessionId,
+            runId: activeRun.runId,
+            messageId: activeRun.messageId,
+            providerTargetId: activeRun.providerTargetId,
+            providerSessionId,
+          })
+          if (result === 'inserted') {
+            activeRun.usageEventCount += 1
+            activeRun.usageEventAggregate = addTokenUsage(activeRun.usageEventAggregate, event.usage)
+          }
+        }
+        catch (error) {
+          recordUsageIngestionFailure(activeRun, error instanceof Error ? error.message : 'Runtime usage ingestion failed.')
+          throw error
+        }
+      },
       onProviderThreadEvent: event =>
         publishProviderThreadEvent({
           store: providerThreadStreamStore,
@@ -338,6 +367,14 @@ async function pumpRuntimeStream(
     }
 
     deps.stream.flushPendingRunDelta(activeRun)
+    if (
+      activeRun.runtime.usageAccounting === 'provider-events'
+      && activeRun.usageEventCount === 0
+      && !activeRun.terminalStatus
+    ) {
+      recordUsageIngestionFailure(activeRun, 'Provider-event accounting completed without a usage event.')
+      throw new Error('Provider-event accounting completed without a usage event.')
+    }
     // If `activeRun.terminalStatus` is already set here, the loop above hit
     // `if (activeRun.terminalStatus) break` before the runtime produced (or
     // we processed) a real terminal chunk for *this* turn — a concurrent
@@ -432,23 +469,30 @@ async function persistRunTerminalAndUsage(
         })
       }
 
-      const usage = activeRun.runtime?.totalUsage ?? activeRun.runtime?.lastUsage
+      const usage = activeRun.runtime.usageAccounting === 'provider-events'
+        ? activeRun.usageEventAggregate
+        : activeRun.runtime?.totalUsage ?? activeRun.runtime?.lastUsage
       actualModelId = activeRun.runtime?.lastModelId ?? activeRun.modelId
       if (usage) {
-        insertRunUsage({
-          sessionId: activeRun.sessionId,
-          messageId: activeRun.messageId,
-          providerTargetId: activeRun.providerTargetId,
-          modelId: actualModelId,
-          usage,
-        })
+        if (activeRun.runtime.usageAccounting !== 'provider-events') {
+          insertRunUsage({
+            runId: activeRun.runId,
+            sessionId: activeRun.sessionId,
+            messageId: activeRun.messageId,
+            providerTargetId: activeRun.providerTargetId,
+            modelId: actualModelId,
+            usage,
+          })
+        }
         deps.recordSnapshotEvent(activeRun, {
           phase: 'usage',
           modelId: actualModelId,
           usage,
           estimatedCostUsd: estimateRunUsageCost(actualModelId, usage),
           payload: {
-            source: activeRun.runtime?.totalUsage ? 'runtime.totalUsage' : 'runtime.lastUsage',
+            source: activeRun.runtime.usageAccounting === 'provider-events'
+              ? 'runtime.usageEvents'
+              : activeRun.runtime?.totalUsage ? 'runtime.totalUsage' : 'runtime.lastUsage',
           },
         })
       }
@@ -483,6 +527,39 @@ async function persistRunTerminalAndUsage(
     })
   }
   return { actualModelId, shouldFinalizeDiagnostics: true }
+}
+
+function addTokenUsage(current: TokenUsage | null, next: TokenUsage): TokenUsage {
+  return {
+    promptTokens: (current?.promptTokens ?? 0) + next.promptTokens,
+    completionTokens: (current?.completionTokens ?? 0) + next.completionTokens,
+    totalTokens: (current?.totalTokens ?? 0) + next.totalTokens,
+    cachedInputTokens: (current?.cachedInputTokens ?? 0) + (next.cachedInputTokens ?? 0),
+    cacheWriteInputTokens: (current?.cacheWriteInputTokens ?? 0) + (next.cacheWriteInputTokens ?? 0),
+    reasoningOutputTokens: (current?.reasoningOutputTokens ?? 0) + (next.reasoningOutputTokens ?? 0),
+  }
+}
+
+function recordUsageIngestionFailure(activeRun: ActiveRun, message: string): void {
+  Observability.record({
+    source: 'chat-engine',
+    code: OBSERVABILITY_CODES.chatUsageIngestionFailed,
+    severity: 'error',
+    category: 'chat',
+    message,
+    chatSessionId: activeRun.sessionId,
+    runId: activeRun.runId,
+    messageId: activeRun.messageId,
+    dedupeKey: createDedupeKey({
+      code: OBSERVABILITY_CODES.chatUsageIngestionFailed,
+      chatSessionId: activeRun.sessionId,
+      runId: activeRun.runId,
+    }),
+    attrs: {
+      runtimeKind: activeRun.runtime.runtimeKind,
+      providerSessionId: activeRun.runtimeSession.providerSessionId,
+    },
+  })
 }
 
 function completeRun(

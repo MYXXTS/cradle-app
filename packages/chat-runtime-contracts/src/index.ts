@@ -379,9 +379,6 @@ export interface RuntimeCompactUiSlotState {
   isCompactRelevant: boolean
   total: RuntimeTokenUsageBreakdown
   last: RuntimeTokenUsageBreakdown
-  treeTotal: RuntimeTokenUsageBreakdown
-  subagentTotal: RuntimeTokenUsageBreakdown
-  subagentCount: number
   modelContextWindow: number | null
   autoCompactTokenLimit: number | null
   usagePercent: number | null
@@ -1194,8 +1191,19 @@ export interface StreamTurnInput {
   systemPrompt?: string
   history?: UIMessage[]
   reportSessionTitle?: (title: string) => void
+  onUsageEvent?: (event: RuntimeUsageEvent) => void | Promise<void>
   onProviderThreadEvent?: (event: ProviderThreadEvent) => void
   onProviderSyntheticTurnEvent?: (event: ProviderSyntheticTurnEvent) => void | Promise<void>
+}
+
+export interface RuntimeUsageEvent {
+  id: string
+  providerThreadId: string
+  providerTurnId: string
+  modelId: string
+  occurredAt: number
+  usage: TokenUsage
+  providerTotal: TokenUsage
 }
 
 export interface ProviderSyntheticTurnEvent {
@@ -1448,6 +1456,7 @@ export interface RuntimeStepUsage {
 
 export interface ChatRuntime {
   readonly runtimeKind: RuntimeKind
+  readonly usageAccounting?: 'run-summary' | 'provider-events'
   readonly metadata: ChatRuntimeMetadata
   readonly capabilities: ChatRuntimeCapabilities
   readonly ownedProviderTargets?: RuntimeOwnedProviderTargets

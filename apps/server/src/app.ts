@@ -21,8 +21,6 @@ import {
 } from './modules/chat-runtime/http/events.routes'
 import { linkedChatSessionProxyPlugin } from './modules/chat-runtime/http/linked-session-proxy'
 import { registerTurnCheckpointHooks } from './modules/chat-runtime/turn-checkpoint-hooks'
-import { claudeAgentLocalUsageSource } from './modules/chat-runtime-providers/claude-agent/local-usage-source'
-import { codexLocalUsageSource } from './modules/chat-runtime-providers/codex/local-usage-source'
 import { createChronicleModule } from './modules/chronicle'
 import { conversationBridge } from './modules/conversation-bridge'
 import { desktop } from './modules/desktop'
@@ -67,7 +65,6 @@ import { threadHandoff } from './modules/thread-handoff'
 import { turnCheckpoint } from './modules/turn-checkpoint'
 import * as TurnCheckpoint from './modules/turn-checkpoint/service'
 import { usage } from './modules/usage'
-import { configureLocalUsageSources } from './modules/usage/local/service'
 import { sessionWork, work } from './modules/work'
 import { workflowRules } from './modules/workflow-rules'
 import { workspace } from './modules/workspace'
@@ -115,7 +112,6 @@ function isAllowedCorsOrigin({ headers }: { headers: Headers }): boolean {
 }
 
 export async function createServerContractApp(options: CreateServerContractAppOptions = {}) {
-  configureLocalUsageSources([codexLocalUsageSource, claudeAgentLocalUsageSource])
   registerTurnCheckpointHooks({
     captureStart: async (input) => {
       await TurnCheckpoint.captureRunStart(input)
@@ -260,6 +256,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     { initHostConnectorService, getHostConnectorService },
     { shutdownRemoteHostConnections },
     { shutdownImageOcr },
+    { reconcileCradleCodexUsage },
   ] = await Promise.all([
     import('./infra'),
     import('./modules/chat-runtime/runtime'),
@@ -278,6 +275,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     import('./modules/relay-transport/host-connector'),
     import('./modules/remote-hosts/service'),
     import('./modules/image-ocr/service'),
+    import('./modules/chat-runtime-providers/codex/usage-reconciliation'),
   ])
   if (recoverPersistedRunsOnCreate) {
     recoverPersistedRunProjections()
@@ -371,6 +369,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
 
   // Start chronicle daemon if enabled
   if (startBackgroundTasks) {
+    await reconcileCradleCodexUsage()
     BackgroundJobPoller.start()
     const chronicleRuntimeAllowed = chronicleService.isChronicleRuntimeAllowed()
     void refreshAllExternalProviderSources()

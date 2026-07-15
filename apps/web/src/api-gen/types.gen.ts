@@ -1299,45 +1299,6 @@ export type GetFilesystemFavoritesResponses = {
 
 export type GetFilesystemFavoritesResponse = GetFilesystemFavoritesResponses[keyof GetFilesystemFavoritesResponses];
 
-export type GetUsageLocalSummaryData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/usage/local-summary';
-};
-
-export type GetUsageLocalSummaryResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        generatedAt: number;
-        usage: {
-            inputTokens: number;
-            cachedInputTokens: number;
-            outputTokens: number;
-            reasoningOutputTokens: number;
-            totalTokens: number;
-        };
-        providers: Array<{
-            providerKind: 'codex' | 'claude-agent';
-            status: 'available' | 'unavailable' | 'error';
-            sourceRootCount: number;
-            sessionCount: number;
-            lastActivityAt: number | null;
-            usage: {
-                inputTokens: number;
-                cachedInputTokens: number;
-                outputTokens: number;
-                reasoningOutputTokens: number;
-                totalTokens: number;
-            };
-        }>;
-    };
-};
-
-export type GetUsageLocalSummaryResponse = GetUsageLocalSummaryResponses[keyof GetUsageLocalSummaryResponses];
-
 export type GetUsageDailyData = {
     body?: never;
     path?: never;
@@ -1521,6 +1482,13 @@ export type GetUsageSessionsBySessionIdResponses = {
         promptTokens: number;
         completionTokens: number;
         count: number;
+        byModel: Array<{
+            modelId: string;
+            promptTokens: number;
+            completionTokens: number;
+            totalTokens: number;
+            turnCount: number;
+        }>;
     };
 };
 
@@ -6867,6 +6835,13 @@ export type GetSessionsByIdEnvironmentResponses = {
             promptTokens: number;
             completionTokens: number;
             count: number;
+            byModel: Array<{
+                modelId: string;
+                promptTokens: number;
+                completionTokens: number;
+                totalTokens: number;
+                turnCount: number;
+            }>;
         };
         pullRequest: {
             owner: string;
@@ -18461,21 +18436,6 @@ export type GetChatSessionsBySessionIdUiSlotStatesResponses = {
                 outputTokens: number;
                 reasoningOutputTokens: number;
             };
-            treeTotal: {
-                totalTokens: number;
-                inputTokens: number;
-                cachedInputTokens: number;
-                outputTokens: number;
-                reasoningOutputTokens: number;
-            };
-            subagentTotal: {
-                totalTokens: number;
-                inputTokens: number;
-                cachedInputTokens: number;
-                outputTokens: number;
-                reasoningOutputTokens: number;
-            };
-            subagentCount: number;
             modelContextWindow: number | null;
             autoCompactTokenLimit: number | null;
             usagePercent: number | null;

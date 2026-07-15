@@ -4,6 +4,8 @@ import { sql } from 'drizzle-orm'
 import { db } from '../../infra'
 import { estimateCost } from './pricing'
 
+const usageTurnKey = sql`COALESCE(${usageLogs.runId}, ${usageLogs.providerTurnId}, ${usageLogs.id})`
+
 export interface DailyUsage {
   date: string
   promptTokens: number
@@ -50,7 +52,7 @@ export function getDailyUsage(days = 365): DailyUsage[] {
       SUM(${usageLogs.promptTokens}) AS prompt_tokens,
       SUM(${usageLogs.completionTokens}) AS completion_tokens,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     WHERE ${usageLogs.createdAt} >= unixepoch('now', 'localtime', '-' || ${days} || ' days')
     GROUP BY date(${usageLogs.createdAt}, 'unixepoch', 'localtime')
@@ -81,7 +83,7 @@ export function getDailyUsageByModel(days = 365): DailyUsageByModel[] {
       date(${usageLogs.createdAt}, 'unixepoch', 'localtime') AS date,
       COALESCE(${usageLogs.modelId}, 'unknown') AS model_id,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     WHERE ${usageLogs.createdAt} >= unixepoch('now', 'localtime', '-' || ${days} || ' days')
     GROUP BY date(${usageLogs.createdAt}, 'unixepoch', 'localtime'), model_id
@@ -109,7 +111,7 @@ export function getHourlyUsagePattern(): HourlyUsage[] {
       SUM(${usageLogs.promptTokens}) AS prompt_tokens,
       SUM(${usageLogs.completionTokens}) AS completion_tokens,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     GROUP BY hour
     ORDER BY hour ASC
@@ -139,7 +141,7 @@ export function getUsageSummary(): UsageSummary {
       COALESCE(SUM(${usageLogs.promptTokens}), 0) AS prompt_tokens,
       COALESCE(SUM(${usageLogs.completionTokens}), 0) AS completion_tokens,
       COALESCE(SUM(${usageLogs.totalTokens}), 0) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
   `)
 
@@ -154,7 +156,7 @@ export function getUsageSummary(): UsageSummary {
       ${agents.id} AS agent_id,
       ${agents.name} AS agent_name,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     INNER JOIN ${sessions} ON ${sessions.id} = ${usageLogs.sessionId}
     INNER JOIN ${agents} ON ${agents.id} = ${sessions.agentId}
@@ -173,7 +175,7 @@ export function getUsageSummary(): UsageSummary {
       ${usageLogs.providerTargetId} AS provider_target_id,
       ${providerTargets.displayName} AS provider_target_name,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     LEFT JOIN ${providerTargets} ON ${providerTargets.id} = ${usageLogs.providerTargetId}
     WHERE ${usageLogs.providerTargetId} IS NOT NULL
@@ -189,7 +191,7 @@ export function getUsageSummary(): UsageSummary {
     SELECT
       ${usageLogs.modelId} AS model_id,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     WHERE ${usageLogs.modelId} IS NOT NULL
     GROUP BY ${usageLogs.modelId}
@@ -319,6 +321,13 @@ export function getSessionUsage(sessionId: string): {
   promptTokens: number
   completionTokens: number
   count: number
+  byModel: Array<{
+    modelId: string
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+    turnCount: number
+  }>
 } {
   const row = db().get<{
     prompt_tokens: number
@@ -330,9 +339,28 @@ export function getSessionUsage(sessionId: string): {
       COALESCE(SUM(${usageLogs.promptTokens}), 0) AS prompt_tokens,
       COALESCE(SUM(${usageLogs.completionTokens}), 0) AS completion_tokens,
       COALESCE(SUM(${usageLogs.totalTokens}), 0) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     WHERE ${usageLogs.sessionId} = ${sessionId}
+  `)
+
+  const byModel = db().all<{
+    model_id: string
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+    turn_count: number
+  }>(sql`
+    SELECT
+      COALESCE(${usageLogs.modelId}, 'unknown') AS model_id,
+      COALESCE(SUM(${usageLogs.promptTokens}), 0) AS prompt_tokens,
+      COALESCE(SUM(${usageLogs.completionTokens}), 0) AS completion_tokens,
+      COALESCE(SUM(${usageLogs.totalTokens}), 0) AS total_tokens,
+      COUNT(DISTINCT ${usageTurnKey}) AS turn_count
+    FROM ${usageLogs}
+    WHERE ${usageLogs.sessionId} = ${sessionId}
+    GROUP BY ${usageLogs.modelId}
+    ORDER BY total_tokens DESC, model_id ASC
   `)
 
   return {
@@ -340,6 +368,13 @@ export function getSessionUsage(sessionId: string): {
     promptTokens: row?.prompt_tokens ?? 0,
     completionTokens: row?.completion_tokens ?? 0,
     count: row?.count ?? 0,
+    byModel: byModel.map(model => ({
+      modelId: model.model_id,
+      promptTokens: model.prompt_tokens,
+      completionTokens: model.completion_tokens,
+      totalTokens: model.total_tokens,
+      turnCount: model.turn_count,
+    })),
   }
 }
 
@@ -394,7 +429,7 @@ export function getCostSummary(from?: string, to?: string): CostSummary {
       SUM(${usageLogs.promptTokens}) AS prompt_tokens,
       SUM(${usageLogs.completionTokens}) AS completion_tokens,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS count
+      COUNT(DISTINCT ${usageTurnKey}) AS count
     FROM ${usageLogs}
     INNER JOIN ${sessions} ON ${sessions.id} = ${usageLogs.sessionId}
     LEFT JOIN ${agents} ON ${agents.id} = ${sessions.agentId}
@@ -540,7 +575,7 @@ export function getSessionsCost(from?: string, to?: string): SessionCostEntry[] 
       SUM(${usageLogs.promptTokens}) AS prompt_tokens,
       SUM(${usageLogs.completionTokens}) AS completion_tokens,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS step_count
+      COUNT(DISTINCT ${usageTurnKey}) AS step_count
     FROM ${usageLogs}
     WHERE ${usageLogs.createdAt} >= ${fromEpoch}
       AND ${usageLogs.createdAt} < ${toEpoch}
@@ -618,7 +653,7 @@ export function getRecentUsageSessions(limit = 6): RecentUsageSession[] {
       SUM(${usageLogs.promptTokens}) AS prompt_tokens,
       SUM(${usageLogs.completionTokens}) AS completion_tokens,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS turn_count,
+      COUNT(DISTINCT ${usageTurnKey}) AS turn_count,
       ${sessions.createdAt} AS created_at,
       ${sessions.updatedAt} AS updated_at,
       recent_sessions.last_usage_at AS last_usage_at
@@ -700,7 +735,7 @@ export function getDailyCost(from?: string, to?: string): DailyCostEntry[] {
       SUM(${usageLogs.promptTokens}) AS prompt_tokens,
       SUM(${usageLogs.completionTokens}) AS completion_tokens,
       SUM(${usageLogs.totalTokens}) AS total_tokens,
-      COUNT(*) AS step_count
+      COUNT(DISTINCT ${usageTurnKey}) AS step_count
     FROM ${usageLogs}
     WHERE ${usageLogs.createdAt} >= ${fromEpoch}
       AND ${usageLogs.createdAt} < ${toEpoch}

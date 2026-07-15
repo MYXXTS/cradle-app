@@ -93,6 +93,7 @@ export const messages = sqliteTable('messages', {
 
 export const usageLogs = sqliteTable('usage_logs', {
   id: textPk(),
+  runId: text('run_id'),
   sessionId: text('session_id')
     .notNull()
     .references(() => sessions.id, { onDelete: 'cascade' }),
@@ -100,15 +101,30 @@ export const usageLogs = sqliteTable('usage_logs', {
     .references(() => messages.id, { onDelete: 'set null' }),
   providerTargetId: text('provider_target_id')
     .references(() => providerTargets.id, { onDelete: 'set null' }),
+  providerSessionId: text('provider_session_id'),
+  providerThreadId: text('provider_thread_id'),
+  providerTurnId: text('provider_turn_id'),
   modelId: text('model_id'),
   promptTokens: int('prompt_tokens').notNull().default(0),
+  cachedInputTokens: int('cached_input_tokens').notNull().default(0),
   completionTokens: int('completion_tokens').notNull().default(0),
+  reasoningOutputTokens: int('reasoning_output_tokens').notNull().default(0),
   totalTokens: int('total_tokens').notNull().default(0),
+  providerTotalPromptTokens: int('provider_total_prompt_tokens'),
+  providerTotalCachedInputTokens: int('provider_total_cached_input_tokens'),
+  providerTotalCompletionTokens: int('provider_total_completion_tokens'),
+  providerTotalReasoningOutputTokens: int('provider_total_reasoning_output_tokens'),
+  providerTotalTokens: int('provider_total_tokens'),
   ...createdAt(),
 }, table => ({
   bySession: index('usage_logs_session_id_idx').on(table.sessionId),
+  byRun: index('usage_logs_run_id_idx').on(table.runId),
   byMessage: index('usage_logs_message_id_idx').on(table.messageId),
   byProviderTarget: index('usage_logs_provider_target_id_idx').on(table.providerTargetId),
+  bySessionModelCreatedAt: index('usage_logs_session_model_created_at_idx')
+    .on(table.sessionId, table.modelId, table.createdAt),
+  byProviderThreadCreatedAt: index('usage_logs_provider_thread_created_at_idx')
+    .on(table.providerThreadId, table.createdAt),
 }))
 
 export const stepUsage = sqliteTable('step_usage', {

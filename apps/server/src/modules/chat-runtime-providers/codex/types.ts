@@ -32,6 +32,12 @@ export interface CodexProviderConfig {
     }
   }
   resolveProviderTargetProfile?: (providerTargetId: string) => RuntimeProviderTargetProfile | null
+  reconcileUsage?: (input: {
+    client: CodexAppServerClientLike
+    sessionId: string
+    providerSessionId: string
+    providerTargetId: string | null
+  }) => Promise<void>
 }
 
 export type CodexProviderDeps = ProviderContext & CodexProviderConfig

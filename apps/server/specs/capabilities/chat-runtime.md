@@ -24,6 +24,8 @@
 
 - SSE frame data 必须是 AI SDK `UIMessageChunk` JSON object，不能包成 Cradle-owned wrapper event。
 - terminal frame 之后发送 `data: [DONE]` 作为 stream close marker。
+- Active run chunks 在发布时获得 run-scoped monotonic cursor；`/sync` 的 `run-chunks` channel 必须使用 `{ runId, cursor }` 恢复，不能使用 transport frame 序号或 mutable replay array index。
+- Run replay 超出内存 retention、run 已释放或 session 已切换到另一个 run 时，`/sync` 必须返回 `snapshot-required`，由持久化 Session/message snapshot 恢复；不得把残缺 replay 当正常 EOF。
 - Subagent progress 必须作为 parent tool part 的 AI SDK preliminary `tool-output-available` output 展示，不能使用 client-side `parentToolCallId` delta routing。
 - Native tool approval 必须使用 AI SDK `tool-approval-request` chunk 和 message-history continuation，不得使用独立 approval SSE。
 - 坏 snapshot 不允许回退到 `content` 重建，必须在 hydration 边界 fail fast。

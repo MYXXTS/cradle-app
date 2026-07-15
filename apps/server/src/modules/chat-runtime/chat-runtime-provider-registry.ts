@@ -6,6 +6,7 @@ import { getPluginSkillProjectionSources, getPluginSkillRegistryVersion } from '
 import { createAcpProvider } from '../chat-runtime-providers/acp/provider'
 import { createClaudeAgentProvider } from '../chat-runtime-providers/claude-agent/provider'
 import { createCodexProvider } from '../chat-runtime-providers/codex/provider'
+import { reconcileCodexSessionUsage } from '../chat-runtime-providers/codex/usage-reconciliation'
 import { createMockClaudeAgentProvider } from '../chat-runtime-providers/mock-claude-agent/provider'
 import { createStandardProvider } from '../chat-runtime-providers/openai-compatible/provider'
 import { createOpencodeProvider } from '../chat-runtime-providers/opencode/provider'
@@ -469,6 +470,9 @@ export function getRuntimeRegistry(): RuntimeRegistry {
     registry.register(createCodexProvider(ctx, {
       readCodexPreferences: () => Preferences.getCodexPreferencesSync(),
       readChatPreferences: () => Preferences.getChatPreferencesSync(),
+      reconcileUsage: async (input) => {
+        await reconcileCodexSessionUsage(input)
+      },
       resolveProviderTargetProfile: (providerTargetId) => {
         const target = resolveProviderTargetForRuntime(providerTargetId, 'codex')
         if (!target.enabled) {

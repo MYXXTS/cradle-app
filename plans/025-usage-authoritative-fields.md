@@ -1,9 +1,10 @@
 # Plan 025 — Authoritative usage fields per runtime provider
 
-> **已取代，请勿执行**：Plan 053 取代本计划。Codex `tokenUsage.total` 是
-> thread-lifetime cumulative，而不是独立 run total；逐 run 写入会重复计算之前 turns。
-> Machine archive 与 session-tree 方案见
-> `plans/053-local-archive-and-session-tree-usage.md`。
+> **REJECTED — DO NOT EXECUTE**: Codex `tokenUsage.total` is thread-lifetime
+> cumulative, not an isolated run total. Persisting it once per run repeats
+> prior turns, while persisting only `last` misses intermediate calls and
+> subagents. Plan 055 replaces this with Cradle-owned per-model-call facts in
+> `usage_logs`.
 
 > **Executor instructions**: Follow step by step; verify each. Honor STOP conditions. Update `plans/README.md`.
 >

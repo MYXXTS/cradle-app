@@ -873,6 +873,13 @@ describe('elysia migration skeleton', () => {
         promptTokens: 30,
         completionTokens: 15,
         count: 2,
+        byModel: [{
+          modelId: 'gpt-4o',
+          promptTokens: 30,
+          completionTokens: 15,
+          totalTokens: 45,
+          turnCount: 2,
+        }],
       })
 
       const missingSessionResponse = await app.handle(new Request(`http://localhost/usage/sessions/${randomUUID()}`))
@@ -882,6 +889,7 @@ describe('elysia migration skeleton', () => {
         promptTokens: 0,
         completionTokens: 0,
         count: 0,
+        byModel: [],
       })
 
       const invalidDailyResponse = await app.handle(new Request('http://localhost/usage/daily?days=0'))

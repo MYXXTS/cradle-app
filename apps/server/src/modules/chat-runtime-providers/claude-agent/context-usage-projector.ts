@@ -163,13 +163,6 @@ export function projectClaudeAgentCompactState(input: {
     modelContextWindow,
   })
   const status = readCompactStatus({ usagePercent })
-  const total = {
-    totalTokens,
-    inputTokens: totalTokens,
-    cachedInputTokens: readApiUsageTokenCount(input.usage.apiUsage, 'cache_read_input_tokens'),
-    outputTokens: readApiUsageTokenCount(input.usage.apiUsage, 'output_tokens'),
-    reasoningOutputTokens: 0,
-  }
 
   return {
     kind: 'compact',
@@ -178,11 +171,14 @@ export function projectClaudeAgentCompactState(input: {
     turnId: input.turnId,
     status,
     isCompactRelevant: status !== 'idle',
-    total,
+    total: {
+      totalTokens,
+      inputTokens: totalTokens,
+      cachedInputTokens: readApiUsageTokenCount(input.usage.apiUsage, 'cache_read_input_tokens'),
+      outputTokens: readApiUsageTokenCount(input.usage.apiUsage, 'output_tokens'),
+      reasoningOutputTokens: 0,
+    },
     last: createEmptyTokenUsageBreakdown(),
-    treeTotal: total,
-    subagentTotal: createEmptyTokenUsageBreakdown(),
-    subagentCount: 0,
     modelContextWindow,
     autoCompactTokenLimit: null,
     usagePercent,

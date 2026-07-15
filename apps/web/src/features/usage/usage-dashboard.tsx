@@ -9,7 +9,6 @@ import { formatTokenCount } from '~/lib/number-format'
 import { UsageBreakdown } from './usage-breakdown'
 import { UsageHeatmap } from './usage-heatmap'
 import { UsageHeroCards } from './usage-hero-cards'
-import { UsageLocalSummary } from './usage-local-summary'
 import { UsagePatterns } from './usage-patterns'
 import { UsageRecentSessions } from './usage-recent-sessions'
 import type { UsageRangeKey } from './usage-time-range'
@@ -21,7 +20,7 @@ import { useUsageOverview } from './use-usage-overview'
 export function UsageDashboard() {
   const { t } = useTranslation('usage')
   const [range, setRange] = useState<UsageRangeKey>('30d')
-  const { localSummaryQuery, localSummary, daily, dailyByModel, hourly, summary, stats, recentSessions, costSummary, dailyCost, usageReady, hasData } = useUsageOverview()
+  const { daily, dailyByModel, hourly, summary, stats, recentSessions, costSummary, dailyCost, usageReady, hasData } = useUsageOverview()
 
   const hasCost = Boolean(costSummary && costSummary.totalCostUsd > 0)
   const hasRankedUsage = Boolean(
@@ -69,12 +68,6 @@ export function UsageDashboard() {
           )}
         </div>
 
-        <UsageLocalSummary
-          summary={localSummary}
-          isLoading={localSummaryQuery.isLoading}
-          isError={localSummaryQuery.isError}
-        />
-
         {/* Loading skeleton - first paint only, before any cached data exists */}
         {!usageReady && !hasData && <UsageDashboardSkeleton />}
 
@@ -84,10 +77,6 @@ export function UsageDashboard() {
             - one visual language for the whole page would read as flat. */}
         {usageReady && hasData && summary && stats && (
           <div className="mt-10">
-            <div className="mb-5">
-              <h2 className="text-sm font-semibold text-foreground">{t('attributed.title')}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t('attributed.description')}</p>
-            </div>
             <UsageHeroCards
               daily={daily}
               dailyCost={dailyCost}

@@ -4,7 +4,7 @@
 
 Token usage and cost analytics dashboard.
 Displays a GitHub-style contribution heatmap of daily token consumption with aggregate stats.
-The leading machine total comes from provider-native local archives. Heatmaps, cost, streaks, and attribution remain sourced from `usage_logs` and are labeled as Cradle-attributed activity.
+Data sourced from the `usage_logs` SQLite table via the Usage API.
 当前 UI 公开最小稳定锚点供真实入口 E2E 使用：dashboard 根节点、空状态、关键 summary pills、总 token 数，以及 heatmap cell / tooltip。
 Dashboard headings, stat labels, chart labels, and empty states are owned by the `usage` i18n namespace.
 

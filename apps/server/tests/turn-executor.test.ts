@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { messages, sessions, usageLogs } from '@cradle/db'
 import type { UIMessageChunk } from 'ai'
 import { describe, expect, it, vi } from 'vitest'
 
-import { shutdownInfra } from '../src/infra'
+import { db, shutdownInfra } from '../src/infra'
 import { createFinalMessageProjectionState } from '../src/modules/chat-runtime/run/final-message-projection'
 import type { TurnExecutorDeps } from '../src/modules/chat-runtime/run/turn-executor'
 import { executeRun } from '../src/modules/chat-runtime/run/turn-executor'
@@ -63,6 +64,8 @@ function createActiveRun(input: {
     finalMessage: { id: `${input.runId}-message`, role: 'assistant', parts: [] },
     finalProjection: createFinalMessageProjectionState(),
     runtimeSettings: {} as ActiveRun['runtimeSettings'],
+    usageEventCount: 0,
+    usageEventAggregate: null,
     runSnapshotId: null,
     runSnapshotSeq: 0,
     snapshotEventIdByCoalesceKey: new Map(),
@@ -107,6 +110,72 @@ function createStreamingRuntime(chunks: UIMessageChunk[]): ChatRuntime {
     cancelTurn: async () => {},
   } as unknown as ChatRuntime
 }
+
+describe('executeRun provider usage events', () => {
+  it('persists every provider call without a run-final fallback row', async () => {
+    await withTempDataDir(async () => {
+      const sessionId = `session-${randomUUID()}`
+      const runId = `run-${randomUUID()}`
+      db().insert(sessions).values({ id: sessionId, title: 'Session', runtimeKind: 'codex' }).run()
+      db().insert(messages).values({
+        id: `${runId}-message`,
+        sessionId,
+        role: 'assistant',
+        content: '',
+        messageJson: JSON.stringify({ id: `${runId}-message`, role: 'assistant', parts: [] }),
+      }).run()
+      const runtime = {
+        ...createStreamingRuntime([]),
+        runtimeKind: 'codex',
+        usageAccounting: 'provider-events',
+        lastUsage: { promptTokens: 999, completionTokens: 1, totalTokens: 1_000 },
+        async* streamTurn(input) {
+          await input.onUsageEvent?.({
+            id: 'usage-event-1',
+            providerThreadId: 'root-thread',
+            providerTurnId: 'turn-1',
+            modelId: 'gpt-5.6-sol',
+            occurredAt: 1_789_000_000,
+            usage: { promptTokens: 100, completionTokens: 10, totalTokens: 110 },
+            providerTotal: { promptTokens: 100, completionTokens: 10, totalTokens: 110 },
+          })
+          await input.onUsageEvent?.({
+            id: 'usage-event-2',
+            providerThreadId: 'child-thread',
+            providerTurnId: 'child-turn',
+            modelId: 'gpt-5.6-sol',
+            occurredAt: 1_789_000_001,
+            usage: { promptTokens: 200, completionTokens: 20, totalTokens: 220 },
+            providerTotal: { promptTokens: 200, completionTokens: 20, totalTokens: 220 },
+          })
+          yield { type: 'text-delta', id: 'text-1', delta: 'done' }
+          yield { type: 'finish', finishReason: 'stop' }
+        },
+      } as ChatRuntime
+      const activeRun = createActiveRun({ runId, sessionId, runtime })
+      activeRun.runtimeSession.runtimeKind = 'codex'
+      activeRun.runtimeSession.providerSessionId = 'root-thread'
+      const deps = createDeps()
+
+      await executeRun(
+        activeRun,
+        { message: { id: 'msg-1', role: 'user', parts: [] }, profile: null },
+        deps,
+      )
+
+      expect(activeRun.usageEventAggregate).toEqual(expect.objectContaining({
+        promptTokens: 300,
+        completionTokens: 30,
+        totalTokens: 330,
+      }))
+      expect(db().select().from(usageLogs).all()).toEqual([
+        expect.objectContaining({ id: 'usage-event-1', runId, sessionId, providerThreadId: 'root-thread' }),
+        expect.objectContaining({ id: 'usage-event-2', runId, sessionId, providerThreadId: 'child-thread' }),
+      ])
+      expect(activeRun.usageEventCount).toBe(2)
+    })
+  })
+})
 
 describe('executeRun cancel/finalize race (turn-executor)', () => {
   it('finalizes with the true aborted status instead of a synthesized empty-output error when the run was already cancelled', async () => {

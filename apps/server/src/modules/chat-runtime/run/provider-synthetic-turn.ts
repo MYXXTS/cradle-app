@@ -122,6 +122,8 @@ async function startProviderSyntheticTurn(
     lastStreamingSnapshotMessageJson: null,
     pendingStreamingSnapshotMessageJson: null,
     runtimeSettings: parentRun.runtimeSettings,
+    usageEventCount: 0,
+    usageEventAggregate: null,
     runSnapshotId: null,
     runSnapshotSeq: 0,
     snapshotEventIdByCoalesceKey: new Map(),

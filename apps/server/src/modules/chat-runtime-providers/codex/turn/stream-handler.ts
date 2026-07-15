@@ -114,7 +114,7 @@ export async function* readTurnNotifications(
   initialTurnId: string | null,
   signal: AbortSignal,
   readGoal: () => CodexGoalLike | null | undefined,
-  onProviderNotification?: (notification: CodexAppServerMessage) => void,
+  onProviderNotification?: (notification: CodexAppServerMessage) => void | Promise<void>,
 ): AsyncGenerator<CodexAppServerMessage, void, void> {
   let turnId = initialTurnId
   let turnCompleted = false
@@ -132,7 +132,7 @@ export async function* readTurnNotifications(
     if (!notification) {
       return
     }
-    onProviderNotification?.(notification)
+    await onProviderNotification?.(notification)
     const notificationThreadId = getThreadId(notification)
     if (notificationThreadId && notificationThreadId !== threadId) {
       continue
@@ -181,7 +181,7 @@ export async function* streamCodexMappedTurnEvents(input: {
   mapperState: CodexAppServerMapperState
   diagnostics: CodexStreamDiagnostics
   readGoal: () => CodexGoalLike | null | undefined
-  onProviderNotification?: (notification: CodexAppServerMessage) => void
+  onProviderNotification?: (notification: CodexAppServerMessage) => void | Promise<void>
 }): AsyncGenerator<CodexMappedTurnEvent, void, void> {
   for await (const notification of readTurnNotifications(
     input.client,
