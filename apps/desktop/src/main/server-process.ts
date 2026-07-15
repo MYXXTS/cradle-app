@@ -578,7 +578,7 @@ function resolveDesktopCodexAppServerPath(input: { isDev: boolean, moduleDir: st
     return configuredPath
   }
 
-  const executableName = getCodexExecutableName()
+  const executableName = getCodexAppServerExecutableName()
   if (!input.isDev) {
     const bundledPath = join(process.resourcesPath, executableName)
     if (!existsSync(bundledPath)) {
@@ -594,8 +594,8 @@ function resolveDesktopCodexAppServerPath(input: { isDev: boolean, moduleDir: st
   ].find(candidate => existsSync(candidate))
 }
 
-function getCodexExecutableName(): string {
-  return process.platform === 'win32' ? 'codex.exe' : 'codex'
+function getCodexAppServerExecutableName(): string {
+  return process.platform === 'win32' ? 'codex-app-server.exe' : 'codex-app-server'
 }
 
 function readDesktopCommandPathFallbackSegments(env: NodeJS.ProcessEnv): string[] {

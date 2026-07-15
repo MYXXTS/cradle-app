@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { delimiter, isAbsolute, join } from 'node:path'
 import type { Writable } from 'node:stream'
 
 import { jsonrepair } from 'jsonrepair'
@@ -34,7 +36,8 @@ export interface CodexAppServerServerRequest extends CodexAppServerMessage {
 }
 
 export interface CodexAppServerClientOptions {
-  codexPath?: string
+  appServerPath?: string
+  codexCliPath?: string
   apiKey?: string
   config?: Record<string, unknown>
   env?: Record<string, string | undefined>
@@ -76,7 +79,7 @@ export class CodexAppServerClient {
   private readonly serverRequestHandler?: (request: CodexAppServerServerRequest) => Promise<unknown> | unknown
   private readonly exposeServerRequestsAsNotifications: boolean
   private readonly clientInfoVersion: string
-  private readonly codexPath: string
+  private readonly executablePath: string
   private readonly userAgentMode: CodexUserAgentMode
   private nextRequestId = 1
   private closed = false
@@ -86,7 +89,17 @@ export class CodexAppServerClient {
     this.serverRequestHandler = options.serverRequestHandler
     this.exposeServerRequestsAsNotifications = options.exposeServerRequestsAsNotifications ?? true
     const env = { ...process.env, ...options.env }
-    const args = ['app-server', '--listen', 'stdio://']
+    const launch = resolveCodexAppServerLaunch({
+      env,
+      appServerPath: options.appServerPath,
+      codexCliPath: options.codexCliPath,
+    })
+    if (launch.source === 'codex-cli-fallback') {
+      console.warn(
+        '[codex] Standalone codex-app-server was not found; falling back to `codex app-server` with VSCode session source.',
+      )
+    }
+    const args = [...launch.args]
     if (options.config) {
       for (const override of serializeConfigOverrides(options.config)) {
         args.push('--config', override)
@@ -94,7 +107,7 @@ export class CodexAppServerClient {
     }
 
     this.clientInfoVersion = readCradleCodexClientVersion(env)
-    this.codexPath = options.codexPath ?? resolveCodexAppServerPath(env)
+    this.executablePath = launch.command
     this.userAgentMode = options.userAgentMode ?? 'cradle'
     env.CODEX_HOME = prepareCodexAppServerHome()
     syncCodexAppServerLogInsertBlockerFromFeatureFlag()
@@ -106,7 +119,7 @@ export class CodexAppServerClient {
 
     this.child = spawnManagedProcess({
       kind: 'spawn',
-      command: this.codexPath,
+      command: this.executablePath,
       args,
       env,
       stdin: 'pipe',
@@ -148,7 +161,7 @@ export class CodexAppServerClient {
       return {
         name: 'codex',
         title: 'Codex',
-        version: await readCodexNativeClientVersion(this.codexPath),
+        version: await readCodexNativeClientVersion(this.executablePath),
       }
     }
     return {
@@ -390,8 +403,44 @@ export function isCodexAppServerUnknownMethodError(error: unknown, method: strin
   return message.includes(`unknown variant \`${method}\``)
 }
 
-export function resolveCodexAppServerPath(env: Record<string, string | undefined> = process.env): string {
-  return env[CODEX_APP_SERVER_PATH_ENV]?.trim() || 'codex'
+export interface CodexAppServerLaunch {
+  command: string
+  args: string[]
+  source: 'configured-app-server' | 'path-app-server' | 'codex-cli-fallback'
+}
+
+export function resolveCodexAppServerLaunch(input: {
+  env?: Record<string, string | undefined>
+  appServerPath?: string
+  codexCliPath?: string
+} = {}): CodexAppServerLaunch {
+  const env = input.env ?? process.env
+  const configuredAppServerPath = input.appServerPath?.trim() || env[CODEX_APP_SERVER_PATH_ENV]?.trim()
+  if (configuredAppServerPath) {
+    return {
+      command: configuredAppServerPath,
+      args: ['--listen', 'stdio://', '--session-source', 'cli'],
+      source: 'configured-app-server',
+    }
+  }
+
+  const pathAppServer = findExecutableOnPath(
+    process.platform === 'win32' ? 'codex-app-server.exe' : 'codex-app-server',
+    env,
+  )
+  if (pathAppServer) {
+    return {
+      command: pathAppServer,
+      args: ['--listen', 'stdio://', '--session-source', 'cli'],
+      source: 'path-app-server',
+    }
+  }
+
+  return {
+    command: input.codexCliPath?.trim() || 'codex',
+    args: ['app-server', '--listen', 'stdio://'],
+    source: 'codex-cli-fallback',
+  }
 }
 
 export function readCodexNativeClientVersion(codexPath = 'codex'): Promise<string> {
@@ -440,6 +489,19 @@ export function readCodexNativeClientVersion(codexPath = 'codex'): Promise<strin
 function readCodexVersionFromCliOutput(output: string): string {
   return output.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Z.-]+)?\b/i)?.[0]
     ?? CODEX_NATIVE_CLIENT_INFO_FALLBACK_VERSION
+}
+
+function findExecutableOnPath(executableName: string, env: Record<string, string | undefined>): string | null {
+  if (isAbsolute(executableName)) {
+    return existsSync(executableName) ? executableName : null
+  }
+  for (const directory of env.PATH?.split(delimiter).filter(Boolean) ?? []) {
+    const candidate = join(directory, executableName)
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+  return null
 }
 
 function serializeConfigOverrides(config: Record<string, unknown>, prefix = ''): string[] {

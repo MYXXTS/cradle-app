@@ -36,7 +36,8 @@ export function createCodexAppServerHostFingerprint(input: {
           planType: input.chatgptAuth.chatgptPlanType,
         }
       : null,
-    codexPath: input.options.codexPath ?? null,
+    appServerPath: input.options.appServerPath ?? null,
+    codexCliPath: input.options.codexCliPath ?? null,
     processLevelConfig: stableJson(processLevelConfig),
     processLevelEnv: stableJson(processLevelEnv),
     userAgentMode: input.options.userAgentMode ?? null,

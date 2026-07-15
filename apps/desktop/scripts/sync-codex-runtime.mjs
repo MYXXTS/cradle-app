@@ -42,6 +42,8 @@ const supportedTargets = new Map([
     triple: 'aarch64-apple-darwin',
     assetName: 'codex-aarch64-apple-darwin.tar.gz',
     executableName: 'codex',
+    appServerAssetName: 'codex-app-server-aarch64-apple-darwin.tar.gz',
+    appServerExecutableName: 'codex-app-server',
   }],
   ['darwin-x64', {
     platform: 'darwin',
@@ -49,6 +51,8 @@ const supportedTargets = new Map([
     triple: 'x86_64-apple-darwin',
     assetName: 'codex-x86_64-apple-darwin.tar.gz',
     executableName: 'codex',
+    appServerAssetName: 'codex-app-server-x86_64-apple-darwin.tar.gz',
+    appServerExecutableName: 'codex-app-server',
   }],
   ['linux-arm64', {
     platform: 'linux',
@@ -56,6 +60,8 @@ const supportedTargets = new Map([
     triple: 'aarch64-unknown-linux-musl',
     assetName: 'codex-aarch64-unknown-linux-musl.tar.gz',
     executableName: 'codex',
+    appServerAssetName: 'codex-app-server-aarch64-unknown-linux-musl.tar.gz',
+    appServerExecutableName: 'codex-app-server',
   }],
   ['linux-x64', {
     platform: 'linux',
@@ -63,6 +69,8 @@ const supportedTargets = new Map([
     triple: 'x86_64-unknown-linux-musl',
     assetName: 'codex-x86_64-unknown-linux-musl.tar.gz',
     executableName: 'codex',
+    appServerAssetName: 'codex-app-server-x86_64-unknown-linux-musl.tar.gz',
+    appServerExecutableName: 'codex-app-server',
   }],
   ['win32-arm64', {
     platform: 'win32',
@@ -70,6 +78,8 @@ const supportedTargets = new Map([
     triple: 'aarch64-pc-windows-msvc',
     assetName: 'codex-aarch64-pc-windows-msvc.exe.tar.gz',
     executableName: 'codex.exe',
+    appServerAssetName: 'codex-app-server-aarch64-pc-windows-msvc.exe.tar.gz',
+    appServerExecutableName: 'codex-app-server.exe',
   }],
   ['win32-x64', {
     platform: 'win32',
@@ -77,6 +87,8 @@ const supportedTargets = new Map([
     triple: 'x86_64-pc-windows-msvc',
     assetName: 'codex-x86_64-pc-windows-msvc.exe.tar.gz',
     executableName: 'codex.exe',
+    appServerAssetName: 'codex-app-server-x86_64-pc-windows-msvc.exe.tar.gz',
+    appServerExecutableName: 'codex-app-server.exe',
   }],
 ])
 
@@ -113,39 +125,88 @@ export function getCodexRuntimePath(targetInput = {}) {
   return join(codexResourceRoot, `${target.platform}-${target.arch}`, target.executableName)
 }
 
+export function getCodexAppServerRuntimePath(targetInput = {}) {
+  const target = resolveCodexRuntimeTarget(targetInput)
+  return join(codexResourceRoot, `${target.platform}-${target.arch}`, target.appServerExecutableName)
+}
+
 export async function ensureCodexRuntime(input = {}) {
   const target = resolveCodexRuntimeTarget(input)
   const releaseTag = input.releaseTag ?? defaultReleaseTag
   const release = await fetchCodexRelease(releaseTag)
   const asset = findReleaseAsset(release, target.assetName)
+  const appServerAsset = findReleaseAsset(release, target.appServerAssetName)
   const outputDir = join(codexResourceRoot, `${target.platform}-${target.arch}`)
   const executablePath = join(outputDir, target.executableName)
+  const appServerExecutablePath = join(outputDir, target.appServerExecutableName)
   const manifestPath = join(outputDir, 'codex-runtime.json')
-
-  if (!input.force && await isExistingRuntimeCurrent({
+  const existingManifest = await readRuntimeManifest(manifestPath)
+  const runtimeIsCurrent = !input.force && await isExistingArtifactCurrent({
     executablePath,
-    manifestPath,
+    manifest: existingManifest,
     release,
     asset,
+    assetManifestKey: 'asset',
     target,
-  })) {
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    return { target, release, asset, executablePath, manifestPath, manifest }
+  })
+  const appServerIsCurrent = !input.force && await isExistingArtifactCurrent({
+    executablePath: appServerExecutablePath,
+    manifest: existingManifest,
+    release,
+    asset: appServerAsset,
+    assetManifestKey: 'appServerAsset',
+    target,
+  })
+
+  if (runtimeIsCurrent && appServerIsCurrent) {
+    return {
+      target,
+      release,
+      asset,
+      appServerAsset,
+      executablePath,
+      appServerExecutablePath,
+      manifestPath,
+      manifest: existingManifest,
+    }
   }
 
   await mkdir(outputDir, { recursive: true })
   const tempDir = await mkdtemp(join(tmpdir(), 'cradle-codex-runtime-'))
   try {
-    const archivePath = join(tempDir, target.assetName)
-    const extractDir = join(tempDir, 'extract')
-    await mkdir(extractDir, { recursive: true })
-    await downloadFile(asset.browser_download_url, archivePath)
-    await tar.x({ file: archivePath, cwd: extractDir })
+    await Promise.all([
+      runtimeIsCurrent
+        ? Promise.resolve()
+        : downloadAndInstallExecutable({
+            asset,
+            tempDir: join(tempDir, 'codex'),
+            executableNames: [
+              target.executableName,
+              `codex-${target.triple}`,
+              target.platform === 'win32' ? `codex-${target.triple}.exe` : null,
+            ].filter(Boolean),
+            executablePath,
+            target,
+          }),
+      appServerIsCurrent
+        ? Promise.resolve()
+        : downloadAndInstallExecutable({
+            asset: appServerAsset,
+            tempDir: join(tempDir, 'app-server'),
+            executableNames: [
+              target.appServerExecutableName,
+              `codex-app-server-${target.triple}`,
+              target.platform === 'win32' ? `codex-app-server-${target.triple}.exe` : null,
+            ].filter(Boolean),
+            executablePath: appServerExecutablePath,
+            target,
+          }),
+    ])
 
-    const extractedExecutable = await findExtractedCodexExecutable(extractDir, target)
-    await installExecutableAtomically(extractedExecutable, executablePath, target)
-
-    const binary = await readBinaryMetadata(executablePath, target)
+    const [binary, appServerBinary] = await Promise.all([
+      readBinaryMetadata(executablePath, target),
+      readBinaryMetadata(appServerExecutablePath, target),
+    ])
     const manifest = {
       kind: 'cradle.codex-runtime',
       source: githubSource,
@@ -166,11 +227,27 @@ export async function ensureCodexRuntime(input = {}) {
         size: asset.size ?? null,
         digest: asset.digest ?? null,
       },
+      appServerAsset: {
+        name: appServerAsset.name,
+        url: appServerAsset.browser_download_url,
+        size: appServerAsset.size ?? null,
+        digest: appServerAsset.digest ?? null,
+      },
       binary,
+      appServerBinary,
       updatedAt: new Date().toISOString(),
     }
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-    return { target, release, asset, executablePath, manifestPath, manifest }
+    return {
+      target,
+      release,
+      asset,
+      appServerAsset,
+      executablePath,
+      appServerExecutablePath,
+      manifestPath,
+      manifest,
+    }
   }
   finally {
     await rm(tempDir, { recursive: true, force: true })
@@ -201,13 +278,13 @@ export async function copyCodexRuntimeToPackagedResources(context, input = {}) {
     force: input.force,
   })
   const resourcesDir = resolvePackagedResourcesDir(context, platform)
-  const destination = join(resourcesDir, runtime.target.executableName)
+  const destination = join(resourcesDir, runtime.target.appServerExecutableName)
   await mkdir(resourcesDir, { recursive: true })
-  await copyFile(runtime.executablePath, destination)
+  await copyFile(runtime.appServerExecutablePath, destination)
   if (runtime.target.platform !== 'win32') {
     await chmod(destination, 0o755)
   }
-  console.warn(`[desktop] Bundled Codex runtime ${runtime.manifest.release.tagName} ${platform}-${arch} at ${destination}`)
+  console.warn(`[desktop] Bundled Codex app-server ${runtime.manifest.release.tagName} ${platform}-${arch} at ${destination}`)
   return { ...runtime, destination }
 }
 
@@ -234,18 +311,24 @@ export async function readCodexRuntimeVersion(executablePath) {
   })
 }
 
-async function isExistingRuntimeCurrent(input) {
+async function readRuntimeManifest(manifestPath) {
   try {
-    const [manifest, executableStats] = await Promise.all([
-      readFile(input.manifestPath, 'utf8').then(value => JSON.parse(value)),
-      stat(input.executablePath),
-    ])
+    return JSON.parse(await readFile(manifestPath, 'utf8'))
+  }
+  catch {
+    return null
+  }
+}
+
+async function isExistingArtifactCurrent(input) {
+  try {
+    const executableStats = await stat(input.executablePath)
     return executableStats.isFile()
-      && manifest?.source === githubSource
-      && manifest?.release?.tagName === input.release.tag_name
-      && manifest?.asset?.name === input.asset.name
-      && manifest?.target?.platform === input.target.platform
-      && manifest?.target?.arch === input.target.arch
+      && input.manifest?.source === githubSource
+      && input.manifest?.release?.tagName === input.release.tag_name
+      && input.manifest?.[input.assetManifestKey]?.name === input.asset.name
+      && input.manifest?.target?.platform === input.target.platform
+      && input.manifest?.target?.arch === input.target.arch
   }
   catch {
     return false
@@ -256,7 +339,7 @@ async function fetchCodexRelease(releaseTag) {
   const url = releaseTag === 'latest'
     ? `${githubApiBase}/latest`
     : `${githubApiBase}/tags/${encodeURIComponent(releaseTag)}`
-  const response = await fetch(url, { headers: githubHeaders() })
+  const response = await fetchWithRetry(url, { headers: githubHeaders() })
   if (!response.ok) {
     throw new Error(`Failed to read Codex release ${releaseTag}: ${response.status} ${response.statusText}`)
   }
@@ -272,11 +355,55 @@ function findReleaseAsset(release, assetName) {
 }
 
 async function downloadFile(url, destination) {
-  const response = await fetch(url, { headers: githubHeaders() })
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`)
+  let lastError
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const downloadedBytes = await stat(destination).then(value => value.size).catch(() => 0)
+    try {
+      const response = await fetchWithRetry(url, {
+        headers: {
+          ...githubHeaders(),
+          ...(downloadedBytes > 0 ? { Range: `bytes=${downloadedBytes}-` } : {}),
+        },
+      })
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`)
+      }
+      const append = downloadedBytes > 0 && response.status === 206
+      await pipeline(
+        Readable.fromWeb(response.body),
+        createWriteStream(destination, { flags: append ? 'a' : 'w' }),
+      )
+      return
+    }
+    catch (error) {
+      lastError = error
+      if (attempt < 5) {
+        await new Promise(resolve => setTimeout(resolve, attempt * 750))
+      }
+    }
   }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination))
+  throw lastError
+}
+
+async function fetchWithRetry(url, init, attempts = 3) {
+  let lastError
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, init)
+      if (response.status < 500 && response.status !== 429) {
+        return response
+      }
+      lastError = new Error(`Request failed with ${response.status} ${response.statusText}`)
+      await response.body?.cancel()
+    }
+    catch (error) {
+      lastError = error
+    }
+    if (attempt < attempts) {
+      await new Promise(resolve => setTimeout(resolve, attempt * 750))
+    }
+  }
+  throw lastError
 }
 
 function githubHeaders() {
@@ -292,31 +419,28 @@ function githubHeaders() {
   return headers
 }
 
-async function findExtractedCodexExecutable(rootDir, target) {
-  const files = await collectFiles(rootDir)
-  const basenames = [
-    target.executableName,
-    `codex-${target.triple}`,
-    target.platform === 'win32' ? `codex-${target.triple}.exe` : null,
-  ].filter(Boolean)
-  for (const wanted of basenames) {
+async function downloadAndExtractExecutable(input) {
+  const archivePath = join(input.tempDir, input.asset.name)
+  const extractDir = join(input.tempDir, 'extract')
+  await mkdir(extractDir, { recursive: true })
+  await downloadFile(input.asset.browser_download_url, archivePath)
+  await tar.x({ file: archivePath, cwd: extractDir })
+
+  const files = await collectFiles(extractDir)
+  for (const wanted of input.executableNames) {
     const match = files.find(file => path.basename(file) === wanted)
     if (match) {
       return match
     }
   }
+  throw new Error(
+    `Codex release asset ${input.asset.name} did not contain any of: ${input.executableNames.join(', ')}`,
+  )
+}
 
-  const fallback = files.find((file) => {
-    const base = path.basename(file)
-    return target.platform === 'win32'
-      ? base.startsWith('codex') && base.endsWith('.exe')
-      : base.startsWith('codex') && !base.includes('.')
-  })
-  if (fallback) {
-    return fallback
-  }
-
-  throw new Error(`Codex runtime archive did not contain ${target.executableName}`)
+async function downloadAndInstallExecutable(input) {
+  const extractedExecutable = await downloadAndExtractExecutable(input)
+  await installExecutableAtomically(extractedExecutable, input.executablePath, input.target)
 }
 
 async function collectFiles(rootDir) {
@@ -340,7 +464,7 @@ async function readBinaryMetadata(executablePath, target) {
     ? await readCodexRuntimeVersion(executablePath)
     : null
   return {
-    path: target.executableName,
+    path: path.basename(executablePath),
     size: bytes.length,
     sha256: createHash('sha256').update(bytes).digest('hex'),
     version,
@@ -460,7 +584,9 @@ async function main() {
       force: options.force,
     })
     results.push(result)
-    console.log(`${result.manifest.release.tagName} ${result.target.platform}-${result.target.arch} -> ${result.executablePath}`)
+    console.log(
+      `${result.manifest.release.tagName} ${result.target.platform}-${result.target.arch} -> ${result.executablePath}, ${result.appServerExecutablePath}`,
+    )
   }
   return results
 }

@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events'
-import { join } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
 import { PassThrough, Readable, Writable } from 'node:stream'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +12,7 @@ import {
   isCodexAppServerUnknownMethodError,
   readCradleCodexClientVersion,
   resolveCodexAppServerHome,
-  resolveCodexAppServerPath,
+  resolveCodexAppServerLaunch,
 } from './client'
 
 const spawnMock = vi.hoisted(() => vi.fn())
@@ -133,15 +135,46 @@ describe('readCradleCodexClientVersion', () => {
   })
 })
 
-describe('resolveCodexAppServerPath', () => {
-  it('uses the desktop-provided bundled Codex runtime path', () => {
-    expect(resolveCodexAppServerPath({
-      CRADLE_CODEX_APP_SERVER_PATH: '/Applications/Cradle.app/Contents/Resources/codex',
-    })).toBe('/Applications/Cradle.app/Contents/Resources/codex')
+describe('resolveCodexAppServerLaunch', () => {
+  it('uses the desktop-provided standalone app-server path', () => {
+    expect(resolveCodexAppServerLaunch({
+      env: {
+        CRADLE_CODEX_APP_SERVER_PATH: '/Applications/Cradle.app/Contents/Resources/codex-app-server',
+      },
+    })).toEqual({
+      command: '/Applications/Cradle.app/Contents/Resources/codex-app-server',
+      args: ['--listen', 'stdio://', '--session-source', 'cli'],
+      source: 'configured-app-server',
+    })
   })
 
-  it('falls back to the global Codex command for non-desktop runtimes', () => {
-    expect(resolveCodexAppServerPath({})).toBe('codex')
+  it('falls back to the global Codex command when standalone app-server is unavailable', () => {
+    expect(resolveCodexAppServerLaunch({ env: { PATH: '' } })).toEqual({
+      command: 'codex',
+      args: ['app-server', '--listen', 'stdio://'],
+      source: 'codex-cli-fallback',
+    })
+  })
+
+  it('uses a standalone app-server discovered on PATH', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'cradle-codex-app-server-path-'))
+    const executableName = process.platform === 'win32' ? 'codex-app-server.exe' : 'codex-app-server'
+    const executablePath = join(directory, executableName)
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(executablePath, '')
+
+    try {
+      expect(resolveCodexAppServerLaunch({
+        env: { PATH: [directory, '/unrelated'].join(delimiter) },
+      })).toEqual({
+        command: executablePath,
+        args: ['--listen', 'stdio://', '--session-source', 'cli'],
+        source: 'path-app-server',
+      })
+    }
+    finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })
 
@@ -176,7 +209,7 @@ describe('codexAppServerClient', () => {
     }))
 
     const client = new CodexAppServerClient({
-      codexPath: 'codex-test',
+      appServerPath: 'codex-app-server-test',
       env: buildCradleCodexAppServerEnv({
         chatSessionId: 'chat-session-1',
         workspaceId: 'workspace-1',
@@ -186,12 +219,41 @@ describe('codexAppServerClient', () => {
     expect(managedProcessMock).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'spawn',
-        command: 'codex-test',
-        args: ['app-server', '--listen', 'stdio://'],
+        command: 'codex-app-server-test',
+        args: ['--listen', 'stdio://', '--session-source', 'cli'],
         env: expect.objectContaining({
           CRADLE_CHAT_SESSION_ID: 'chat-session-1',
           CRADLE_WORKSPACE_ID: 'workspace-1',
         }),
+      }),
+    )
+    client.close()
+  })
+
+  it('passes config overrides to the standalone app-server entrypoint', () => {
+    managedProcessMock.mockReturnValueOnce(createAppServerProcess())
+
+    const client = new CodexAppServerClient({
+      appServerPath: 'codex-app-server-test',
+      config: {
+        model: 'gpt-5.4',
+        features: { remoteControl: true },
+      },
+    })
+
+    expect(managedProcessMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'codex-app-server-test',
+        args: [
+          '--listen',
+          'stdio://',
+          '--session-source',
+          'cli',
+          '--config',
+          'model="gpt-5.4"',
+          '--config',
+          'features.remoteControl=true',
+        ],
       }),
     )
     client.close()
@@ -203,14 +265,14 @@ describe('codexAppServerClient', () => {
 
     const client = new CodexAppServerClient({
       env: {
-        CRADLE_CODEX_APP_SERVER_PATH: '/Applications/Cradle.app/Contents/Resources/codex',
+        CRADLE_CODEX_APP_SERVER_PATH: '/Applications/Cradle.app/Contents/Resources/codex-app-server',
       },
     })
 
     expect(managedProcessMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        command: '/Applications/Cradle.app/Contents/Resources/codex',
-        args: ['app-server', '--listen', 'stdio://'],
+        command: '/Applications/Cradle.app/Contents/Resources/codex-app-server',
+        args: ['--listen', 'stdio://', '--session-source', 'cli'],
       }),
     )
     client.close()
@@ -243,7 +305,7 @@ describe('codexAppServerClient', () => {
     }))
 
     const client = new CodexAppServerClient({
-      codexPath: 'codex-test',
+      appServerPath: 'codex-app-server-test',
       env: { CRADLE_VERSION: '1.2.3' },
     })
 
@@ -289,7 +351,7 @@ describe('codexAppServerClient', () => {
     spawnMock.mockReturnValueOnce(createCodexVersionProcess('codex-cli 0.135.0\n'))
 
     const client = new CodexAppServerClient({
-      codexPath: 'codex-native-test',
+      appServerPath: 'codex-app-server-native-test',
       env: { CRADLE_VERSION: '1.2.3' },
       userAgentMode: 'native',
     })
@@ -310,7 +372,7 @@ describe('codexAppServerClient', () => {
   it('rejects pending requests when the app-server process closes without an exit event', async () => {
     const child = createAppServerProcess()
     managedProcessMock.mockReturnValueOnce(child)
-    const client = new CodexAppServerClient({ codexPath: 'codex-test' })
+    const client = new CodexAppServerClient({ appServerPath: 'codex-app-server-test' })
 
     const request = client.request('config/read')
     child.emit('close', 0, null)
@@ -322,7 +384,7 @@ describe('codexAppServerClient', () => {
   it('marks the client closed after process spawn errors', async () => {
     const child = createAppServerProcess()
     managedProcessMock.mockReturnValueOnce(child)
-    const client = new CodexAppServerClient({ codexPath: 'codex-test' })
+    const client = new CodexAppServerClient({ appServerPath: 'codex-app-server-test' })
 
     const request = client.request('config/read')
     child.emit('error', new Error('spawn failed'))
@@ -334,7 +396,7 @@ describe('codexAppServerClient', () => {
   it('wakes notification waiters when the app-server process terminates', async () => {
     const child = createAppServerProcess()
     managedProcessMock.mockReturnValueOnce(child)
-    const client = new CodexAppServerClient({ codexPath: 'codex-test' })
+    const client = new CodexAppServerClient({ appServerPath: 'codex-app-server-test' })
 
     const notification = client.nextNotification()
     child.stderr.write('fatal startup error')
@@ -363,7 +425,7 @@ describe('codexAppServerClient', () => {
     managedProcessMock.mockReturnValueOnce(asManagedProcess(child))
 
     const client = new CodexAppServerClient({
-      codexPath: 'codex-test',
+      appServerPath: 'codex-app-server-test',
       serverRequestHandler: () => ({ ok: true }),
       exposeServerRequestsAsNotifications: false,
     })
@@ -381,7 +443,7 @@ describe('codexAppServerClient', () => {
   it('keeps NDJSON frames intact when JSON strings contain U+2028 line separators', async () => {
     const child = createAppServerProcess()
     managedProcessMock.mockReturnValueOnce(child)
-    const client = new CodexAppServerClient({ codexPath: 'codex-test' })
+    const client = new CodexAppServerClient({ appServerPath: 'codex-app-server-test' })
 
     const description = [
       'Use Flight Network ChatGPT app to find and compare real-time flight options directly in your chat.',
@@ -405,7 +467,7 @@ describe('codexAppServerClient', () => {
   it('ignores plaintext stdout pollution instead of failing the turn via jsonrepair', async () => {
     const child = createAppServerProcess()
     managedProcessMock.mockReturnValueOnce(child)
-    const client = new CodexAppServerClient({ codexPath: 'codex-test' })
+    const client = new CodexAppServerClient({ appServerPath: 'codex-app-server-test' })
 
     const pending = client.nextNotification()
     child.stdout.write('\\n\\nSimply type @Flight Network followed by your request\n')

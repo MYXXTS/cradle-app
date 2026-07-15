@@ -31,6 +31,8 @@ Codex UI slots are projected from the app-server capability manifest and declare
 - `tools/`: Codex tool identifier and app-server item payload mapper.
 - `app-server-protocol/`: Generated TypeScript bindings from `codex app-server generate-ts --experimental --out apps/server/src/modules/chat-runtime-providers/codex/app-server-protocol`. Do not edit generated files by hand.
 
+本地资源从同一个 Codex release 同步完整 `codex` 与独立 `codex-app-server`：协议生成固定使用前者的 `codex app-server generate-ts`，Desktop 发行包只携带后者。运行时优先使用独立二进制的 stdio transport，并设置 `--session-source cli`。非 Desktop 环境按 `CRADLE_CODEX_APP_SERVER_PATH`、`PATH` 中的 `codex-app-server`、最后 `codex app-server` 的顺序解析；最后一种 fallback 仍由 Codex 报告为 VSCode session source。
+
 ## Regeneration
 
 After regenerating `app-server-protocol/`, run `pnpm --filter @cradle/server generate:codex-app-server-capabilities` to refresh `app-server/capabilities.ts`. The capability generator derives method names and params from the generated protocol files, and keeps only Cradle-owned runtime semantics such as stream-capable methods in the generator.

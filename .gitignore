@@ -18,6 +18,8 @@ chronicle/target/
 apps/desktop/release
 apps/desktop/resources/codex/**/codex
 apps/desktop/resources/codex/**/codex.exe
+apps/desktop/resources/codex/**/codex-app-server
+apps/desktop/resources/codex/**/codex-app-server.exe
 apps/desktop/resources/codex/**/codex-runtime.json
 apps/desktop/resources/relayd/**/relayd
 apps/desktop/resources/relayd/**/relayd.exe

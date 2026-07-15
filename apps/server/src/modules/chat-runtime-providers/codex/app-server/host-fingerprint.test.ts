@@ -162,17 +162,17 @@ describe('createCodexAppServerHostFingerprint', () => {
     expect(fp1).not.toBe(fp2)
   })
 
-  it('includes codexPath in fingerprint', () => {
+  it('includes app-server executable paths in fingerprint', () => {
     const fp1 = createCodexAppServerHostFingerprint({
       options: {
-        codexPath: '/usr/local/bin/codex',
+        appServerPath: '/usr/local/bin/codex-app-server',
       },
       chatgptAuth: null,
     })
 
     const fp2 = createCodexAppServerHostFingerprint({
       options: {
-        codexPath: '/opt/codex/bin/codex',
+        appServerPath: '/opt/codex/bin/codex-app-server',
       },
       chatgptAuth: null,
     })
