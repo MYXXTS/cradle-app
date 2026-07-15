@@ -26,6 +26,10 @@ import { cn } from '~/lib/cn'
 import { chatSelectors, useChatStore } from '~/store/chat'
 
 import { MessageBubble } from '../rendering/message-bubble'
+import {
+  readShareExportTitle,
+  readShareMessagePreview,
+} from './chat-read-surface-projection'
 
 type ExportScope = 'all' | 'selected'
 
@@ -37,7 +41,6 @@ interface ChatShareExportProps {
 const SHARE_SURFACE_WIDTH = 960
 const EXPORT_SCALE = 2
 const MAX_CANVAS_SIZE = 32_767
-const WHITESPACE_RE = /\s+/g
 const FILENAME_TIMESTAMP_RE = /[:.]/g
 const TRANSPARENT_COLOR_RE = /^rgba\(0,\s*0,\s*0,\s*0\)$/i
 const EMPTY_MESSAGES: UIMessage[] = []
@@ -53,30 +56,6 @@ function formatRole(role: UIMessage['role']): string {
     default:
       return 'Message'
   }
-}
-
-function readMessagePreview(message: UIMessage): string {
-  const text = message.parts
-    .flatMap(part => part.type === 'text' ? [(part as { text: string }).text] : [])
-    .join(' ')
-    .trim()
-    .replace(WHITESPACE_RE, ' ')
-
-  if (text) {
-    return text
-  }
-
-  const hasFile = message.parts.some(part => part.type === 'file')
-  if (hasFile) {
-    return 'File attachment'
-  }
-
-  const hasTool = message.parts.some(part => part.type === 'dynamic-tool')
-  if (hasTool) {
-    return 'Tool activity'
-  }
-
-  return 'Message content'
 }
 
 function createExportFilename(sessionId: string | null): string {
@@ -101,21 +80,6 @@ function readExportBackgroundColor(node: HTMLElement): string {
   }
 
   return '#ffffff'
-}
-
-function readExportTitle(messages: UIMessage[]): string {
-  const text = messages
-    .flatMap(message => message.parts)
-    .flatMap(part => part.type === 'text' ? [(part as { text: string }).text] : [])
-    .join(' ')
-    .trim()
-    .replace(WHITESPACE_RE, ' ')
-
-  if (!text) {
-    return 'Conversation'
-  }
-
-  return text.length > 42 ? `${text.slice(0, 42)}...` : text
 }
 
 function downloadDataUrl(filename: string, dataUrl: string): void {
@@ -161,7 +125,7 @@ export function ChatShareExport({ sessionId, disabled }: ChatShareExportProps) {
   const selectedCount = selectedMessageIds.size
   const canExport = exportMessages.length > 0 && !busyAction
   const selectedCountLabel = `${selectedCount} selected`
-  const exportTitle = readExportTitle(exportMessages)
+  const exportTitle = readShareExportTitle(exportMessages)
 
   const toggleMessage = (messageId: string) => {
     setSelectedMessageIds((current) => {
@@ -349,7 +313,7 @@ export function ChatShareExport({ sessionId, disabled }: ChatShareExportProps) {
                             {`${index + 1}. ${formatRole(message.role)}`}
                           </span>
                           <span className="line-clamp-2 block text-[11px] leading-4">
-                            {readMessagePreview(message)}
+                            {readShareMessagePreview(message)}
                           </span>
                         </span>
                       </label>

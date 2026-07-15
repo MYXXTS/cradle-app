@@ -2,8 +2,8 @@ import type { FileUIPart } from 'ai'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { ComposerPastedText } from '~/features/chat/composer/pasted-text'
 import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
+import type { ComposerPastedText } from '~/features/chat/pasted-text/pasted-text'
 
 import { persistStorage } from './persist-storage'
 

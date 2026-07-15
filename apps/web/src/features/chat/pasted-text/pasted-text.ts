@@ -5,6 +5,12 @@ export interface ComposerPastedText {
   charCount: number
 }
 
+export interface PastedTextPromptProjection {
+  text: string
+  pastedTexts: ComposerPastedText[]
+  plainText: string
+}
+
 export const PASTED_TEXT_MIN_LINES = 25
 export const PASTED_TEXT_MIN_CHARS = 4_000
 
@@ -39,13 +45,13 @@ export function createComposerPastedText(
   }
 }
 
-export function pastedTextTitle(text: string): string {
+export function readPastedTextTitle(text: string): string | null {
   const line = normalizePastedText(text)
     .split('\n')
     .map(value => value.trim())
     .find(Boolean)
   if (!line) {
-    return 'Pasted text'
+    return null
   }
   return line.length > 100 ? `${line.slice(0, 97)}...` : line
 }
@@ -87,5 +93,17 @@ export function extractPastedTextsFromPrompt(prompt: string): {
   }
  catch {
     return { text: prompt, pastedTexts: [] }
+  }
+}
+
+export function projectPastedTextPrompt(prompt: string): PastedTextPromptProjection {
+  const extracted = extractPastedTextsFromPrompt(prompt)
+  const plainTextParts = [extracted.text, ...extracted.pastedTexts.map(item => item.text)].filter(
+    part => part.trim().length > 0,
+  )
+
+  return {
+    ...extracted,
+    plainText: plainTextParts.join('\n\n'),
   }
 }

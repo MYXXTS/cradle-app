@@ -6,8 +6,8 @@ import {
   queueServerComposerDraftWrite,
   readServerComposerDraft,
 } from '~/features/chat/commands/composer-draft-command'
-import type { ComposerPastedText } from '~/features/chat/composer/pasted-text'
 import type { ChatContextPart } from '~/features/chat/context/chat-context-parts'
+import type { ComposerPastedText } from '~/features/chat/pasted-text/pasted-text'
 import type { ComposerDraft } from '~/store/composer-draft'
 import { useComposerDraftStore } from '~/store/composer-draft'
 

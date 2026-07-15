@@ -62,7 +62,6 @@ import {
   readPlainTextLengthFromState,
   readPlainTextPresenceFromState,
   readRenderSegmentsFromState,
-  readUserDisplayText,
 } from './message-bubble-selectors'
 import {
   MessageFileLineCommentContextPartById,
@@ -83,6 +82,7 @@ import {
 } from './message-tool-blocks'
 import { RunDebugCaption } from './run-debug-caption'
 import { describeToolCall } from './tool-ui-classifier'
+import { UserMessageText } from './user-message-text'
 
 export { ChatRenderStoreProvider } from './chat-render-store'
 
@@ -827,12 +827,7 @@ function MessageBubbleView({
     switch (item.kind) {
       case 'text':
         if (isUser) {
-          const displayText = readUserDisplayText(item.text)
-          return (
-            <span key={item.key} className="whitespace-pre-wrap wrap-break-word">
-              {displayText}
-            </span>
-          )
+          return <UserMessageText key={item.key} text={item.text} />
         }
         return (
           <Streamdown

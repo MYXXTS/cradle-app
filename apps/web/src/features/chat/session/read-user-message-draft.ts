@@ -1,13 +1,13 @@
 import type { FileUIPart, UIMessage } from 'ai'
 
-import type { ComposerPastedText } from '../composer/pasted-text'
-import { extractPastedTextsFromPrompt } from '../composer/pasted-text'
 import type { ChatContextPart } from '../context/chat-context-parts'
 import {
   readFileLineCommentContextPart,
   readPluginContextPart,
   readSkillContextPart,
 } from '../context/chat-context-parts'
+import type { ComposerPastedText } from '../pasted-text/pasted-text'
+import { extractPastedTextsFromPrompt } from '../pasted-text/pasted-text'
 
 /**
  * The user-authored payload recovered from a persisted user message, shaped so

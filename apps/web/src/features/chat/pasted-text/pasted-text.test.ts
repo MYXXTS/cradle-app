@@ -4,6 +4,7 @@ import {
   appendPastedTextsToPrompt,
   createComposerPastedText,
   extractPastedTextsFromPrompt,
+  projectPastedTextPrompt,
   shouldCollapsePastedText,
 } from './pasted-text'
 
@@ -20,6 +21,28 @@ describe('pasted text composer payload', () => {
     expect(extractPastedTextsFromPrompt(prompt)).toMatchObject({
       text: 'Review this',
       pastedTexts: [{ text: pasted.text, lineCount: 2 }],
+    })
+  })
+
+  it('projects the transport block into safe plain text', () => {
+    const prompt = appendPastedTextsToPrompt('Review this', [
+      createComposerPastedText('alpha\nbeta', 'paste-1'),
+      createComposerPastedText('gamma', 'paste-2'),
+    ])
+
+    expect(projectPastedTextPrompt(prompt)).toMatchObject({
+      text: 'Review this',
+      pastedTexts: [{ text: 'alpha\nbeta' }, { text: 'gamma' }],
+      plainText: 'Review this\n\nalpha\nbeta\n\ngamma',
+    })
+  })
+
+  it('keeps malformed transport text visible instead of discarding it', () => {
+    const prompt = 'Review this\n\n<pasted_text>\nnot-json\n</pasted_text>'
+    expect(projectPastedTextPrompt(prompt)).toEqual({
+      text: prompt,
+      pastedTexts: [],
+      plainText: prompt,
     })
   })
 })

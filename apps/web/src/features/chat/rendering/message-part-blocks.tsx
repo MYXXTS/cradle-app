@@ -23,9 +23,9 @@ import {
   readRuntimeWarningPartFromState,
   readSkillContextPartFromState,
   readTextPartFromState,
-  readUserDisplayText,
 } from './message-bubble-selectors'
 import { MESSAGE_STREAMING_ANIMATION_MAX_CHARS } from './message-rendering-constants'
+import { UserMessageText } from './user-message-text'
 
 export const MessageTextPartById = ({
   sessionId,
@@ -44,16 +44,15 @@ export const MessageTextPartById = ({
 }) => {
   const text = useChatRenderStore(state =>
     readTextPartFromState(state, sessionId, messageId, partIndex, textTransform))
-  const displayText = isUser ? readUserDisplayText(text) : text
-  const animated = displayText.length <= MESSAGE_STREAMING_ANIMATION_MAX_CHARS
+  const animated = text.length <= MESSAGE_STREAMING_ANIMATION_MAX_CHARS
 
   if (isUser) {
-    return <span className="whitespace-pre-wrap wrap-break-word">{displayText}</span>
+    return <UserMessageText text={text} />
   }
 
   return (
     <Streamdown
-      content={displayText}
+      content={text}
       streaming={isActiveStreamingSegment}
       animationPreset={STREAMDOWN_RENDER_OPTIONS.animationPreset}
       animateMode={STREAMDOWN_RENDER_OPTIONS.animateMode}

@@ -16,6 +16,8 @@ import {
   isChatPluginContextPart,
   isChatSkillContextPart,
 } from '../context/chat-context-parts'
+import type { ComposerPastedText } from '../pasted-text/pasted-text'
+import { projectPastedTextPrompt } from '../pasted-text/pasted-text'
 import type { RuntimeWarningMessagePart } from '../runtime-warning'
 import { isRuntimeWarningMessagePart } from '../runtime-warning'
 import type { ChatRenderItem, ChatRenderSegment, FileMessagePart } from './chat-render-plan'
@@ -42,6 +44,12 @@ export interface MessageFrame {
   bangCommand: BangCommandMetadata | null
   bangResult: BangResultMetadata | null
   hasHiddenRuntimeUserInputTail: boolean
+}
+
+export interface UserTextDisplayProjection {
+  displayText: string
+  pastedTexts: ComposerPastedText[]
+  plainText: string
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -74,8 +82,22 @@ function readCodexGoalObjective(text: string): string | null {
   return objective.length > 0 ? objective : null
 }
 
+export function readUserTextDisplay(text: string): UserTextDisplayProjection {
+  const projection = projectPastedTextPrompt(text)
+  const displayText = readCodexGoalObjective(projection.text) ?? projection.text
+  const plainText = [displayText, ...projection.pastedTexts.map(item => item.text)]
+    .filter(part => part.trim().length > 0)
+    .join('\n\n')
+
+  return {
+    displayText,
+    pastedTexts: projection.pastedTexts,
+    plainText,
+  }
+}
+
 export function readUserDisplayText(text: string): string {
-  return readCodexGoalObjective(text) ?? text
+  return readUserTextDisplay(text).displayText
 }
 
 function projectMessageText(message: UIMessage, textTransform?: MessageTextTransform): UIMessage {
@@ -108,12 +130,16 @@ export function readMessageDisplayText(
   const projected = projectMessageText(message, textTransform)
   const goalObjective = readGoalMetadataObjective(message)
   if (projected.role === 'user' && goalObjective) {
-    return goalObjective
+    const pastedTexts = projected.parts.flatMap(part =>
+      part.type === 'text' ? readUserTextDisplay(part.text).pastedTexts : [])
+    return [goalObjective, ...pastedTexts.map(item => item.text)]
+      .filter(part => part.trim().length > 0)
+      .join('\n\n')
   }
   return projected.parts
     .flatMap(part =>
       part.type === 'text'
-        ? [projected.role === 'user' ? readUserDisplayText(part.text) : part.text]
+        ? [projected.role === 'user' ? readUserTextDisplay(part.text).plainText : part.text]
         : [])
     .join('\n')
 }
@@ -445,7 +471,7 @@ export function readPlainTextPresenceFromState(
   textTransform?: MessageTextTransform,
 ): boolean {
   const message = readMessageFromState(state, sessionId, messageId, textTransform)
-  return message?.parts.some(part => part.type === 'text' && part.text.length > 0) ?? false
+  return message ? readMessageDisplayText(message).length > 0 : false
 }
 
 export function readPlainTextLengthFromState(

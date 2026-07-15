@@ -9,6 +9,8 @@ import { cn } from '~/lib/cn'
 import { clampRatio } from '~/lib/number-format'
 import { chatSelectors, useChatStore } from '~/store/chat'
 
+import { readMinimapMessageText } from './chat-read-surface-projection'
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ChatMinimapProps {
@@ -72,16 +74,6 @@ function chatMinimapUiReducer(state: ChatMinimapUiState, action: ChatMinimapUiAc
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function extractText(msg: UIMessage): string {
-  const texts: string[] = []
-  for (const part of msg.parts) {
-    if (part.type === 'text') {
-      texts.push((part as { text: string }).text)
-    }
-  }
-  return texts.join('\n').trim() || (msg.role === 'user' ? getI18n().t('chat:minimap.userMessage') : getI18n().t('chat:minimap.assistantReply'))
-}
-
 interface ChatMinimapAnchor {
   messageIndex: number
   preview: string
@@ -91,7 +83,10 @@ function readAnchorData(message: UIMessage | undefined, messageIndex: number): C
   if (!message || message.role !== 'user') {
     return null
   }
-  const text = extractText(message)
+  const text = readMinimapMessageText(message)
+    || (message.role === 'user'
+      ? getI18n().t('chat:minimap.userMessage')
+      : getI18n().t('chat:minimap.assistantReply'))
   return {
     messageIndex,
     preview: text.length > 120 ? `${text.slice(0, 120)}…` : text,

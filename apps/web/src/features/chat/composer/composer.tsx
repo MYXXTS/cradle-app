@@ -29,6 +29,13 @@ import type { MentionItem, MentionPickerItem, PluginMentionItem } from '../menti
 import { MentionPanel } from '../mentions/mention-panel'
 import type { SkillMentionItem } from '../mentions/skill-mention-panel'
 import { SkillMentionPanel } from '../mentions/skill-mention-panel'
+import type { ComposerPastedText } from '../pasted-text/pasted-text'
+import {
+  appendPastedTextsToPrompt,
+  createComposerPastedText,
+  shouldCollapsePastedText,
+} from '../pasted-text/pasted-text'
+import { ComposerPastedTextCard } from '../pasted-text/pasted-text-card'
 import {
   buildPlanModeTogglePatch,
   isPlanRuntimeSettings,
@@ -64,13 +71,6 @@ import {
   reportComposerSubmitError,
   submitAndClearDraft,
 } from './composer-submit'
-import type { ComposerPastedText } from './pasted-text'
-import {
-  appendPastedTextsToPrompt,
-  createComposerPastedText,
-  shouldCollapsePastedText,
-} from './pasted-text'
-import { PastedTextCard } from './pasted-text-card'
 import type {
   PromptEditorController,
   PromptEditorSnapshot,
@@ -1089,7 +1089,7 @@ export function Composer({
             <div className="border-t border-[var(--color-border-content)] px-3 py-2">
               <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {pastedTexts.map(pastedText => (
-                  <PastedTextCard
+                  <ComposerPastedTextCard
                     key={pastedText.id}
                     pastedText={pastedText}
                     onRemove={() =>
