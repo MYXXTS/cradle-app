@@ -33,6 +33,11 @@ const workspaceRecord = t.Object({
   locator: workspaceLocator,
   gitIdentity: workspaceGitIdentity,
   identifier: t.String(),
+  availability: t.Union([
+    t.Literal('available'),
+    t.Literal('missing'),
+    t.Literal('remote'),
+  ]),
   pinned: t.Number(),
   createdAt: t.Number(),
   updatedAt: t.Number(),
@@ -122,6 +127,10 @@ export const WorkspaceModel = {
   updateBody: t.Object({
     name: t.Optional(nonBlankString),
     pinned: t.Optional(t.Boolean()),
+  }, { additionalProperties: false }),
+
+  relinkBody: t.Object({
+    path: nonBlankString,
   }, { additionalProperties: false }),
 
   idParams: t.Object({

@@ -366,6 +366,23 @@ export const workspace = new Elysia({
     body: WorkspaceModel.updateBody,
     response: { 200: WorkspaceModel.nullableRecord },
   })
+  .patch('/:workspaceId/location', ({ params, body }) => {
+    return nullableJsonResponse(Workspace.relinkWorkspace(
+      params.workspaceId,
+      trimValue(body.path),
+    ))
+  }, {
+    detail: {
+      'summary': 'Relink a missing local workspace location',
+      'description': 'Replace the last-known path of an offline historical workspace with an existing local directory.',
+      'x-cradle-cli': {
+        command: ['workspace', 'relink'],
+      },
+    },
+    params: WorkspaceModel.workspaceIdParams,
+    body: WorkspaceModel.relinkBody,
+    response: { 200: WorkspaceModel.nullableRecord },
+  })
   .post('/:workspaceId/migrate', ({ params, body }) => {
     return Workspace.migrateWorkspace(params.workspaceId, body.targetWorkspaceId, {
       entities: body.entities as Workspace.MigrateEntity[] | undefined,

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import type { Workspace } from '@cradle/db'
 import { automationDefinitions, kanbanBoards, workspaces } from '@cradle/db'
@@ -62,14 +62,42 @@ export interface WorkspaceView {
   locator: WorkspaceLocator
   gitIdentity: WorkspaceGitIdentity
   identifier: string
+  availability: 'available' | 'missing' | 'remote'
   pinned: number
   createdAt: number
   updatedAt: number
 }
 
-function generateIdentifier(name: string): string {
+export interface HistoricalWorkspaceEvidence {
+  sourceHostId: string
+  workspacePath: string
+  gitIdentity?: WorkspaceGitIdentity
+}
+
+export type HistoricalWorkspacePlan
+  = | {
+      kind: 'existing'
+      reason: 'exact-path' | 'containing-path' | 'git-identity'
+      historicalKey: string
+      workspace: WorkspaceView
+    }
+    | {
+      kind: 'create'
+      reason: 'available-project-root' | 'offline-historical-root'
+      historicalKey: string
+      name: string
+      locator: WorkspaceLocator
+      gitIdentity: WorkspaceGitIdentity
+      availability: 'available' | 'missing'
+    }
+
+type WorkspaceDb = ReturnType<typeof db>
+export type WorkspaceTransaction = Parameters<Parameters<WorkspaceDb['transaction']>[0]>[0]
+type WorkspaceWriteDatabase = Pick<WorkspaceDb | WorkspaceTransaction, 'select' | 'insert'>
+
+function generateIdentifier(name: string, database: Pick<WorkspaceWriteDatabase, 'select'> = db()): string {
   const base = name.slice(0, 3).toUpperCase().replace(NON_ALPHA_RE, 'X').padEnd(3, 'X')
-  const existing = db().select({ identifier: workspaces.identifier }).from(workspaces).all().map(w => w.identifier)
+  const existing = database.select({ identifier: workspaces.identifier }).from(workspaces).all().map(w => w.identifier)
   if (!existing.includes(base)) {
     return base
   }
@@ -103,6 +131,138 @@ export function resolveByLocator(locator: WorkspaceLocator): WorkspaceView | nul
 
 export function resolveByPath(path: string): WorkspaceView | null {
   return resolveByLocator(localWorkspaceLocator(path))
+}
+
+export function planHistoricalWorkspace(input: HistoricalWorkspaceEvidence): HistoricalWorkspacePlan {
+  const rawPath = input.workspacePath.trim()
+  const lexicalPath = input.sourceHostId === 'local' ? resolve(rawPath) : rawPath
+  const canonicalPath = canonicalWorkspacePath(input.sourceHostId, rawPath)
+  const locator: WorkspaceLocator = {
+    hostId: input.sourceHostId,
+    path: canonicalPath,
+  }
+  const exact = resolveByLocator({
+    hostId: input.sourceHostId,
+    path: lexicalPath,
+  }) ?? resolveByLocator(locator)
+  if (exact) {
+    return existingHistoricalWorkspacePlan(exact, 'exact-path')
+  }
+
+  const containing = findContainingWorkspace({
+    hostId: input.sourceHostId,
+    path: lexicalPath,
+  }) ?? findContainingWorkspace(locator)
+  if (containing) {
+    return existingHistoricalWorkspacePlan(containing, 'containing-path')
+  }
+
+  const byGitIdentity = findWorkspaceByGitIdentity(input.sourceHostId, input.gitIdentity)
+  if (byGitIdentity) {
+    return existingHistoricalWorkspacePlan(byGitIdentity, 'git-identity')
+  }
+
+  const available = input.sourceHostId === 'local' && isDirectory(canonicalPath)
+  const recoveredPath = available
+    ? findHistoricalProjectRoot(canonicalPath, input.gitIdentity?.repoRoot)
+    : canonicalPath
+  const gitIdentity: WorkspaceGitIdentity = {
+    ...input.gitIdentity,
+    repoRoot: input.gitIdentity?.repoRoot ?? (available ? recoveredPath : null),
+  }
+  const historicalKey = historicalWorkspaceKey(input.sourceHostId, recoveredPath, gitIdentity)
+  return {
+    kind: 'create',
+    reason: available ? 'available-project-root' : 'offline-historical-root',
+    historicalKey,
+    name: basename(recoveredPath) || 'Recovered Workspace',
+    locator: {
+      hostId: input.sourceHostId,
+      path: recoveredPath,
+    },
+    gitIdentity,
+    availability: available ? 'available' : 'missing',
+  }
+}
+
+export function recoverHistoricalWorkspace(input: HistoricalWorkspaceEvidence): WorkspaceView {
+  const plan = planHistoricalWorkspace(input)
+  if (plan.kind === 'existing') {
+    return plan.workspace
+  }
+  const existing = resolveByLocator(plan.locator)
+  if (existing) {
+    return existing
+  }
+  try {
+    return create({
+      name: plan.name,
+      locator: plan.locator,
+      gitIdentity: plan.gitIdentity,
+    })
+  }
+  catch (error) {
+    const concurrent = resolveByLocator(plan.locator)
+    if (concurrent) {
+      return concurrent
+    }
+    throw error
+  }
+}
+
+export function recoverHistoricalWorkspaceInTransaction(
+  transaction: WorkspaceTransaction,
+  input: HistoricalWorkspaceEvidence,
+): WorkspaceView {
+  const plan = planHistoricalWorkspace(input)
+  if (plan.kind === 'existing') {
+    return plan.workspace
+  }
+  return createWithDatabase(transaction, {
+    name: plan.name,
+    locator: plan.locator,
+    gitIdentity: plan.gitIdentity,
+  })
+}
+
+export function relinkWorkspace(id: string, path: string): WorkspaceView | null {
+  const record = getRecord(id)
+  if (!record) {
+    return null
+  }
+  const trimmedPath = path.trim()
+  if (!isDirectory(trimmedPath)) {
+    throw new AppError({
+      code: 'workspace_location_not_found',
+      status: 400,
+      message: 'Workspace location must be an existing directory',
+      details: { path: trimmedPath },
+    })
+  }
+  const currentLocator = readWorkspaceLocator(record)
+  if (!isLocalWorkspaceLocator(currentLocator)) {
+    throw unsupportedRemoteWorkspaceOperation('relink workspace location')
+  }
+  const nextLocator = localWorkspaceLocator(canonicalWorkspacePath('local', trimmedPath))
+  const existing = resolveByLocator(nextLocator)
+  if (existing && existing.id !== id) {
+    throw new AppError({
+      code: 'workspace_locator_exists',
+      status: 409,
+      message: 'Workspace locator already exists',
+      details: { locator: nextLocator, workspaceId: existing.id },
+    })
+  }
+  const gitIdentity = readWorkspaceGitIdentity(record)
+  const updated = db().update(workspaces).set({
+    locatorJson: serializeWorkspaceLocator(nextLocator),
+    gitIdentityJson: serializeWorkspaceGitIdentity({
+      ...gitIdentity,
+      repoRoot: findHistoricalProjectRoot(nextLocator.path, gitIdentity.repoRoot),
+    }),
+    updatedAt: Math.floor(Date.now() / 1000),
+  }).where(eq(workspaces.id, id)).returning().get()
+  return updated ? toWorkspaceView(updated) : null
 }
 
 export function addFromDirectory(path: string): WorkspaceView {
@@ -203,12 +363,19 @@ export function createAdHocWorkspace(input: { now?: Date } = {}): WorkspaceView 
 }
 
 export function create(input: { name: string, locator: WorkspaceLocator, gitIdentity?: WorkspaceGitIdentity }): WorkspaceView {
+  return createWithDatabase(db(), input)
+}
+
+function createWithDatabase(
+  database: WorkspaceWriteDatabase,
+  input: { name: string, locator: WorkspaceLocator, gitIdentity?: WorkspaceGitIdentity },
+): WorkspaceView {
   const id = randomUUID()
-  const identifier = generateIdentifier(input.name)
+  const identifier = generateIdentifier(input.name, database)
   const locatorJson = serializeWorkspaceLocator(input.locator)
   const gitIdentityJson = serializeWorkspaceGitIdentity(input.gitIdentity)
   try {
-    return toWorkspaceView(db().insert(workspaces).values({
+    return toWorkspaceView(database.insert(workspaces).values({
       id,
       name: input.name,
       locatorJson,
@@ -682,16 +849,117 @@ function createFileOperationResult(success: boolean, workspacePath: string | nul
 }
 
 function toWorkspaceView(row: Workspace): WorkspaceView {
+  const locator = readWorkspaceLocator(row)
   return {
     id: row.id,
     name: row.name,
-    locator: readWorkspaceLocator(row),
+    locator,
     gitIdentity: readWorkspaceGitIdentity(row),
     identifier: row.identifier,
+    availability: workspaceAvailability(locator),
     pinned: row.pinned,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
+}
+
+function existingHistoricalWorkspacePlan(
+  workspace: WorkspaceView,
+  reason: Extract<HistoricalWorkspacePlan, { kind: 'existing' }>['reason'],
+): HistoricalWorkspacePlan {
+  return {
+    kind: 'existing',
+    reason,
+    historicalKey: historicalWorkspaceKey(
+      workspace.locator.hostId,
+      workspace.locator.path,
+      workspace.gitIdentity,
+    ),
+    workspace,
+  }
+}
+
+function canonicalWorkspacePath(hostId: string, path: string): string {
+  if (hostId !== 'local') {
+    return path
+  }
+  const absolutePath = resolve(path)
+  try {
+    return realpathSync(absolutePath)
+  }
+  catch {
+    return absolutePath
+  }
+}
+
+function findContainingWorkspace(locator: WorkspaceLocator): WorkspaceView | null {
+  const candidates = list()
+    .filter(workspace => workspace.locator.hostId === locator.hostId)
+    .filter(workspace => isPathContainedBy(locator.path, workspace.locator.path))
+    .sort((left, right) => right.locator.path.length - left.locator.path.length)
+  return candidates[0] ?? null
+}
+
+function findWorkspaceByGitIdentity(
+  sourceHostId: string,
+  gitIdentity: WorkspaceGitIdentity | undefined,
+): WorkspaceView | null {
+  const originUrl = gitIdentity?.originUrl?.trim()
+  if (!originUrl) {
+    return null
+  }
+  const matches = list().filter(workspace =>
+    workspace.locator.hostId === sourceHostId
+    && workspace.gitIdentity.originUrl?.trim() === originUrl)
+  return matches.length === 1 ? matches[0]! : null
+}
+
+function findHistoricalProjectRoot(path: string, reportedRepoRoot: string | null | undefined): string {
+  if (reportedRepoRoot && isDirectory(reportedRepoRoot) && isPathContainedBy(path, reportedRepoRoot)) {
+    return canonicalWorkspacePath('local', reportedRepoRoot)
+  }
+  let current = canonicalWorkspacePath('local', path)
+  while (true) {
+    if (existsSync(join(current, '.git')) || existsSync(join(current, MULTI_WORKSPACE_CONFIG_FILE))) {
+      return current
+    }
+    const parent = dirname(current)
+    if (parent === current) {
+      return canonicalWorkspacePath('local', path)
+    }
+    current = parent
+  }
+}
+
+function historicalWorkspaceKey(
+  hostId: string,
+  path: string,
+  gitIdentity: WorkspaceGitIdentity,
+): string {
+  const originUrl = gitIdentity.originUrl?.trim()
+  return originUrl
+    ? `${hostId}:git:${originUrl}`
+    : `${hostId}:path:${path}`
+}
+
+function isPathContainedBy(path: string, root: string): boolean {
+  return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`)
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return lstatSync(path).isDirectory()
+  }
+  catch {
+    return false
+  }
+}
+
+function workspaceAvailability(locator: WorkspaceLocator): WorkspaceView['availability'] {
+  if (!isLocalWorkspaceLocator(locator)) {
+    return 'remote'
+  }
+  return isDirectory(locator.path) ? 'available' : 'missing'
 }
 
 export function readWorkspaceLocator(row: Pick<Workspace, 'locatorJson'>): WorkspaceLocator {
@@ -708,7 +976,9 @@ export function getLocalWorkspacePath(workspaceId: string): string | null {
     return null
   }
   const locator = readWorkspaceLocator(row)
-  return isLocalWorkspaceLocator(locator) ? locator.path : null
+  return isLocalWorkspaceLocator(locator) && workspaceAvailability(locator) === 'available'
+    ? locator.path
+    : null
 }
 
 function unsupportedRemoteWorkspaceOperation(operation: string): never {

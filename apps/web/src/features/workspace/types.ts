@@ -12,8 +12,10 @@ export function isLocalWorkspace(workspace: Pick<Workspace, 'locator'>): boolean
   return workspace.locator.hostId === LOCAL_WORKSPACE_HOST_ID
 }
 
-export function getLocalWorkspacePath(workspace: Pick<Workspace, 'locator'> | null | undefined): string | null {
-  return workspace && isLocalWorkspace(workspace) ? workspace.locator.path : null
+export function getLocalWorkspacePath(workspace: Pick<Workspace, 'locator' | 'availability'> | null | undefined): string | null {
+  return workspace && isLocalWorkspace(workspace) && workspace.availability === 'available'
+    ? workspace.locator.path
+    : null
 }
 
 export function getWorkspaceLocationLabel(workspace: Pick<Workspace, 'locator'>): string {

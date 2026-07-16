@@ -148,6 +148,7 @@
   "workspace.action.pin": "Pin project",
   "workspace.action.remove": "Remove workspace",
   "workspace.action.rename": "Rename",
+  "workspace.action.relink": "Relink location…",
   "workspace.action.unpin": "Unpin project",
   "workspace.aria.pinned": "Pinned project",
   "workspace.aria.toggleExpanded": "Toggle workspace collapse state",
@@ -200,6 +201,8 @@
   "workspace.dialog.remoteNoExistingWorkspaces": "No workspaces on this host yet. Browse a folder to create one remotely and add it here.",
   "workspace.dialog.rename": "Rename",
   "workspace.dialog.renameTitle": "Rename workspace",
+  "workspace.dialog.relinkDescription": "Choose the current location for {{name}}.",
+  "workspace.dialog.relinkTitle": "Relink Workspace",
   "workspace.dialog.selectedWorkspace": "Selected workspace",
   "workspace.migrate.action.back": "Back",
   "workspace.migrate.action.cancel": "Cancel",
@@ -284,5 +287,7 @@
   "workspace.toast.recognitionSingleFailed": "Workspace could not be added",
   "workspace.toast.remoteWorkspaceCreated": "Remote workspace added",
   "workspace.toast.remoteWorkspaceCreateFailed": "Remote workspace could not be added",
-  "workspace.toast.renameFailed": "Workspace could not be renamed"
+  "workspace.toast.renameFailed": "Workspace could not be renamed",
+  "workspace.toast.relinkFailed": "Workspace could not be relinked",
+  "workspace.state.missing": "Missing"
 }

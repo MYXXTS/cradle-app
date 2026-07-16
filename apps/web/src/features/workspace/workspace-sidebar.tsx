@@ -63,6 +63,7 @@ import {
   getSessionsByIdQueryKey,
   getWorksByIdQueryKey,
   getWorksQueryKey,
+  patchWorkspacesByWorkspaceIdLocationMutation,
   patchWorkspacesByWorkspaceIdMutation,
   postWorkspacesByWorkspaceIdFilesFileMutation,
   postWorkspacesByWorkspaceIdFilesFolderMutation,
@@ -2271,6 +2272,14 @@ function WorkspaceGroupDisclosure({
         <span className="truncate text-xs font-medium text-sidebar-foreground/80">
           {workspace.name}
         </span>
+        {workspace.availability === 'missing'
+? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[9px] font-medium text-destructive">
+            <CircleAlertIcon className="size-2.5" aria-hidden="true" />
+            {t('workspace.state.missing')}
+          </span>
+        )
+: null}
       </button>
 
       <Menu>
@@ -2494,6 +2503,7 @@ const WorkspaceGroup = memo(
     const { t } = useTranslation('workspace')
     const { t: tWork } = useTranslation('work')
     const queryClient = useQueryClient()
+    const { selectDirectory } = useDirectoryPicker()
     const [renameOpen, setRenameOpen] = useState(false)
     const [migrateOpen, setMigrateOpen] = useState(false)
     const [retainedSessionIds, setRetainedSessionIds] = useState<Set<string>>(() => new Set())
@@ -2562,6 +2572,15 @@ const WorkspaceGroup = memo(
     }, [currentUnixTimestamp, locallyStreamingSessionIds, projectFilter, sessions])
     const { mutateAsync: renameWorkspace } = useMutation({
       ...patchWorkspacesByWorkspaceIdMutation(),
+      onSuccess: () => {
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY }),
+          queryClient.invalidateQueries({ queryKey: ['workspace', workspace.id] }),
+        ])
+      },
+    })
+    const { mutateAsync: relinkWorkspace } = useMutation({
+      ...patchWorkspacesByWorkspaceIdLocationMutation(),
       onSuccess: () => {
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY }),
@@ -2838,6 +2857,28 @@ const WorkspaceGroup = memo(
     const handleOpenWorkspace = useCallback(() => {
       openWorkspaceDetail(workspace.id)
     }, [workspace.id])
+    const handleRelinkWorkspace = useCallback(async () => {
+      const path = await selectDirectory({
+        title: t('workspace.dialog.relinkTitle'),
+        description: t('workspace.dialog.relinkDescription', { name: workspace.name }),
+      })
+      if (!path) {
+        return
+      }
+      try {
+        await relinkWorkspace({
+          path: { workspaceId: workspace.id },
+          body: { path },
+        })
+      }
+      catch (error) {
+        toastManager.add({
+          type: 'error',
+          title: t('workspace.toast.relinkFailed'),
+          description: formatToastError(error),
+        })
+      }
+    }, [relinkWorkspace, selectDirectory, t, workspace.id, workspace.name])
     const handleOpenDefault = useCallback(async () => {
       if (!isElectron || !nativeIpc) {
         return
@@ -2960,6 +3001,15 @@ const WorkspaceGroup = memo(
           testId: `workspace-open-action-${workspace.id}`,
           invoke: handleOpenWorkspace,
         },
+        ...(workspace.availability === 'missing'
+          ? [{
+              key: 'relink',
+              label: t('workspace.action.relink'),
+              icon: <RefreshCwIcon />,
+              testId: `workspace-relink-${workspace.id}`,
+              invoke: handleRelinkWorkspace,
+            }] satisfies WorkspaceMenuAction[]
+          : []),
         ...(workspaceLocalPath
           ? [
               {
@@ -3056,11 +3106,13 @@ const WorkspaceGroup = memo(
         handleCopyAbsolutePath,
         handleOpenDefault,
         handleOpenWorkspace,
+        handleRelinkWorkspace,
         handleRevealInFinder,
         handleTogglePin,
         onDelete,
         t,
         workspace.id,
+        workspace.availability,
         workspaceLocalPath,
         workspacePinned,
       ],
