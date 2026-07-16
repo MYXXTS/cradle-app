@@ -21,7 +21,10 @@ import {
 } from './modules/chat-runtime/http/events.routes'
 import { linkedChatSessionProxyPlugin } from './modules/chat-runtime/http/linked-session-proxy'
 import { registerTurnCheckpointHooks } from './modules/chat-runtime/turn-checkpoint-hooks'
+import { createOpencodeManagedResourceAdapter } from './modules/chat-runtime-providers/opencode/managed-resource-adapter'
+import { OpencodeRuntimeInstallationService } from './modules/chat-runtime-providers/opencode/runtime-installation'
 import { createChronicleModule } from './modules/chronicle'
+import { createChronicleManagedResourceAdapter } from './modules/chronicle/managed-resource-adapter'
 import { conversationBridge } from './modules/conversation-bridge'
 import { desktop } from './modules/desktop'
 import { diffReview } from './modules/diff-review'
@@ -38,6 +41,8 @@ import { issue } from './modules/issue'
 import { issueAgent } from './modules/issue-agent'
 import { kanban } from './modules/kanban'
 import { linkPreview } from './modules/link-preview'
+import { createManagedResourcesModule } from './modules/managed-resources'
+import { ManagedResourceService } from './modules/managed-resources/service'
 import { modelRegistry } from './modules/model-registry'
 import { observability } from './modules/observability'
 import { opencodeServer } from './modules/opencode-server'
@@ -79,6 +84,8 @@ interface CreateServerAppOptions {
 interface CreateServerContractAppOptions {
   includeRuntimeHttpPlugins?: boolean
   downloadCenterService?: DownloadCenterService
+  managedResourceService?: ManagedResourceService
+  opencodeRuntimeInstallationService?: OpencodeRuntimeInstallationService
 }
 
 const HOSTED_WEB_APP_ORIGINS = new Set([
@@ -123,6 +130,12 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   const { includeRuntimeHttpPlugins = false } = options
   const downloadCenter = createDownloadCenterModule(options.downloadCenterService)
   const chronicle = createChronicleModule(downloadCenter.service)
+  const opencodeRuntimeInstallation = options.opencodeRuntimeInstallationService
+    ?? new OpencodeRuntimeInstallationService({ downloadCenter: downloadCenter.service })
+  const managedResources = options.managedResourceService ?? new ManagedResourceService([
+    createChronicleManagedResourceAdapter(downloadCenter.service),
+    createOpencodeManagedResourceAdapter(opencodeRuntimeInstallation),
+  ])
   const app = new Elysia({
     name: 'cradle.server.elysia',
     adapter: node(),
@@ -214,6 +227,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(chatRuntime)
   app.use(conversationBridge)
   app.use(chronicle)
+  app.use(createManagedResourcesModule(managedResources))
   app.use(opencodeServer)
   app.use(agentInteractionRuntime)
   app.use(desktop)
@@ -252,7 +266,7 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     conversationBridgeSupervisor,
     { destroyWorkspaceFileIndexes },
     localRelaydSupervisor,
-    { stopOpencodeServer },
+    { prepareOpencodeManagedPathForRemoval, stopOpencodeServer },
     { initHostConnectorService, getHostConnectorService },
     { shutdownRemoteHostConnections },
     { shutdownImageOcr },
@@ -281,7 +295,17 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     recoverPersistedRunProjections()
   }
 
-  const app = await createServerContractApp({ includeRuntimeHttpPlugins: true, downloadCenterService })
+  const opencodeRuntimeInstallationService = new OpencodeRuntimeInstallationService({
+    downloadCenter: downloadCenterService,
+    prepareManagedPathForRemoval: prepareOpencodeManagedPathForRemoval,
+  })
+  await opencodeRuntimeInstallationService.boot()
+
+  const app = await createServerContractApp({
+    includeRuntimeHttpPlugins: true,
+    downloadCenterService,
+    opencodeRuntimeInstallationService,
+  })
   registerAgentToolsMcpServer()
 
   // Initialize the always-on relay host-connector (connects to the host's own
@@ -310,6 +334,11 @@ export async function createServerApp(options: CreateServerAppOptions = {}) {
     stop: flushAllActiveRunSnapshots,
   })
   runtimeResources.register({ name: 'active-chat-runs', phase: 'drain', stop: abortAllRuns })
+  runtimeResources.register({
+    name: 'opencode-runtime-installation',
+    phase: 'drain',
+    stop: () => opencodeRuntimeInstallationService.shutdown(),
+  })
   runtimeResources.register({
     name: 'codex-usage-reconciliation',
     phase: 'cancel',

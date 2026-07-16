@@ -23,6 +23,7 @@ import { spawnManagedProcess } from '../../../infra/managed-process'
 import { createChildLogger } from '../../../logging/logger'
 import type { RuntimeLiveResourceLease } from '../../chat-runtime/runtime-provider-types'
 import type { RuntimeKind } from '../../provider-contracts/types'
+import { resolveOpencodeExecutable } from './runtime-installation'
 
 const logger = createChildLogger({ module: 'chat-runtime.opencode-server' })
 
@@ -53,6 +54,7 @@ export interface OpencodeManagedHost {
 interface OpencodePoolEntry {
   key: string
   binaryPath: string
+  managed: boolean
   cwd: string
   refCount: number
   hostPromise: Promise<OpencodeManagedHost>
@@ -65,6 +67,7 @@ export interface OpencodeRuntimePoolOptions {
   startupTimeoutMs?: number
   startHost?: (input: {
     binaryPath: string
+    managed: boolean
     cwd: string
     startupTimeoutMs: number
     onExit: (code: number | null, signal: NodeJS.Signals | null) => void
@@ -96,9 +99,10 @@ export class OpencodeRuntimePool {
 
   async acquire(input: {
     binaryPath?: string
+    managed?: boolean
     directory?: string
   }): Promise<RuntimeLiveResourceLease<OpencodeRuntimeResource>> {
-    const { binaryPath, cwd } = resolveOpencodeRuntimeHostOptions(input)
+    const { binaryPath, cwd, managed } = resolveOpencodeRuntimeHostOptions(input)
     const key = opencodePoolKey(binaryPath, cwd)
     let entry = this.entries.get(key)
 
@@ -107,7 +111,7 @@ export class OpencodeRuntimePool {
       entry.refCount += 1
     }
     else {
-      entry = this.createEntry({ key, binaryPath, cwd })
+      entry = this.createEntry({ key, binaryPath, managed, cwd })
       this.entries.set(key, entry)
     }
 
@@ -158,9 +162,24 @@ export class OpencodeRuntimePool {
     await Promise.allSettled(entries.map(entry => this.closeEntry(entry)))
   }
 
+  async preparePathForRemoval(binaryPath: string): Promise<boolean> {
+    const entries = Array.from(this.entries.values()).filter(entry => entry.binaryPath === binaryPath)
+    if (entries.some(entry => entry.refCount > 0 || entry.host === null)) {
+      return false
+    }
+    for (const entry of entries) {
+      if (this.entries.get(entry.key) === entry) {
+        this.entries.delete(entry.key)
+      }
+    }
+    await Promise.all(entries.map(entry => this.closeEntry(entry)))
+    return true
+  }
+
   private createEntry(input: {
     key: string
     binaryPath: string
+    managed: boolean
     cwd: string
   }): OpencodePoolEntry {
     const entry: OpencodePoolEntry = {
@@ -172,6 +191,7 @@ export class OpencodeRuntimePool {
     }
     entry.hostPromise = this.startHost({
       binaryPath: input.binaryPath,
+      managed: input.managed,
       cwd: input.cwd,
       startupTimeoutMs: this.startupTimeoutMs,
       onExit: (code, signal) => this.handleHostExit(entry, code, signal),
@@ -277,15 +297,18 @@ export class OpencodeRuntimePool {
 const opencodeRuntimePool = new OpencodeRuntimePool()
 
 export function resolveOpencodeBinaryPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.CRADLE_OPENCODE_PATH?.trim() || 'opencode'
+  return resolveOpencodeExecutable({ env }).command
 }
 
 export function resolveOpencodeRuntimeHostOptions(input: {
   binaryPath?: string
+  managed?: boolean
   directory?: string
-} = {}): { binaryPath: string, cwd: string } {
+} = {}): { binaryPath: string, managed: boolean, cwd: string } {
+  const executable = resolveOpencodeExecutable({ binaryPath: input.binaryPath })
   return {
-    binaryPath: input.binaryPath?.trim() || resolveOpencodeBinaryPath(),
+    binaryPath: executable.command,
+    managed: input.managed ?? executable.managed,
     cwd: input.directory?.trim() || process.cwd(),
   }
 }
@@ -297,10 +320,12 @@ export async function acquireOpencodeRuntimeResource(input: {
   config: Config
   directory?: string
   binaryPath?: string
+  managed?: boolean
 }): Promise<RuntimeLiveResourceLease<OpencodeRuntimeResource>> {
   return await opencodeRuntimePool.acquire({
     directory: input.directory,
     binaryPath: input.binaryPath,
+    managed: input.managed,
   })
 }
 
@@ -320,6 +345,10 @@ export async function stopOpencodeServer(): Promise<void> {
   await opencodeRuntimePool.shutdown()
 }
 
+export async function prepareOpencodeManagedPathForRemoval(binaryPath: string): Promise<boolean> {
+  return await opencodeRuntimePool.preparePathForRemoval(binaryPath)
+}
+
 /** Return the first live cwd-scoped host for the existing resource panel shape. */
 export function getOpencodeServerResources(): OpencodeServerResources {
   return opencodeRuntimePool.getResources()
@@ -327,6 +356,7 @@ export function getOpencodeServerResources(): OpencodeServerResources {
 
 async function startManagedOpencodeHost(input: {
   binaryPath: string
+  managed: boolean
   cwd: string
   startupTimeoutMs: number
   onExit: (code: number | null, signal: NodeJS.Signals | null) => void
@@ -334,6 +364,7 @@ async function startManagedOpencodeHost(input: {
   const port = await findAvailablePort()
   const { process: proc, url } = await launchOpencodeServer({
     binaryPath: input.binaryPath,
+    managed: input.managed,
     cwd: input.cwd,
     port,
     startupTimeoutMs: input.startupTimeoutMs,
@@ -369,6 +400,7 @@ async function startManagedOpencodeHost(input: {
 
 function launchOpencodeServer(input: {
   binaryPath: string
+  managed: boolean
   cwd: string
   port: number
   startupTimeoutMs: number
@@ -442,6 +474,7 @@ function launchOpencodeServer(input: {
 
 export function createOpencodeServerProcessOptions(input: {
   binaryPath: string
+  managed?: boolean
   cwd: string
   port: number
 }): ManagedSpawnOptions {
@@ -450,6 +483,7 @@ export function createOpencodeServerProcessOptions(input: {
     command: input.binaryPath,
     args: ['serve', '--hostname=127.0.0.1', `--port=${input.port}`],
     cwd: input.cwd,
+    ...(input.managed ? { env: { ...process.env, OPENCODE_DISABLE_AUTOUPDATE: '1' } } : {}),
     stdin: 'ignore',
     shutdownGraceMs: 3_000,
   }

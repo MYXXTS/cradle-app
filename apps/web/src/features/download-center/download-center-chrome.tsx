@@ -6,9 +6,9 @@ import { Button } from '~/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { cn } from '~/lib/cn'
 import { formatCompactBytes } from '~/lib/number-format'
-import { openSettingsSection } from '~/navigation/navigation-commands'
+import { openResources, openSettingsSection } from '~/navigation/navigation-commands'
 
-import { downloadErrorKey, downloadStatusKey, retryOwner } from './presentation'
+import { downloadErrorKey, downloadStatusKey, retryDestination } from './presentation'
 import type { DownloadTask } from './types'
 import { isActiveDownload } from './types'
 import { useDownloadCenter, useDownloadCenterCancel } from './use-download-center'
@@ -23,10 +23,11 @@ function taskProgress(task: DownloadTask): string {
   return `${formatCompactBytes(task.transferredBytes)} / ${formatCompactBytes(task.totalBytes)}`
 }
 
-export const DownloadTaskRow = memo(({ task }: { task: DownloadTask }) => {
+export const DownloadTaskRow = memo(({ task, showFileName = false }: { task: DownloadTask, showFileName?: boolean }) => {
   const { t } = useTranslation('chrome')
   const cancel = useDownloadCenterCancel()
   const active = isActiveDownload(task)
+  const retryTarget = retryDestination(task)
   const percent = task.totalBytes && task.totalBytes > 0
     ? Math.min(100, Math.round((task.transferredBytes / task.totalBytes) * 100))
     : null
@@ -36,6 +37,7 @@ export const DownloadTaskRow = memo(({ task }: { task: DownloadTask }) => {
         <div className="min-w-0 flex-1">
           <p className="truncate text-[12px] font-medium text-foreground">{task.owner.displayName || task.fileName}</p>
           <p className="truncate text-[11px] text-muted-foreground">
+            {showFileName ? `${task.fileName} · ` : ''}
 {task.owner.namespace}
 {' '}
 ·
@@ -67,13 +69,13 @@ export const DownloadTaskRow = memo(({ task }: { task: DownloadTask }) => {
           </p>
         </div>
       )}
-      {task.status === 'failed' && retryOwner(task) && (
+      {task.status === 'failed' && retryTarget && (
         <Button
           type="button"
           variant="ghost"
           size="xs"
           className="mt-1.5 active:scale-[0.96]"
-          onClick={() => openSettingsSection(retryOwner(task)!)}
+          onClick={() => retryTarget === 'resources' ? openResources() : openSettingsSection(retryTarget)}
         >
           {t('download.action.openOwnerRetry')}
         </Button>
@@ -116,6 +118,15 @@ export function DownloadCenterChrome({ className }: { className?: string }) {
 {recent.slice(0, 5).map(task => <DownloadTaskRow key={`${task.scope}:${task.taskId}`} task={task} />)}
 </div>
 )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-0.5 w-full justify-center transition-transform active:scale-[0.96]"
+          onClick={() => openResources()}
+        >
+          {t('download.action.viewAll')}
+        </Button>
       </PopoverContent>
     </Popover>
   )

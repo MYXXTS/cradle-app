@@ -42,6 +42,7 @@ import { AppError } from '../../errors/app-error'
 import { currentUnixSeconds } from '../../helpers/time'
 import { db, getServerConfig } from '../../infra'
 import { createLanguageModel, detectApiFormat } from '../chat-runtime-engine/providers'
+import { toManagedResourceDownloadOwner } from '../managed-resources/service'
 import * as ProviderTargets from '../provider-targets/service'
 import { readSecret } from '../secrets/service'
 import * as DaemonManager from './daemon-manager'
@@ -548,7 +549,7 @@ let embeddingRuntimeHealth: {
 type ChronicleDb = ReturnType<typeof db>
 type ChronicleTx = Parameters<Parameters<ChronicleDb['transaction']>[0]>[0]
 
-type ModelResourceCategory = 'ocr' | 'audio-vad' | 'audio-asr' | 'speaker' | 'embedding' | 'pii'
+export type ModelResourceCategory = 'ocr' | 'audio-vad' | 'audio-asr' | 'speaker' | 'embedding' | 'pii'
 const ModelResourceCategorySchema = z.enum(['ocr', 'audio-vad', 'audio-asr', 'speaker', 'embedding', 'pii'])
 type ModelResourceStatus = 'available' | 'missing' | 'installing' | 'installed' | 'error'
 type AudioProcessingStatus = 'not-implemented' | 'pending' | 'ready' | 'error'
@@ -1093,6 +1094,22 @@ export interface ModelResourceEntry {
   sizeBytes: number | null
   metadata: Record<string, unknown>
   updatedAt: number
+}
+
+export interface ChronicleModelResourceDeclaration {
+  key: {
+    namespace: 'chronicle'
+    resourceType: 'model-resource'
+    resourceId: ModelResourceCategory
+  }
+  displayName: string
+  description: string
+  kind: 'model'
+  required: boolean
+  availableVersion: string
+  downloadSizeBytes: number | null
+  fileBacked: boolean
+  manifestInstallable: boolean
 }
 
 export interface ModelResourceLocalFileInput {
@@ -3281,6 +3298,31 @@ export function embedTexts(input: EmbeddingRequestInput): EmbeddingResponse {
 export async function getModelResources(): Promise<ModelResourceEntry[]> {
   seedModelResources()
   return listModelResourceRows()
+}
+
+export function getModelResourceDeclarations(): ChronicleModelResourceDeclaration[] {
+  return (Object.keys(builtInModelManifests) as ModelResourceCategory[]).map((category) => {
+    const manifest = getModelResourceManifest(category)
+    const knownSizes = manifest.files.map(file => file.sizeBytes)
+    const downloadSizeBytes = knownSizes.every((size): size is number => size !== undefined)
+      ? knownSizes.reduce((total, size) => total + size, 0)
+      : null
+    return {
+      key: {
+        namespace: 'chronicle',
+        resourceType: 'model-resource',
+        resourceId: category,
+      },
+      displayName: manifest.displayName,
+      description: manifest.message,
+      kind: 'model',
+      required: manifest.required,
+      availableVersion: manifest.version,
+      downloadSizeBytes,
+      fileBacked: manifest.files.length > 0,
+      manifestInstallable: manifest.files.length > 0 && manifest.files.every(file => !!file.sourceUrl),
+    }
+  })
 }
 
 export async function reconcileModelResources(): Promise<ModelResourceEntry[]> {
@@ -8365,19 +8407,25 @@ function runModelResourceInstallFlight(
   return flight
 }
 
-function modelResourceDownloadOwner(category: ModelResourceCategory, file: ModelResourceFileManifest) {
-  return {
-    namespace: 'chronicle',
-    resourceType: 'model-resource-file',
-    resourceId: `${category}:${file.path}`,
-    displayName: `${getModelResourceManifest(category).displayName}: ${file.path}`,
-  }
+function modelResourceDownloadOwner(category: ModelResourceCategory) {
+  const manifest = getModelResourceManifest(category)
+  return toManagedResourceDownloadOwner({
+    key: {
+      namespace: 'chronicle',
+      resourceType: 'model-resource',
+      resourceId: category,
+    },
+    displayName: manifest.displayName,
+    description: manifest.message,
+    kind: 'model',
+    required: manifest.required,
+  })
 }
 
 function modelResourceDownloadRequest(category: ModelResourceCategory, file: ModelResourceFileManifest) {
   const urls = [file.sourceUrl, ...file.fallbackUrls].filter((url): url is string => !!url)
   return {
-    owner: modelResourceDownloadOwner(category, file),
+    owner: modelResourceDownloadOwner(category),
     fileName: basename(file.path),
     sources: urls.map((url, index) => ({
       id: `chronicle:${category}:${file.path}:source:${index}`,

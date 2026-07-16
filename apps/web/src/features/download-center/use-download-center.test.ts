@@ -3,7 +3,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { downloadErrorKey, downloadStatusKey, retryOwner } from './presentation'
+import { downloadErrorKey, downloadStatusKey, retryDestination } from './presentation'
 import type { DownloadTask } from './types'
 import { downloadTaskKey } from './types'
 import {
@@ -66,9 +66,11 @@ describe('download Center projection', () => {
   })
 
   it('routes retries to the owning feature rather than exposing a generic retry', () => {
-    expect(retryOwner(task({ owner: { namespace: 'chronicle', resourceType: 'model-resource-file', resourceId: 'x', displayName: 'Chronicle' } }))).toBe('chronicle')
-    expect(retryOwner(task({ owner: { namespace: 'desktop-update', resourceType: 'macos-update', resourceId: 'x', displayName: 'Desktop' } }))).toBe('desktop')
-    expect(retryOwner(task({ owner: { namespace: 'plugins', resourceType: 'archive', resourceId: 'x', displayName: 'Plugin' } }))).toBeNull()
+    expect(retryDestination(task({ owner: { namespace: 'chronicle', resourceType: 'model-resource', resourceId: 'audio-asr', displayName: 'Chronicle' } }))).toBe('resources')
+    expect(retryDestination(task({ owner: { namespace: 'opencode', resourceType: 'runtime', resourceId: 'cli', displayName: 'OpenCode' } }))).toBe('resources')
+    expect(retryDestination(task({ owner: { namespace: 'desktop-update', resourceType: 'macos-update', resourceId: 'x', displayName: 'Desktop' } }))).toBe('desktop')
+    expect(retryDestination(task({ owner: { namespace: 'chronicle', resourceType: 'model-resource-file', resourceId: 'x', displayName: 'Legacy Chronicle' } }))).toBeNull()
+    expect(retryDestination(task({ owner: { namespace: 'plugins', resourceType: 'archive', resourceId: 'x', displayName: 'Plugin' } }))).toBeNull()
   })
 
   it('redacts raw download errors from the global status label', () => {

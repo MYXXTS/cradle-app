@@ -125,6 +125,11 @@ import { register as registerExternalIssueSourceItemMove } from './external-issu
 import { register as registerExternalIssueSourceList } from './external-issue-source/list'
 import { register as registerExternalIssueSourceRefresh } from './external-issue-source/refresh'
 import { register as registerExternalIssueSourceRefreshSource } from './external-issue-source/refresh-source'
+import { register as registerExternalSessionImportImport } from './external-session-import/import'
+import { register as registerExternalSessionImportList } from './external-session-import/list'
+import { register as registerExternalSessionImportScan } from './external-session-import/scan'
+import { register as registerExternalSessionImportScanGet } from './external-session-import/scan/get'
+import { register as registerExternalSessionImportSync } from './external-session-import/sync'
 import { register as registerHealth } from './health'
 import { register as registerIssueActivityList } from './issue/activity/list'
 import { register as registerIssueCommentAdd } from './issue/comment/add'
@@ -160,6 +165,11 @@ import { register as registerIssueAgentSessionActivities } from './issue-agent-s
 import { register as registerIssueAgentSessionRerun } from './issue-agent-session/rerun'
 import { register as registerIssueAgentSessionStop } from './issue-agent-session/stop'
 import { register as registerLinkPreviewGet } from './link-preview/get'
+import { register as registerManagedResourcesGet } from './managed-resources/get'
+import { register as registerManagedResourcesInstall } from './managed-resources/install'
+import { register as registerManagedResourcesList } from './managed-resources/list'
+import { register as registerManagedResourcesUninstall } from './managed-resources/uninstall'
+import { register as registerManagedResourcesUpdate } from './managed-resources/update'
 import { register as registerObservabilityErrorPatterns } from './observability/error-patterns'
 import { register as registerObservabilityEvents } from './observability/events'
 import { register as registerObservabilityExport } from './observability/export'
@@ -330,6 +340,7 @@ import { register as registerWorkspaceList } from './workspace/list'
 import { register as registerWorkspaceMigrate } from './workspace/migrate'
 import { register as registerWorkspaceMultiFolderCreate } from './workspace/multi-folder/create'
 import { register as registerWorkspaceMultiFolderImport } from './workspace/multi-folder/import'
+import { register as registerWorkspaceRelink } from './workspace/relink'
 import { register as registerWorkspaceResolve } from './workspace/resolve'
 import { register as registerWorkspaceUpdate } from './workspace/update'
 import { register as registerWorkspaceWorktreeCleanup } from './workspace/worktree/cleanup'
@@ -462,6 +473,11 @@ export function registerGeneratedCommands(program: Command): void {
   registerExternalIssueSourceList(program)
   registerExternalIssueSourceRefresh(program)
   registerExternalIssueSourceRefreshSource(program)
+  registerExternalSessionImportImport(program)
+  registerExternalSessionImportList(program)
+  registerExternalSessionImportScan(program)
+  registerExternalSessionImportScanGet(program)
+  registerExternalSessionImportSync(program)
   registerHealth(program)
   registerIssueActivityList(program)
   registerIssueCommentAdd(program)
@@ -497,6 +513,11 @@ export function registerGeneratedCommands(program: Command): void {
   registerIssueAgentSessionRerun(program)
   registerIssueAgentSessionStop(program)
   registerLinkPreviewGet(program)
+  registerManagedResourcesGet(program)
+  registerManagedResourcesInstall(program)
+  registerManagedResourcesList(program)
+  registerManagedResourcesUninstall(program)
+  registerManagedResourcesUpdate(program)
   registerObservabilityErrorPatterns(program)
   registerObservabilityEvents(program)
   registerObservabilityExport(program)
@@ -667,6 +688,7 @@ export function registerGeneratedCommands(program: Command): void {
   registerWorkspaceMigrate(program)
   registerWorkspaceMultiFolderCreate(program)
   registerWorkspaceMultiFolderImport(program)
+  registerWorkspaceRelink(program)
   registerWorkspaceResolve(program)
   registerWorkspaceUpdate(program)
   registerWorkspaceWorktreeCleanup(program)

@@ -2,6 +2,8 @@
 
 This module owns the Server Download Center: durable server-scoped task state, queue admission, cancellation, retry eligibility, cleanup, and the redacted HTTP/CLI projection for artifact downloads. `@cradle/download-center` owns only the reusable HTTPS transfer runner and contract; Chronicle, plugin sources, and future server features own their request construction and artifact promotion.
 
+Download Center is transfer history, not install inventory. Features that can be installed or removed declare their stable identities through the Server Managed Resources catalog; their owner adapters remain authoritative for installation state and lifecycle. The Resources page joins declarations to transfer progress only by the exact `namespace/resourceType/resourceId` identity.
+
 ## Lifecycle and storage
 
 `DownloadCenterService` starts from `apps/server/src/app.ts`, marks interrupted active tasks terminal at boot, and is registered in the runtime resource registry for shutdown cancellation. It stores durable task metadata through the Download Center Drizzle schema and artifacts below `<server data dir>/download-center`. Completed artifacts are retained only until their owner promotes/releases them; periodic cleanup removes expired material.
@@ -20,9 +22,9 @@ Public routes are intentionally read/control only:
 
 The first three routes expose CLI metadata. Creation and artifact access stay internal to prevent callers from supplying arbitrary URLs or receiving filesystem paths.
 
-## Future runtime example
+## Managed runtime example
 
-A future server runtime should depend on this module at its composition boundary, not create another downloader or progress endpoint:
+A server runtime should depend on this module at its composition boundary, declare the same owner identity through Managed Resources, and not create another downloader or progress endpoint:
 
 ```ts
 const artifact = await downloadCenter.execute({

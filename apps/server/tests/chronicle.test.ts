@@ -1258,8 +1258,8 @@ describe('chronicle module', () => {
       expect(executeSpeakerDownload).toHaveBeenCalledWith(expect.objectContaining({
         owner: expect.objectContaining({
           namespace: 'chronicle',
-          resourceType: 'model-resource-file',
-          resourceId: 'speaker:speaker/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx',
+          resourceType: 'model-resource',
+          resourceId: 'speaker',
         }),
         sources: [{
           id: 'chronicle:speaker:speaker/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx:source:0',
@@ -3088,15 +3088,18 @@ describe('chronicle module', () => {
     let releaseSecond!: () => void
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
     const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve })
-    const execute = vi.fn(async (_request: { fileName: string }) => {
-      const artifactPath = join(artifactDir, request.fileName)
-      writeFileSync(artifactPath, request.fileName)
-      if (request.fileName === 'model.int8.onnx') { await firstGate }
+    const execute = vi.fn(async (downloadRequest: {
+      fileName: string
+      owner: { namespace: string, resourceType: string, resourceId: string }
+    }) => {
+      const artifactPath = join(artifactDir, downloadRequest.fileName)
+      writeFileSync(artifactPath, downloadRequest.fileName)
+      if (downloadRequest.fileName === 'model.int8.onnx') { await firstGate }
       else { await secondGate }
       return {
-        taskId: `task-${request.fileName}`,
+        taskId: `task-${downloadRequest.fileName}`,
         filePath: artifactPath,
-        bytes: request.fileName.length,
+        bytes: downloadRequest.fileName.length,
         checksum: { algorithm: 'sha256' as const, expected: null, actual: 'a'.repeat(64), matched: null },
       }
     })
@@ -3114,6 +3117,10 @@ describe('chronicle module', () => {
         await new Promise<void>(resolve => setTimeout(resolve, 10))
       }
       expect(execute).toHaveBeenCalledTimes(2)
+      expect(execute.mock.calls.map(([downloadRequest]) => downloadRequest.owner)).toEqual([
+        expect.objectContaining({ namespace: 'chronicle', resourceType: 'model-resource', resourceId: 'audio-asr' }),
+        expect.objectContaining({ namespace: 'chronicle', resourceType: 'model-resource', resourceId: 'audio-asr' }),
+      ])
       expect(release).not.toHaveBeenCalled()
       releaseSecond()
       await expect(Promise.all([first, second])).resolves.toEqual([
@@ -3182,7 +3189,7 @@ describe('chronicle module', () => {
       writeFileSync(artifactPath, request.fileName)
       return { taskId: 'interrupted-fallback-task', filePath: artifactPath, bytes: request.fileName.length, checksum: { algorithm: 'sha256' as const, expected: null, actual: 'a'.repeat(64), matched: null } }
     })
-    const execute = vi.fn(async (_request: { fileName: string }) => {
+    const execute = vi.fn(async (request: { fileName: string }) => {
       const artifactPath = join(artifactDir, request.fileName)
       writeFileSync(artifactPath, request.fileName)
       return { taskId: `new-${request.fileName}`, filePath: artifactPath, bytes: request.fileName.length, checksum: { algorithm: 'sha256' as const, expected: null, actual: 'a'.repeat(64), matched: null } }

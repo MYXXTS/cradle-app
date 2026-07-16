@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "sdkVersion": "1.17.11",
+  "releaseTag": "v1.17.11",
+  "repository": "anomalyco/opencode",
+  "targets": {
+    "darwin-arm64": {
+      "assetName": "opencode-darwin-arm64.zip",
+      "format": "zip",
+      "sizeBytes": 41266381,
+      "sha256": "40723446013dea8252eea4f180d707f75e805af54ee85a14fd7c126513ba8342"
+    },
+    "darwin-x64": {
+      "assetName": "opencode-darwin-x64-baseline.zip",
+      "format": "zip",
+      "sizeBytes": 43576694,
+      "sha256": "256fae47f27a60fb9994ecf46c564f24a86997d041911862fcf665554b94a527"
+    },
+    "linux-arm64-glibc": {
+      "assetName": "opencode-linux-arm64.tar.gz",
+      "format": "tar.gz",
+      "sizeBytes": 54589724,
+      "sha256": "6c0ae8212401c78f9dcddead35d385953c7a44eb1616309365b58503dbd1b4cd"
+    },
+    "linux-arm64-musl": {
+      "assetName": "opencode-linux-arm64-musl.tar.gz",
+      "format": "tar.gz",
+      "sizeBytes": 53185070,
+      "sha256": "8531805bdbcdd0b912652a989992a8857651fd09d715ee70c0eb9dd2f134953e"
+    },
+    "linux-x64-glibc": {
+      "assetName": "opencode-linux-x64-baseline.tar.gz",
+      "format": "tar.gz",
+      "sizeBytes": 54787669,
+      "sha256": "36064327d5a3fba662264f5726f517eafa26d1aefb0d59bc95e66bddccf3497b"
+    },
+    "linux-x64-musl": {
+      "assetName": "opencode-linux-x64-baseline-musl.tar.gz",
+      "format": "tar.gz",
+      "sizeBytes": 53557956,
+      "sha256": "cdb8f1a435f7ef67798276397fc890b762f7946d2d77e5cd9be38ecbe32ae245"
+    },
+    "win32-arm64": {
+      "assetName": "opencode-windows-arm64.zip",
+      "format": "zip",
+      "sizeBytes": 54004333,
+      "sha256": "cdc2c564b0a70bdba57fb94810a437cf64397b042c5a507aaed2840b8171f598"
+    },
+    "win32-x64": {
+      "assetName": "opencode-windows-x64-baseline.zip",
+      "format": "zip",
+      "sizeBytes": 55834359,
+      "sha256": "8f635056f0397a0af3376d6e17de7cfc1ba12f6c4100769d446f1041fa685438"
+    }
+  }
+}

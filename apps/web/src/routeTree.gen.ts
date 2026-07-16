@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageRouteImport } from './routes/usage'
+import { Route as ResourcesRouteImport } from './routes/resources'
 import { Route as PullRequestsRouteImport } from './routes/pull-requests'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as DiffRouteImport } from './routes/diff'
@@ -32,6 +33,11 @@ import { Route as PluginsRouteSegmentLocalIdRouteImport } from './routes/plugins
 const UsageRoute = UsageRouteImport.update({
   id: '/usage',
   path: '/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResourcesRoute = ResourcesRouteImport.update({
+  id: '/resources',
+  path: '/resources',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PullRequestsRoute = PullRequestsRouteImport.update({
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/diff': typeof DiffRoute
   '/onboarding': typeof OnboardingRoute
   '/pull-requests': typeof PullRequestsRoute
+  '/resources': typeof ResourcesRoute
   '/usage': typeof UsageRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
   '/chat/new': typeof ChatNewRoute
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/diff': typeof DiffRoute
   '/onboarding': typeof OnboardingRoute
   '/pull-requests': typeof PullRequestsRoute
+  '/resources': typeof ResourcesRoute
   '/usage': typeof UsageRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
   '/chat/new': typeof ChatNewRoute
@@ -178,6 +186,7 @@ export interface FileRoutesById {
   '/diff': typeof DiffRoute
   '/onboarding': typeof OnboardingRoute
   '/pull-requests': typeof PullRequestsRoute
+  '/resources': typeof ResourcesRoute
   '/usage': typeof UsageRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
   '/chat/new': typeof ChatNewRoute
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/diff'
     | '/onboarding'
     | '/pull-requests'
+    | '/resources'
     | '/usage'
     | '/chat/$sessionId'
     | '/chat/new'
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
     | '/diff'
     | '/onboarding'
     | '/pull-requests'
+    | '/resources'
     | '/usage'
     | '/chat/$sessionId'
     | '/chat/new'
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/diff'
     | '/onboarding'
     | '/pull-requests'
+    | '/resources'
     | '/usage'
     | '/chat/$sessionId'
     | '/chat/new'
@@ -264,6 +276,7 @@ export interface RootRouteChildren {
   DiffRoute: typeof DiffRoute
   OnboardingRoute: typeof OnboardingRoute
   PullRequestsRoute: typeof PullRequestsRoute
+  ResourcesRoute: typeof ResourcesRoute
   UsageRoute: typeof UsageRoute
   ChatSessionIdRoute: typeof ChatSessionIdRoute
   ChatNewRoute: typeof ChatNewRoute
@@ -283,6 +296,13 @@ declare module '@tanstack/react-router' {
       path: '/usage'
       fullPath: '/usage'
       preLoaderRoute: typeof UsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/resources': {
+      id: '/resources'
+      path: '/resources'
+      fullPath: '/resources'
+      preLoaderRoute: typeof ResourcesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pull-requests': {
@@ -437,6 +457,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiffRoute: DiffRoute,
   OnboardingRoute: OnboardingRoute,
   PullRequestsRoute: PullRequestsRoute,
+  ResourcesRoute: ResourcesRoute,
   UsageRoute: UsageRoute,
   ChatSessionIdRoute: ChatSessionIdRoute,
   ChatNewRoute: ChatNewRoute,

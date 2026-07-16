@@ -210,6 +210,7 @@ async function discoverOpenCodeModels(
       runtimeKind: input.runtimeKind,
       workspacePath: input.workspacePath,
       binaryPath: hostOptions.binaryPath,
+      managed: hostOptions.managed,
     }, dependencies.acquireRuntimeResource),
     dependencies.listCliModels(hostOptions),
   ])
@@ -262,6 +263,7 @@ async function listOpenCodeProviderInventory(
     runtimeKind: RuntimeKind
     workspacePath?: string
     binaryPath: string
+    managed: boolean
   },
   acquireRuntimeResource: typeof acquireOpencodeRuntimeResource,
 ): Promise<ProviderListResponse> {
@@ -272,6 +274,7 @@ async function listOpenCodeProviderInventory(
     config: {} satisfies Config,
     directory: input.workspacePath,
     binaryPath: input.binaryPath,
+    managed: input.managed,
   })
   try {
     const result = await lease.resource.client.provider.list({

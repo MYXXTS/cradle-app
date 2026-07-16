@@ -1,9 +1,21 @@
 import type { DownloadTask } from './types'
 
-/** Failed downloads return to their owning flow; the Download Center never retries itself. */
-export function retryOwner(task: DownloadTask): 'chronicle' | 'desktop' | null {
-  if (task.owner.namespace === 'chronicle') {
-    return 'chronicle'
+export type DownloadRetryDestination = 'resources' | 'desktop'
+
+/** Failed downloads return to their exact owning flow; the Download Center never retries itself. */
+export function retryDestination(task: DownloadTask): DownloadRetryDestination | null {
+  if (
+    task.owner.namespace === 'chronicle'
+    && task.owner.resourceType === 'model-resource'
+  ) {
+    return 'resources'
+  }
+  if (
+    task.owner.namespace === 'opencode'
+    && task.owner.resourceType === 'runtime'
+    && task.owner.resourceId === 'cli'
+  ) {
+    return 'resources'
   }
   if (task.owner.namespace === 'desktop-update') {
     return 'desktop'

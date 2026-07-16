@@ -6,17 +6,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { DownloadTaskRow } from './download-center-chrome'
 import type { DownloadTask } from './types'
 
-const { openSettingsSection } = vi.hoisted(() => ({ openSettingsSection: vi.fn() }))
+const { openResources, openSettingsSection } = vi.hoisted(() => ({
+  openResources: vi.fn(),
+  openSettingsSection: vi.fn(),
+}))
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
-vi.mock('~/navigation/navigation-commands', () => ({ openSettingsSection }))
+vi.mock('~/navigation/navigation-commands', () => ({ openResources, openSettingsSection }))
 vi.mock('./use-download-center', () => ({ useDownloadCenterCancel: () => vi.fn() }))
 
 function task(overrides: Partial<DownloadTask> = {}): DownloadTask {
   return {
     taskId: 'task-1',
 scope: 'server',
-owner: { namespace: 'chronicle', resourceType: 'model-resource-file', resourceId: 'x', displayName: 'Chronicle model' },
+owner: { namespace: 'chronicle', resourceType: 'model-resource', resourceId: 'audio-asr', displayName: 'Chronicle model' },
 fileName: 'model.bin',
 sourceId: null,
     status: 'failed',
@@ -38,7 +41,7 @@ describe('download center chrome', () => {
   it('navigates the retry action to the owning feature and never displays Bearer details', () => {
     render(<DownloadTaskRow task={task({ error: { code: 'updater_error', message: 'Authorization: Bearer secret-token', retryable: true } })} />)
     fireEvent.click(screen.getByText('download.action.openOwnerRetry'))
-    expect(openSettingsSection).toHaveBeenCalledWith('chronicle')
+    expect(openResources).toHaveBeenCalledOnce()
     expect(screen.getByText(/download.error.last/).textContent).toContain('download.error.network')
     expect(screen.queryByText(/Bearer secret-token/)).toBeNull()
   })

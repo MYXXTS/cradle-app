@@ -22,42 +22,40 @@ afterEach(async () => {
 
 describe('openCode runtime host options', () => {
   it('uses the configured binary and workspace cwd without injecting isolated OpenCode config', () => {
-    const previousBinaryPath = process.env.CRADLE_OPENCODE_PATH
-    process.env.CRADLE_OPENCODE_PATH = ' /opt/opencode-native '
+    const hostOptions = resolveOpencodeRuntimeHostOptions({ binaryPath: '/opt/opencode-native', directory: '/workspace/alpha' })
+    const launchOptions = createOpencodeServerProcessOptions({
+      ...hostOptions,
+      port: 45123,
+    })
 
-    try {
-      const hostOptions = resolveOpencodeRuntimeHostOptions({ directory: '/workspace/alpha' })
-      const launchOptions = createOpencodeServerProcessOptions({
-        ...hostOptions,
-        port: 45123,
-      })
-
-      expect(launchOptions).toEqual(expect.objectContaining({
-        command: '/opt/opencode-native',
-        cwd: '/workspace/alpha',
-      }))
-      expect(launchOptions).not.toHaveProperty('env')
-      expect(launchOptions).not.toHaveProperty('OPENCODE_CONFIG_CONTENT')
-      expect(launchOptions).not.toHaveProperty('OPENCODE_CONFIG_DIR')
-      expect(launchOptions).not.toHaveProperty('OPENCODE_DB')
-      expect(launchOptions).not.toHaveProperty('OPENCODE_DISABLE_PROJECT_CONFIG')
-    }
-    finally {
-      if (previousBinaryPath === undefined) {
-        delete process.env.CRADLE_OPENCODE_PATH
-      }
-      else {
-        process.env.CRADLE_OPENCODE_PATH = previousBinaryPath
-      }
-    }
+    expect(launchOptions).toEqual(expect.objectContaining({
+      command: '/opt/opencode-native',
+      cwd: '/workspace/alpha',
+    }))
+    expect(launchOptions).not.toHaveProperty('env')
+    expect(launchOptions).not.toHaveProperty('OPENCODE_CONFIG_CONTENT')
+    expect(launchOptions).not.toHaveProperty('OPENCODE_CONFIG_DIR')
+    expect(launchOptions).not.toHaveProperty('OPENCODE_DB')
+    expect(launchOptions).not.toHaveProperty('OPENCODE_DISABLE_PROJECT_CONFIG')
   })
 
-  it('falls back to the native binary and server cwd', () => {
-    expect(resolveOpencodeBinaryPath({})).toBe('opencode')
-    expect(resolveOpencodeRuntimeHostOptions()).toEqual({
-      binaryPath: resolveOpencodeBinaryPath(),
+  it('fails before spawn when no configured, managed, or PATH runtime exists', () => {
+    expect(() => resolveOpencodeBinaryPath({ PATH: '' })).toThrow(expect.objectContaining({
+      code: 'opencode_runtime_not_installed',
+    }))
+    expect(resolveOpencodeRuntimeHostOptions({ binaryPath: 'opencode-test' })).toEqual({
+      binaryPath: 'opencode-test',
+      managed: false,
       cwd: process.cwd(),
     })
+  })
+
+  it('suppresses auto-update only for managed hosts', () => {
+    expect(createOpencodeServerProcessOptions({ binaryPath: '/managed/opencode', managed: true, cwd: '/workspace', port: 45123 }).env)
+      .toMatchObject({ OPENCODE_DISABLE_AUTOUPDATE: '1' })
+    expect(createOpencodeServerProcessOptions({ binaryPath: '/external/opencode', managed: false, cwd: '/workspace', port: 45123 }))
+      .not
+.toHaveProperty('env')
   })
 })
 
@@ -106,20 +104,44 @@ describe('opencodeRuntimePool', () => {
     })
     const pool = new OpencodeRuntimePool({ idleTtlMs: 50, startHost })
 
-    const first = await pool.acquire({ directory: '/workspace/a' })
+    const first = await pool.acquire({ binaryPath: 'opencode-a', directory: '/workspace/a' })
     first.release()
     await vi.advanceTimersByTimeAsync(25)
-    const reacquired = await pool.acquire({ directory: '/workspace/a' })
+    const reacquired = await pool.acquire({ binaryPath: 'opencode-a', directory: '/workspace/a' })
     await vi.advanceTimersByTimeAsync(100)
     expect(hosts[0]?.close).not.toHaveBeenCalled()
 
     exitCallbacks[0]?.(1, null)
-    const restarted = await pool.acquire({ directory: '/workspace/a' })
+    const restarted = await pool.acquire({ binaryPath: 'opencode-a', directory: '/workspace/a' })
     expect(startHost).toHaveBeenCalledTimes(2)
     expect(restarted.resource).not.toBe(reacquired.resource)
 
     reacquired.release()
     restarted.release()
+    await pool.shutdown()
+  })
+
+  it('refuses active and pending removals, then disposes an idle path', async () => {
+    let finishStartup: ((host: OpencodeManagedHost) => void) | null = null
+    const pendingHost = new Promise<OpencodeManagedHost>((resolve) => { finishStartup = resolve })
+    const pendingPool = new OpencodeRuntimePool({ startHost: vi.fn(async () => await pendingHost) })
+    const pendingLease = pendingPool.acquire({ binaryPath: '/managed/pending', directory: '/workspace' })
+    await expect(pendingPool.preparePathForRemoval('/managed/pending')).resolves.toBe(false)
+    finishStartup!(createManagedHost('pending'))
+    const resolvedPendingLease = await pendingLease
+    resolvedPendingLease.release()
+    await pendingPool.shutdown()
+
+    const host = createManagedHost('managed')
+    const pool = new OpencodeRuntimePool({
+      idleTtlMs: 60_000,
+      startHost: vi.fn(async () => host),
+    })
+    const lease = await pool.acquire({ binaryPath: '/managed/opencode', directory: '/workspace' })
+    await expect(pool.preparePathForRemoval('/managed/opencode')).resolves.toBe(false)
+    lease.release()
+    await expect(pool.preparePathForRemoval('/managed/opencode')).resolves.toBe(true)
+    expect(host.close).toHaveBeenCalledOnce()
     await pool.shutdown()
   })
 })

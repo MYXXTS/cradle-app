@@ -23,6 +23,12 @@ reopen the wider audit.
 half-open 收包中断、transport seq/run cursor 混淆与不可恢复 end handling。它是已完成
 Plan 014 的后续 breaking protocol refactor，不涉及 Desktop、滚动 UI 或 DB schema。
 
+2026-07-15 在 commit `3dca102` 上补充 Plans 056-057：Plan 056 先建立声明式
+Managed Resource Catalog 与统一 Resources/Transfers 页面，让 owner 在下载前声明资源，
+并以精确 resource identity 关联 Download Center 任务；Plan 057 再把内置 OpenCode
+adapter/SDK 对应的 `opencode` CLI 接成可选 managed runtime。两者是聚焦的
+`/improve plan`，不重启全仓审计，也不把 Download Center 扩成 generic installer。
+
 Each executor: read the plan fully before starting, run its drift check, honor its
 STOP conditions, and update your row below when done. Plans are self-contained —
 they do not assume you saw the audit or any other plan.
@@ -85,8 +91,10 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 050  | Own Session projection and cache coherence               | P0       | L      | 040        | TODO                                                                                  |
 | 051  | Own Issue–execution association end to end               | P0       | L      | 050        | TODO                                                                                  |
 | 052  | Make Codex app-server provider-owned and thread-multiplexed | P0     | XL     | 041        | TODO                                                                                  |
-| 054  | Make WebSocket run streams resumable and liveness-aware   | P0       | L      | 024, 040   | TODO                                                                                  |
+| 054  | Make WebSocket run streams resumable and liveness-aware   | P0       | L      | 024, 040   | DONE                                                                                  |
 | 055  | Record authoritative Cradle Codex model-call usage in `usage_logs` | P0 | L | operator cleanup of 053 | DONE |
+| 056  | Declare managed resources and add a unified Resources page | P1      | L      | 047        | DONE                                                                                  |
+| 057  | Manage OpenCode CLI as an optional built-in runtime       | P1       | L      | 047, 056   | DONE                                                                                  |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
@@ -108,6 +116,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED 
   Codex，将现有 `usage_logs` 深化为逐模型调用事实表，并要求每条 Codex event 都有确定的
   Cradle session、Provider thread/turn 与 model。明确排除全局 `~/.codex`、Claude
   transcripts、single-writer 机制与平行 usage event table。
+
+- 2026-07-15，Plan 054：`run-chunks` 已迁移到 Chat Runtime-owned append-only
+  `{ runId, cursor }` log，删除 sender-local transport seq 与 mutable buffer index resume；
+  Web sync client 增加 pong deadline、socket generation guard、single initial subscribe 和
+  retryable end recovery。Focused Server WebSocket/runtime tests、完整 Web suite、Web/Server
+  typecheck、模块/API boundary、scoped lint 与 diff hygiene 均通过。
 
 - 2026-07-05, Plan 001: `DesktopBrowserManager` now updates already-attached `WebContentsView` bounds without re-adding the child view, hides attached views via `setVisible(false)`, and keeps destruction removal on the runtime cleanup path. Renderer bounds sync now uses one rAF frame and no longer pauses for ordinary layout drag/animation; `nativeBoundsPaused` is retained only for browser-panel closing. Native surface layering is centralized through a reference-counted suppression store, browser address suggestions use occlusion props, and global `Dialog` / `AlertDialog` / `Sheet` primitives suppress the native browser surface while open. Legacy browser backend/script/annotation-overlay files were already absent; `setBorderRadius` was confirmed present in Electron 42.4.1 types but skipped because there is no current native viewport radius requirement. Verification passed `pnpm typecheck`, `pnpm test` (245 files / 1345 tests), full `pnpm --filter @cradle/web test` (71 files / 302 tests), focused browser web tests, root Vitest for `apps/desktop/src/main/browser-manager.test.ts`, local ESLint for `browser-panel.test.tsx`, and `git diff --check`. `pnpm lint` was run and still fails on existing repository-wide lint debt outside Plan 001 paths; `react-doctor --diff` exits 1 on existing `file-tree.tsx` / `await-panel.tsx` findings but remains at score 70 with no Plan 001 file findings. The originally listed desktop filtered Vitest command is not usable in this repo state because it resolves root project config paths from `apps/desktop`.
 - 2026-07-05, Plan 013: root `pnpm test` now includes `node`, `apps/server`, and `apps/web` Vitest projects. The newly exposed `src/components/editor/markdown-editor.test.tsx` i18n provider gap was fixed, and root test now passes 238 files / 1310 tests.
@@ -192,6 +206,8 @@ splitting until this track is stable.
 - 051 follows 050 so Issue association mutations reuse the Session projection gateway. Server-side workspace invariants and participant-owned writes are mandatory before Web cache reconciliation.
 - 052 follows completed Plan 041's lifecycle ownership rules and is independent of Plans 042-051. Its internal order is mandatory: characterize isolation -> retain idle hosts -> establish the provider host/router -> move session env to thread config -> bind/resume threads -> migrate all callers -> ratchet docs/tests. Do not land a rollback-only resume patch first.
 - 054 follows completed Plans 024 and 040: chat-runtime owns the run cursor/log, while persisted Session projections remain the recovery authority when exact in-memory replay is impossible. It does not depend on unfinished Plans 044 or 050, but those plans must preserve its terminal-publication and snapshot-recovery contracts.
+- 056 consumes Plan 047's already-landed thin Download Center but adds a separate declaration/dispatch layer: Managed Resources owns catalog projection and exact-key command routing; each adapter keeps discovery, versions, installation truth, storage, activation, rollback, and uninstall; Download Center keeps bytes/cancel/resume/history. Chronicle model manifests are the first adapter. Reconcile 047's stale TODO row and execute from a clean worktree because current Server composition, Chronicle, navigation, locale, and generated-client paths overlap operator work.
+- 057 follows 056 and declares `{ opencode, runtime, cli }` through the shared catalog. OpenCode owns release identity, archive extraction, executable verification, installation truth, process leases, and uninstall; its archive transfer uses the same exact resource identity. It must not add an OpenCode-only Settings installer or parallel HTTP command surface.
 - 040 supersedes blocked Plan 023: generated clients remain transport infrastructure, while feature-owned gateways own query/error/invalidation semantics.
 - 041 supersedes blocked Plans 020 and 021: dependency enforcement and lifecycle ownership precede god-file extraction.
 

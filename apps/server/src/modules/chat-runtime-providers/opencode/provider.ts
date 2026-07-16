@@ -27,6 +27,7 @@ import type {
   GetUiSlotStatesInput,
   ListRuntimeModelsInput,
   ProviderContext,
+  ProviderHealthStatus,
   ProviderThread,
   ProviderThreadDeleteInput,
   ProviderThreadDeleteResult,
@@ -90,6 +91,7 @@ import { OPENCODE_RUNTIME_OWNED_PROVIDER_TARGETS } from './owned-provider-target
 import { createOpencodeRuntimePresentation } from './presentation'
 import type { OpencodeRuntimeResource } from './runtime-context'
 import { acquireOpencodeRuntimeResource, tryRetainOpencodeRuntimeResource } from './runtime-context'
+import { checkOpencodeRuntimeHealth } from './runtime-installation'
 import type { OpencodeSubagentBinding } from './subagent-bridge'
 import {
   OpencodeSubagentRegistry,
@@ -186,6 +188,10 @@ export class OpencodeProvider implements ChatRuntime {
       runtimeKind: this.runtimeKind,
       workspacePath: input.workspacePath,
     })
+  }
+
+  async healthCheck(): Promise<ProviderHealthStatus> {
+    return await checkOpencodeRuntimeHealth()
   }
 
   getDraftPresentation(): RuntimePresentationCapabilities {

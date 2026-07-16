@@ -5,7 +5,7 @@ import type { DownloadCenterSnapshot, DownloadTask } from './types'
 import { downloadTaskKey, isActiveDownload } from './types'
 
 type Listener = () => void
-type DownloadOwnerSelector = Pick<DownloadTask['owner'], 'namespace'> & Partial<Pick<DownloadTask['owner'], 'resourceType'>>
+type DownloadOwnerSelector = Pick<DownloadTask['owner'], 'namespace'> & Partial<Pick<DownloadTask['owner'], 'resourceType' | 'resourceId'>>
 
 const EMPTY_SNAPSHOT: DownloadCenterSnapshot = { tasks: [], active: [], recent: [] }
 const transports = [serverDownloadCenterTransport, desktopDownloadCenterTransport].filter((transport): transport is NonNullable<typeof transport> => transport !== null)
@@ -187,16 +187,22 @@ function subscribeOwner(key: string, listener: Listener): () => void {
 }
 
 function ownerKey(owner: DownloadOwnerSelector): string {
-  return `${owner.namespace}:${owner.resourceType ?? '*'}`
+  return JSON.stringify([owner.namespace, owner.resourceType ?? null, owner.resourceId ?? null])
 }
 
 function ownerFromKey(key: string): DownloadOwnerSelector {
-  const [namespace, resourceType] = key.split(':')
-  return resourceType === '*' ? { namespace: namespace! } : { namespace: namespace!, resourceType: resourceType! }
+  const [namespace, resourceType, resourceId]: [string, string | null, string | null] = JSON.parse(key)
+  return {
+    namespace,
+    ...(resourceType ? { resourceType } : {}),
+    ...(resourceId ? { resourceId } : {}),
+  }
 }
 
 function selectOwnerTasks(tasks: readonly DownloadTask[], owner: DownloadOwnerSelector): readonly DownloadTask[] {
-  return tasks.filter(task => task.owner.namespace === owner.namespace && (owner.resourceType === undefined || task.owner.resourceType === owner.resourceType))
+  return tasks.filter(task => task.owner.namespace === owner.namespace
+    && (owner.resourceType === undefined || task.owner.resourceType === owner.resourceType)
+    && (owner.resourceId === undefined || task.owner.resourceId === owner.resourceId))
 }
 
 function sameTasks(left: readonly DownloadTask[], right: readonly DownloadTask[]): boolean {
