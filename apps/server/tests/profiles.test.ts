@@ -21,6 +21,7 @@ import { z } from 'zod'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { readMessagePayload } from '../src/modules/chat-runtime/message-payload-store'
 import { setCodexChatgptModelListClientFactoryForTests } from '../src/modules/chat-runtime-providers/codex/app-server/model-list'
 import { insertMessageFixtures } from './helpers/message-fixture'
 
@@ -603,9 +604,13 @@ describe('profiles capability', () => {
           agentId: 'agent-cleanup',
         }),
       ])
-      expect(db().select().from(messages).where(eq(messages.id, 'message-cleanup-user')).all()).toEqual([
-        expect.objectContaining({ content: 'keep this chat' }),
-      ])
+      const preservedMessage = db()
+        .select()
+        .from(messages)
+        .where(eq(messages.id, 'message-cleanup-user'))
+        .get()
+      expect(preservedMessage).toEqual(expect.objectContaining({ id: 'message-cleanup-user' }))
+      expect(readMessagePayload(db(), preservedMessage!.payloadId)?.content).toBe('keep this chat')
       expect(
         db().select().from(backendSessionBindings).where(eq(backendSessionBindings.id, 'binding-cleanup')).all(),
       ).toEqual([expect.objectContaining({ providerTargetId: null })])

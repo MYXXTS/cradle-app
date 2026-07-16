@@ -106,12 +106,14 @@ interface OpenCodeModelDiscoveryDependencies {
   acquireRuntimeResource: typeof acquireOpencodeRuntimeResource
   listCliModels: (input: { binaryPath: string, cwd: string }) => Promise<OpenCodeCliModelDescriptor[]>
   now: () => number
+  resolveRuntimeHostOptions: typeof resolveOpencodeRuntimeHostOptions
 }
 
 const defaultDiscoveryDependencies: OpenCodeModelDiscoveryDependencies = {
   acquireRuntimeResource: acquireOpencodeRuntimeResource,
   listCliModels: input => listOpencodeCliModels(input),
   now: currentUnixSeconds,
+  resolveRuntimeHostOptions: resolveOpencodeRuntimeHostOptions,
 }
 
 export async function listOpencodeRuntimeModels(input: {
@@ -204,7 +206,7 @@ async function discoverOpenCodeModels(
   dependencyOverrides: Partial<OpenCodeModelDiscoveryDependencies>,
 ): Promise<OpenCodeDiscoveryResult> {
   const dependencies = { ...defaultDiscoveryDependencies, ...dependencyOverrides }
-  const hostOptions = resolveOpencodeRuntimeHostOptions({ directory: input.workspacePath })
+  const hostOptions = dependencies.resolveRuntimeHostOptions({ directory: input.workspacePath })
   const [sdkResult, cliResult] = await Promise.allSettled([
     listOpenCodeProviderInventory({
       runtimeKind: input.runtimeKind,

@@ -213,6 +213,7 @@ describe('openCode SDK and CLI inventory merge', () => {
       }),
       listCliModels: vi.fn(async () => parseOpenCodeCliModelsOutput('openrouter/qwen/qwen3-coder\n')),
       now: () => 123,
+      resolveRuntimeHostOptions: createRuntimeHostOptions,
     })
 
     expect(catalog).toEqual({
@@ -241,6 +242,7 @@ describe('openCode SDK and CLI inventory merge', () => {
         'openai/gpt-5',
         'local/llama-3',
       ].join('\n'))),
+      resolveRuntimeHostOptions: createRuntimeHostOptions,
     })
 
     expect(acquireRuntimeResource).toHaveBeenCalledWith(expect.objectContaining({
@@ -261,6 +263,7 @@ describe('openCode SDK and CLI inventory merge', () => {
         'openai/gpt-5',
         'local/llama-3',
       ].join('\n'))),
+      resolveRuntimeHostOptions: createRuntimeHostOptions,
     })
 
     expect(catalog.models.find(model => model.id === 'openai/gpt-5')).toMatchObject({
@@ -280,6 +283,7 @@ describe('openCode SDK and CLI inventory merge', () => {
         createProvider('openrouter', 'OpenRouter', 'qwen/qwen3-coder'),
       ], ['openrouter'])),
       listCliModels: vi.fn(async () => parseOpenCodeCliModelsOutput('openrouter/qwen/qwen3-coder\n')),
+      resolveRuntimeHostOptions: createRuntimeHostOptions,
     })
 
     expect(catalog.models).toEqual([
@@ -300,6 +304,7 @@ describe('openCode SDK and CLI inventory merge', () => {
       listCliModels: vi.fn(async () => {
         throw new Error('CLI exploded')
       }),
+      resolveRuntimeHostOptions: createRuntimeHostOptions,
     })).rejects.toThrow([
       'OpenCode model discovery failed.',
       'SDK provider.list: SDK exploded',
@@ -307,6 +312,14 @@ describe('openCode SDK and CLI inventory merge', () => {
     ].join('\n'))
   })
 })
+
+function createRuntimeHostOptions(input: { directory?: string } = {}) {
+  return {
+    binaryPath: '/opt/opencode',
+    managed: false,
+    cwd: input.directory ?? '/workspace/project',
+  }
+}
 
 function createProvider(id: string, name: string, modelId: string): ProviderListResponse['all'][number] {
   return {

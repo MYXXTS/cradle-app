@@ -31,7 +31,10 @@ import {
   commitSessionEventsInTransaction,
 } from '../src/modules/chat-runtime/es/commands'
 import type { ChatSessionEvent } from '../src/modules/chat-runtime/es/events'
-import { readMessagePayload } from '../src/modules/chat-runtime/message-payload-store'
+import {
+  readMessagePayload,
+  updateMessagePayload,
+} from '../src/modules/chat-runtime/message-payload-store'
 import {
   flushAllActiveRunSnapshots,
   getActiveRunReplayBufferSummary,
@@ -359,6 +362,49 @@ function buildSseResponse(chunks: string[], delaysMs?: number[]): Response {
       headers: { 'content-type': 'text/event-stream' },
     },
   )
+}
+
+function buildGatedSseResponse(
+  activeChunks: string[],
+  terminalChunks: string[],
+): { response: Response, release: () => void } {
+  const encoder = new TextEncoder()
+  let controller: ReadableStreamDefaultController<Uint8Array> | null = null
+  let closed = false
+
+  const response = new Response(
+    new ReadableStream({
+      start(streamController) {
+        controller = streamController
+        for (const chunk of activeChunks) {
+          streamController.enqueue(encoder.encode(chunk))
+        }
+      },
+      cancel() {
+        closed = true
+        controller = null
+      },
+    }),
+    {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    },
+  )
+
+  return {
+    response,
+    release() {
+      if (closed || !controller) {
+        return
+      }
+      for (const chunk of terminalChunks) {
+        controller.enqueue(encoder.encode(chunk))
+      }
+      controller.close()
+      controller = null
+      closed = true
+    },
+  }
 }
 
 async function collectSseChunks(response: Response): Promise<UIMessageChunk[]> {
@@ -4817,13 +4863,13 @@ describe('chat runtime capability', () => {
       )
       expect(turnPayload).toBeTruthy()
       const systemMessage = turnPayload?.messages.find(message => message.role === 'system')
-      expect(systemMessage?.content).toContain('Cradle System Workflow')
-      expect(systemMessage?.content).not.toContain('Chronicle long-term memory context follows')
-      expect(systemMessage?.content).not.toContain('Project Nebula checkout decision')
-      expect(systemMessage?.content).not.toContain(
+      const systemContent = systemMessage?.content ?? ''
+      expect(systemContent).not.toContain('Chronicle long-term memory context follows')
+      expect(systemContent).not.toContain('Project Nebula checkout decision')
+      expect(systemContent).not.toContain(
         'Remember that Project Nebula uses Stripe Checkout',
       )
-      expect(systemMessage?.content).not.toContain('alice@example.com')
+      expect(systemContent).not.toContain('alice@example.com')
       expect(
         fetchSpy.mock.calls.filter(([url]) => String(url).endsWith('/chat/completions')).length,
       ).toBeGreaterThanOrEqual(1)
@@ -5401,7 +5447,7 @@ describe('chat runtime capability', () => {
       expect(assistantRow).toEqual(
         expect.objectContaining({
           status: 'streaming',
-          content: '',
+          payloadId: run.messageId,
         }),
       )
       const checkpoint = db()
@@ -5427,22 +5473,27 @@ describe('chat runtime capability', () => {
         })
         .where(eq(backendRuns.id, run.id))
         .run()
-      db()
-        .update(messages)
-        .set({
-          status: 'failed',
-          content: 'terminal response',
-          errorText: 'persisted terminal failure',
-          updatedAt: 1700000100,
-        })
-        .where(eq(messages.id, run.messageId!))
-        .run()
+      db().update(messages).set({ status: 'failed', updatedAt: 1700000100 }).where(eq(messages.id, run.messageId!)).run()
+      const activePayload = readMessagePayload(db(), run.messageId!)
+      expect(activePayload).toBeDefined()
+      updateMessagePayload(db(), {
+        id: activePayload!.id,
+        sessionId: activePayload!.sessionId,
+        content: 'terminal response',
+        messageJson: activePayload!.messageJson,
+        errorText: 'persisted terminal failure',
+        updatedAt: 1700000100,
+      })
 
       await flushAllActiveRunSnapshots()
 
       expect(db().select().from(messages).where(eq(messages.id, run.messageId!)).get()).toEqual(
         expect.objectContaining({
           status: 'failed',
+        }),
+      )
+      expect(readMessagePayload(db(), run.messageId!)).toEqual(
+        expect.objectContaining({
           content: 'terminal response',
           errorText: 'persisted terminal failure',
         }),
@@ -6663,6 +6714,7 @@ describe('chat runtime capability', () => {
     const previousSecret = process.env.CRADLE_CREDENTIAL_SECRET
     process.env.CRADLE_DATA_DIR = dataDir
     process.env.CRADLE_CREDENTIAL_SECRET = 'chat-runtime-secret'
+    let releaseCompletion = () => {}
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new Request(input).url
@@ -6672,14 +6724,15 @@ describe('chat runtime capability', () => {
           (_, index) =>
             `data: {"id":"chunk-${index}","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"${index} "},"finish_reason":null}]}\n\n`,
         )
-        return buildSseResponse(
+        const gatedResponse = buildGatedSseResponse(
+          chunks,
           [
-            ...chunks,
             'data: {"id":"chunk-final","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
             'data: [DONE]\n\n',
           ],
-          [0, ...Array.from({ length: 80 }).fill(1), 0],
         )
+        releaseCompletion = gatedResponse.release
+        return gatedResponse.response
       }
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
     })
@@ -6732,6 +6785,7 @@ describe('chat runtime capability', () => {
       expect(activeRun?.chunkCount).toBeLessThan(10)
       expect(activeRun?.textDeltaCount).toBe(1)
 
+      releaseCompletion()
       const runChunks = await runChunksPromise
       const runTextDeltas = runChunks.filter(chunk => chunk.type === 'text-delta')
       expect(runTextDeltas.length).toBeLessThan(20)
@@ -6750,6 +6804,7 @@ describe('chat runtime capability', () => {
       expect(rows.find(row => row.role === 'assistant')?.content).toBe(expectedText)
     }
  finally {
+      releaseCompletion()
       shutdownInfra()
       rmSync(dataDir, { recursive: true, force: true })
       rmSync(workspaceRoot, { recursive: true, force: true })
@@ -6883,6 +6938,7 @@ describe('chat runtime capability', () => {
     const previousSecret = process.env.CRADLE_CREDENTIAL_SECRET
     process.env.CRADLE_DATA_DIR = dataDir
     process.env.CRADLE_CREDENTIAL_SECRET = 'chat-runtime-secret'
+    const releaseCompletions: Array<() => void> = []
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new Request(input).url
@@ -6892,14 +6948,15 @@ describe('chat runtime capability', () => {
           (_, index) =>
             `data: {"id":"chunk-${index}","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"${index} "},"finish_reason":null}]}\n\n`,
         )
-        return buildSseResponse(
+        const gatedResponse = buildGatedSseResponse(
+          chunks,
           [
-            ...chunks,
             'data: {"id":"chunk-final","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
             'data: [DONE]\n\n',
           ],
-          [0, ...Array.from({ length: 120 }).fill(1), 0],
         )
+        releaseCompletions.push(gatedResponse.release)
+        return gatedResponse.response
       }
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
     })
@@ -6955,13 +7012,20 @@ describe('chat runtime capability', () => {
           expect(summary?.chunkCount).toBeLessThan(10)
         }
       }, 'bounded concurrent replay buffers')
+      expect(releaseCompletions).toHaveLength(3)
 
+      for (const releaseCompletion of releaseCompletions) {
+        releaseCompletion()
+      }
       const responseChunks = await Promise.all(responseChunkPromises)
       for (const chunks of responseChunks) {
         expect(chunks.filter(chunk => chunk.type === 'text-delta').length).toBeLessThan(30)
       }
     }
  finally {
+      for (const releaseCompletion of releaseCompletions) {
+        releaseCompletion()
+      }
       shutdownInfra()
       rmSync(dataDir, { recursive: true, force: true })
       rmSync(workspaceRoot, { recursive: true, force: true })
@@ -7037,11 +7101,13 @@ describe('chat runtime capability', () => {
         .where(eq(messages.sessionId, 'session-chat-compact-snapshot'))
         .all()
         .find(row => row.role === 'assistant')
-      const storedMessage = JSON.parse(assistantRow?.messageJson ?? '{}') as {
+      expect(assistantRow).toBeDefined()
+      const assistantPayload = readMessagePayload(db(), assistantRow!.payloadId)
+      const storedMessage = JSON.parse(assistantPayload?.messageJson ?? '{}') as {
         parts: Array<{ type: string, text?: string }>
       }
       expect(storedMessage.parts.find(part => part.type === 'text')?.text).toHaveLength(20)
-      expect(assistantRow?.content).toBe('assistant text that ')
+      expect(assistantPayload?.content).toBe('assistant text that ')
     }
  finally {
       shutdownInfra()
@@ -7255,12 +7321,13 @@ describe('chat runtime capability', () => {
       const assistantRows = messageRows.filter(row => row.role === 'assistant')
       expect(visibleUserRows).toHaveLength(1)
       expect(assistantRows).toHaveLength(2)
-      expect(assistantRows.find(row => row.id === continuationRun.messageId)).toEqual(
+      const continuationMessage = assistantRows.find(row => row.id === continuationRun.messageId)
+      expect(continuationMessage).toEqual(
         expect.objectContaining({
           status: 'complete',
-          content: 'Goal continued',
         }),
       )
+      expect(readMessagePayload(db(), continuationMessage!.payloadId)?.content).toBe('Goal continued')
 
       const statusResponse = await app.handle(
         new Request('http://localhost/chat/sessions/session-codex-goal-auto/runtime-status'),

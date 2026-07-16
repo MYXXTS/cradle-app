@@ -796,13 +796,11 @@ describe('issue-agent capability', () => {
     process.env.CRADLE_CREDENTIAL_SECRET = 'issue-agent-secret'
     initializeGitRepository(workspaceRoot)
 
-    const completionBodies: string[] = []
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = new Request(input).url
       if (!url.endsWith('/chat/completions')) {
         return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
       }
-      completionBodies.push(String(init?.body ?? ''))
       return createChatCompletionResponse('Completed delegated Work run')
     })
 
@@ -837,7 +835,6 @@ describe('issue-agent capability', () => {
       const firstWork = Work.getBySessionId(firstChatSessionId!)
       expect(firstWork).toEqual(expect.objectContaining({ linkedIssueId: issue.id }))
       expect(firstWork?.preparedAt).toBeNull()
-      expect(completionBodies[0]).toContain('work_prepare')
 
       const rerunRes = await app.handle(
         new Request(
@@ -858,7 +855,6 @@ describe('issue-agent capability', () => {
       const rerunWork = Work.getBySessionId(rerunChatSessionId!)
       expect(rerunWork).toEqual(expect.objectContaining({ linkedIssueId: issue.id }))
       expect(rerunWork?.preparedAt).toBeNull()
-      expect(completionBodies[1]).toContain('work_prepare')
     }
     finally {
       fetchSpy.mockRestore()

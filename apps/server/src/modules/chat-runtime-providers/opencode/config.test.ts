@@ -90,7 +90,7 @@ describe('resolveOpencodeConfig', () => {
         },
         'gpt-5-mini': {
           id: 'gpt-5-mini',
-          name: 'gpt-5-mini',
+          name: 'GPT-5 Mini',
         },
         'custom-model': {
           id: 'custom-model',

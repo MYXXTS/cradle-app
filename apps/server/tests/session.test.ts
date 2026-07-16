@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
+import { readMessagePayload } from '../src/modules/chat-runtime/message-payload-store'
 import { ptyTimeline } from '../src/modules/pty/pty.timeline'
 import { startOrAttach } from '../src/modules/pty/service'
 import { indexMessage, searchThreads } from '../src/modules/search/service'
@@ -1011,12 +1012,14 @@ describe('session capability', () => {
           finishedAt: expect.any(Number),
         }),
       )
-      expect(d.select().from(messages).where(eq(messages.id, assistantMessageId)).get()).toEqual(
+      const repairedMessage = d.select().from(messages).where(eq(messages.id, assistantMessageId)).get()
+      expect(repairedMessage).toEqual(
         expect.objectContaining({
           status: 'failed',
-          errorText:
-            'Response interrupted because the Cradle server process exited while the run was streaming.',
         }),
+      )
+      expect(readMessagePayload(d, repairedMessage!.payloadId)?.errorText).toBe(
+        'Response interrupted because the Cradle server process exited while the run was streaming.',
       )
     }
  finally {
