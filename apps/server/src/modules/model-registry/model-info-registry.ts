@@ -4,11 +4,13 @@ import { z } from 'zod'
 
 import { db } from '../../infra'
 import type { ModelCapabilities, ModelDescriptor } from '../provider-contracts/types'
+import { aggregateModelsDevRecords } from './model-info-aggregation'
 
 export type ModelsDevReasoningOption = {
   type?: string
   values?: Array<string | null>
   min?: number
+  max?: number
 }
 
 export interface ModelsDevModel {
@@ -38,6 +40,7 @@ const KNOWN_REASONING_EFFORTS = new Set<ReasoningEffort>([
   'high',
   'xhigh',
   'max',
+  'ultra',
 ])
 
 function isReasoningEffort(value: unknown): value is ReasoningEffort {
@@ -46,7 +49,7 @@ function isReasoningEffort(value: unknown): value is ReasoningEffort {
 
 /**
  * Project models.dev `reasoning_options` into Cradle `reasoningEfforts`.
- * - `effort.values` → discrete efforts (unknown values like `ultra` dropped)
+ * - `effort.values` → discrete efforts supported by Cradle (unknown values dropped)
  * - empty options / toggle / budget_tokens-only → `[]` (reasoning supported, no effort slider)
  * - `reasoning: false` → no efforts field
  */
@@ -133,6 +136,7 @@ export const ModelsDevModelSchema: z.ZodType<ModelsDevModel> = z.object({
     type: z.string().optional(),
     values: z.array(z.union([z.string(), z.null()])).optional(),
     min: z.number().finite().optional(),
+    max: z.number().finite().optional(),
   }).passthrough()).optional(),
   tool_call: z.boolean().optional(),
   temperature: z.boolean().optional(),
@@ -334,23 +338,18 @@ export function getCachedModelsDevCost(modelId: string): { input: number, output
 }
 
 function findModel(data: ModelsDevData, modelId: string): ModelsDevModel | null {
-  for (const provider of Object.values(data)) {
-    const model = provider.models?.[modelId]
-    if (model) {
-      return model
-    }
-  }
-  return null
+  return aggregateModelsDevRecords(
+    modelId,
+    Object.entries(data).flatMap(([providerId, provider]) => {
+      const model = provider.models?.[modelId]
+      return model ? [{ providerId, model }] : []
+    }),
+  )
 }
 
-function findModelWithProvider(data: ModelsDevData, modelId: string): { id: string, model: ModelsDevModel } | null {
-  for (const provider of Object.values(data)) {
-    const model = provider.models?.[modelId]
-    if (model) {
-      return { id: modelId, model }
-    }
-  }
-  return null
+function findModelWithId(data: ModelsDevData, modelId: string): { id: string, model: ModelsDevModel } | null {
+  const model = findModel(data, modelId)
+  return model ? { id: modelId, model } : null
 }
 
 /**
@@ -441,14 +440,14 @@ function findModelFuzzy(data: ModelsDevData, modelId: string): { model: ModelsDe
 }
 
 function findModelFuzzyWithId(data: ModelsDevData, modelId: string): { id: string, model: ModelsDevModel, matchType: 'exact' | 'fuzzy' } | null {
-  const exact = findModelWithProvider(data, modelId)
+  const exact = findModelWithId(data, modelId)
   if (exact) {
     return { ...exact, matchType: 'exact' }
   }
 
   const withoutDate = modelId.replace(DATE_SUFFIX_RE, '')
   if (withoutDate !== modelId) {
-    const match = findModelWithProvider(data, withoutDate)
+    const match = findModelWithId(data, withoutDate)
     if (match) {
       return { ...match, matchType: 'fuzzy' }
     }
@@ -456,7 +455,7 @@ function findModelFuzzyWithId(data: ModelsDevData, modelId: string): { id: strin
 
   const withoutVersion = modelId.replace(VERSION_SUFFIX_RE, '')
   if (withoutVersion !== modelId && withoutVersion !== withoutDate) {
-    const match = findModelWithProvider(data, withoutVersion)
+    const match = findModelWithId(data, withoutVersion)
     if (match) {
       return { ...match, matchType: 'fuzzy' }
     }
@@ -465,14 +464,14 @@ function findModelFuzzyWithId(data: ModelsDevData, modelId: string): { id: strin
   // 3.5. Normalize dots ↔ hyphens
   const dotsToHyphens = modelId.replace(/\./g, '-')
   if (dotsToHyphens !== modelId) {
-    const match = findModelWithProvider(data, dotsToHyphens)
+    const match = findModelWithId(data, dotsToHyphens)
     if (match) {
       return { ...match, matchType: 'fuzzy' }
     }
   }
   const hyphensToDots = modelId.replace(/-(?=\d)/g, '.')
   if (hyphensToDots !== modelId && hyphensToDots !== dotsToHyphens) {
-    const match = findModelWithProvider(data, hyphensToDots)
+    const match = findModelWithId(data, hyphensToDots)
     if (match) {
       return { ...match, matchType: 'fuzzy' }
     }
@@ -579,7 +578,7 @@ export function resolveModelEnrichment(
       return { id, model: mapping.model, matchType: mapping.matchType ?? 'manual' }
     }
     if (mapping.registryModelId && data) {
-      const exact = findModelWithProvider(data, mapping.registryModelId)
+      const exact = findModelWithId(data, mapping.registryModelId)
       if (exact) {
         return { id: exact.id, model: exact.model, matchType: mapping.matchType ?? 'alias' }
       }
@@ -733,18 +732,23 @@ export async function searchModels(query: string, limit = 20): Promise<ModelRegi
   const q = query.toLowerCase()
   const results: ModelRegistrySearchResult[] = []
 
-  for (const provider of Object.values(data)) {
-    for (const [id, model] of Object.entries(provider.models)) {
-      const name = model.name ?? id
-      if (id.toLowerCase().includes(q) || name.toLowerCase().includes(q)) {
-        results.push({
-          id,
-          label: name,
-          capabilities: extractCapabilities(model),
-        })
-        if (results.length >= limit) {
-          return results
-        }
+  const modelIds = [...new Set(Object.values(data).flatMap(provider => Object.keys(provider.models)))].toSorted()
+  for (const id of modelIds) {
+    const model = findModel(data, id)
+    if (!model) {
+      continue
+    }
+    const name = model.name ?? id
+    const providerNameMatches = Object.values(data).some(provider =>
+      provider.models[id]?.name?.toLowerCase().includes(q) === true)
+    if (id.toLowerCase().includes(q) || name.toLowerCase().includes(q) || providerNameMatches) {
+      results.push({
+        id,
+        label: name,
+        capabilities: extractCapabilities(model),
+      })
+      if (results.length >= limit) {
+        return results
       }
     }
   }

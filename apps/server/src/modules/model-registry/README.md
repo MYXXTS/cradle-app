@@ -12,6 +12,12 @@ This module owns **Enrichment** (layer 2):
 - Resolution order: global mapping (model or registryModelId exact→fuzzy) → models.dev fuzzy.
 - Registry caps **win over** stale inventory caps on merge.
 
+models.dev publishes provider-agnostic model facts in `models.json`, while serving-specific controls,
+limits, and prices remain in provider records in `api.json`. Cradle consumes the latter because an
+unknown OpenAI-compatible gateway exposes only a serving model ID and selectable reasoning controls
+are provider-specific. Duplicate records already inherit models.dev base-model facts, so aggregation
+reconstructs the optimistic model projection without guessing an upstream provider namespace.
+
 ## Files
 
 - `index.ts`: HTTP routes for listing, upserting, and deleting global model registry mappings.
@@ -22,6 +28,12 @@ This module owns **Enrichment** (layer 2):
   on server boot), `resolveModelEnrichment`, `enrichModelsWithRegistryData`,
   `enrichModelsFromRegistryMappings`, `getCachedModelsDevCost` (DB-backed, not mem-only),
   fuzzy-enabled `lookupContextWindow` and `lookupModel`.
-  - Projects `reasoning` + `reasoning_options` into `capabilities.reasoning` /
+  - Aggregates duplicate model IDs across models.dev provider records before every exact/fuzzy lookup:
+    capability booleans use optimistic OR, effort/modalities use stable unions, token limits use maxima,
+    descriptive strings use deterministic consensus, and cost uses one most-complete provider record.
+  - Projects `reasoning` + aggregated `reasoning_options` into `capabilities.reasoning` /
     `reasoningEfforts` (`effort.values` only; empty/toggle/budget-only → `[]`).
   - Upstream inventory `reasoningEfforts` win over registry projection on merge.
+- `model-info-aggregation.ts`: Pure duplicate-record aggregation policy. It reconstructs the most
+  complete provider-agnostic projection available for model IDs exposed by unknown gateways without
+  combining scalar price fields from different providers.

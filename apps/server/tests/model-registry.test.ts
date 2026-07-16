@@ -201,7 +201,7 @@ describe('enrichModelsWithRegistryData', () => {
 })
 
 describe('models.dev reasoning_options projection', () => {
-  it('projects effort.values into reasoningEfforts and drops unknown values', () => {
+  it('projects every Cradle-supported effort value', () => {
     const data = makeModelsDevData({
       'gpt-5.6': {
         name: 'GPT-5.6',
@@ -220,7 +220,132 @@ describe('models.dev reasoning_options projection', () => {
       'high',
       'xhigh',
       'max',
+      'ultra',
     ])
+  })
+
+  it('aggregates duplicate provider records into the most complete capability projection', () => {
+    const data = {
+      abacus: {
+        models: {
+          'gpt-5.6-sol': {
+            id: 'gpt-5.6-sol',
+            name: 'GPT-5.6 Sol',
+            reasoning: true,
+            reasoning_options: [],
+            tool_call: true,
+            temperature: false,
+            structured_output: true,
+            limit: { context: 1_000_000, output: 128_000 },
+            modalities: { input: ['text', 'image'], output: ['text'] },
+            cost: { input: 5, output: 30, cache_read: 0.5 },
+            family: 'gpt-sol',
+          },
+        },
+      },
+      openai: {
+        models: {
+          'gpt-5.6-sol': {
+            id: 'gpt-5.6-sol',
+            name: 'GPT-5.6 Sol',
+            reasoning: true,
+            reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+            tool_call: true,
+            temperature: false,
+            structured_output: true,
+            limit: { context: 1_050_000, output: 128_000 },
+            modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
+            cost: { input: 5, output: 30, cache_read: 0.5, cache_write: 6.25 },
+            family: 'gpt-sol',
+          },
+        },
+      },
+    }
+
+    const [model] = enrichModelsWithRegistryData([makeModel('gpt-5.6-sol', 'gpt-5.6-sol')], data, [])
+
+    expect(model.label).toBe('GPT-5.6 Sol')
+    expect(model.capabilities).toMatchObject({
+      contextWindow: 1_050_000,
+      maxOutput: 128_000,
+      inputModalities: ['text', 'image', 'pdf'],
+      outputModalities: ['text'],
+      reasoning: true,
+      reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      toolCall: true,
+      temperature: false,
+      structuredOutput: true,
+      cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
+      family: 'gpt-sol',
+      registryMatch: 'exact',
+    })
+  })
+
+  it('uses explicit support and stable unions regardless of provider record order', () => {
+    const first = {
+      'z-provider': {
+        models: {
+          shared: {
+            id: 'shared',
+            reasoning: false,
+            tool_call: false,
+            modalities: { input: ['text'], output: ['text'] },
+            cost: { input: 2, output: 4 },
+          },
+        },
+      },
+      'a-provider': {
+        models: {
+          shared: {
+            id: 'shared',
+            reasoning: true,
+            reasoning_options: [{ type: 'effort', values: ['high', 'low', 'ultra'] }],
+            tool_call: true,
+            modalities: { input: ['pdf', 'image'], output: ['audio'] },
+            cost: { input: 1, output: 3, cache_read: 0.1 },
+          },
+        },
+      },
+    }
+    const reversed = Object.fromEntries(Object.entries(first).reverse())
+
+    const resolvedFirst = resolveModelEnrichment('shared', first, [])
+    const resolvedReversed = resolveModelEnrichment('shared', reversed, [])
+
+    expect(resolvedFirst?.model).toEqual(resolvedReversed?.model)
+    expect(resolvedFirst?.model).toMatchObject({
+      reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['low', 'high', 'ultra'] }],
+      tool_call: true,
+      modalities: { input: ['text', 'image', 'pdf'], output: ['text', 'audio'] },
+      cost: { input: 1, output: 3, cache_read: 0.1 },
+    })
+  })
+
+  it('infers reasoning support when any provider declares a reasoning control', () => {
+    const data = {
+      first: {
+        models: {
+          shared: {
+            id: 'shared',
+            reasoning: false,
+          },
+        },
+      },
+      second: {
+        models: {
+          shared: {
+            id: 'shared',
+            reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
+          },
+        },
+      },
+    }
+
+    const [model] = enrichModelsWithRegistryData([makeModel('shared', 'Shared')], data, [])
+
+    expect(model.capabilities.reasoning).toBe(true)
+    expect(model.capabilities.reasoningEfforts).toEqual(['low', 'high'])
   })
 
   it('declares empty reasoningEfforts for empty options, toggle-only, or budget_tokens-only', () => {
