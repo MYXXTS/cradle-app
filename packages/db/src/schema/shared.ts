@@ -30,5 +30,13 @@ export const kvCache = sqliteTable('kv_cache', {
   expiresAt: int('expires_at').notNull(),
 })
 
+export const databaseMaintenanceTasks = sqliteTable('database_maintenance_tasks', {
+  id: text('id').primaryKey(),
+  status: text('status', { enum: ['pending', 'completed'] }).notNull().default('pending'),
+  requestedAt: int('requested_at').notNull().default(sql`(unixepoch())`),
+  completedAt: int('completed_at'),
+  detailJson: text('detail_json').notNull().default('{}'),
+})
+
 export type Workspace = typeof workspaces.$inferSelect
 export type NewWorkspace = typeof workspaces.$inferInsert

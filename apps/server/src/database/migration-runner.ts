@@ -1,3 +1,5 @@
+import { databaseMaintenanceTasks } from '@cradle/db'
+import { eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { z } from 'zod'
 
@@ -25,6 +27,7 @@ export class MigrationRunner {
 
     try {
       migrate(db, { migrationsFolder: migrationsDir })
+      this.runPendingMaintenanceTasks()
     }
     catch (error) {
       const cause = ErrorCauseCarrierSchema.parse(error).cause
@@ -36,6 +39,56 @@ export class MigrationRunner {
         error,
       })
       throw error
+    }
+  }
+
+  private runPendingMaintenanceTasks(): void {
+    const pendingTasks = this.provider
+      .getDb()
+      .select()
+      .from(databaseMaintenanceTasks)
+      .where(eq(databaseMaintenanceTasks.status, 'pending'))
+      .all()
+
+    for (const task of pendingTasks) {
+      if (task.id !== 'compact-chat-storage-v1') {
+        this.logger.warn('Unknown database maintenance task remains pending', { taskId: task.id })
+        continue
+      }
+
+      try {
+        const result = this.provider.compactDatabase()
+        if (result.status === 'deferred') {
+          this.logger.warn('Database compaction deferred because free space is insufficient', {
+            taskId: task.id,
+          })
+          continue
+        }
+
+        this.provider
+          .getDb()
+          .update(databaseMaintenanceTasks)
+          .set({
+            status: 'completed',
+            completedAt: Math.floor(Date.now() / 1000),
+            detailJson: JSON.stringify({
+              request: JSON.parse(task.detailJson),
+              result,
+            }),
+          })
+          .where(eq(databaseMaintenanceTasks.id, task.id))
+          .run()
+        this.logger.info('Database maintenance task completed', {
+          taskId: task.id,
+          result,
+        })
+      }
+      catch (error) {
+        this.logger.error('Database maintenance task failed and remains pending', {
+          taskId: task.id,
+          error,
+        })
+      }
     }
   }
 }

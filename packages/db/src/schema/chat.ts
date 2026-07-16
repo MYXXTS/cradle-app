@@ -68,6 +68,19 @@ export const sessions = sqliteTable('sessions', {
   byArchived: index('sessions_archived_at_idx').on(table.archivedAt),
 }))
 
+export const chatMessagePayloads = sqliteTable('chat_message_payloads', {
+  id: textPk(),
+  sessionId: text('session_id')
+    .notNull()
+    .references(() => sessions.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  messageJson: text('message_json').notNull(),
+  errorText: text('error_text'),
+  ...timestamps(),
+}, table => ({
+  bySession: index('chat_message_payloads_session_id_idx').on(table.sessionId),
+}))
+
 export const messages = sqliteTable('messages', {
   id: textPk(),
   sessionId: text('session_id')
@@ -81,9 +94,9 @@ export const messages = sqliteTable('messages', {
   status: text('status', {
     enum: ['streaming', 'complete', 'aborted', 'failed'],
   }).notNull().default('complete'),
-  content: text('content').notNull(),
-  messageJson: text('message_json').notNull(),
-  errorText: text('error_text'),
+  payloadId: text('payload_id')
+    .notNull()
+    .references(() => chatMessagePayloads.id, { onDelete: 'cascade' }),
   ...timestamps(),
 }, table => ({
   bySession: index('messages_session_id_idx').on(table.sessionId),
@@ -245,6 +258,8 @@ export type SessionGroup = typeof sessionGroups.$inferSelect
 export type NewSessionGroup = typeof sessionGroups.$inferInsert
 export type Session = typeof sessions.$inferSelect
 export type NewSession = typeof sessions.$inferInsert
+export type ChatMessagePayload = typeof chatMessagePayloads.$inferSelect
+export type NewChatMessagePayload = typeof chatMessagePayloads.$inferInsert
 export type Message = typeof messages.$inferSelect
 export type NewMessage = typeof messages.$inferInsert
 export type UsageLog = typeof usageLogs.$inferSelect
