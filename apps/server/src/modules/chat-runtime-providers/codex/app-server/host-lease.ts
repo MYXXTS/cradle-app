@@ -26,6 +26,7 @@ import {
 export interface CodexAppServerHostLeaseDeps {
   createAppServerClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike
   readCodexPreferences?: () => { useCradleUserAgent: boolean }
+  readCodexCliCompatibleIdentity?: () => boolean
   updateSecretValue?: (credentialRef: string, secret: string) => void
   mapChatgptAuthError?: (error: CodexChatgptAuthReauthRequiredError) => Error
 }
@@ -100,10 +101,11 @@ export function invalidateCodexAppServerHost(hostId: string): Promise<void> {
 
 function configureCodexAppServerClientOptions(
   options: CodexAppServerClientOptions,
-  deps: Pick<CodexAppServerHostLeaseDeps, 'readCodexPreferences'>,
+  deps: Pick<CodexAppServerHostLeaseDeps, 'readCodexPreferences' | 'readCodexCliCompatibleIdentity'>,
 ): CodexAppServerClientOptions {
   const userAgentMode = deps.readCodexPreferences?.().useCradleUserAgent === false ? 'native' : 'cradle'
-  return { ...options, userAgentMode } satisfies CodexAppServerClientOptions
+  const cliCompatibleIdentity = deps.readCodexCliCompatibleIdentity?.() ?? false
+  return { ...options, userAgentMode, cliCompatibleIdentity } satisfies CodexAppServerClientOptions
 }
 
 async function initializeCodexAppServerHost(

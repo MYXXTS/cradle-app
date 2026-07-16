@@ -64,6 +64,7 @@ interface CodexAppServerBridgeDeps {
   resolveSkillPaths: (workspacePath: string) => string[]
   createAppServerClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike
   readCodexPreferences?: () => { useCradleUserAgent: boolean }
+  readCodexCliCompatibleIdentity?: () => boolean
 }
 
 export interface CodexAppServerBridgeContext {
@@ -261,6 +262,7 @@ export class CodexAppServerBridge {
       deps: {
         createAppServerClient: this.deps.createAppServerClient,
         readCodexPreferences: this.deps.readCodexPreferences,
+        readCodexCliCompatibleIdentity: this.deps.readCodexCliCompatibleIdentity,
         updateSecretValue: this.deps.updateSecretValue,
       },
     })

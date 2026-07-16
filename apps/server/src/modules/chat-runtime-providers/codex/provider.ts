@@ -1641,6 +1641,7 @@ export class CodexProvider implements ChatRuntime {
       resolveSkillPaths: this.resolveSkillPaths,
       createAppServerClient: this.deps.createAppServerClient,
       readCodexPreferences: this.deps.readCodexPreferences,
+      readCodexCliCompatibleIdentity: this.deps.readCodexCliCompatibleIdentity,
     })
   }
 
@@ -1668,6 +1669,7 @@ export class CodexProvider implements ChatRuntime {
       deps: {
         createAppServerClient: this.deps.createAppServerClient,
         readCodexPreferences: this.deps.readCodexPreferences,
+        readCodexCliCompatibleIdentity: this.deps.readCodexCliCompatibleIdentity,
         updateSecretValue: this.deps.updateSecret,
         mapChatgptAuthError: error => new ProviderRuntimeError(ProviderErrors.authFailed(this.runtimeKind), { cause: error }),
       },

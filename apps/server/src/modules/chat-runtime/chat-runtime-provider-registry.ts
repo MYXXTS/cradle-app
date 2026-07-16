@@ -469,6 +469,7 @@ export function getRuntimeRegistry(): RuntimeRegistry {
     }
     registry.register(createCodexProvider(ctx, {
       readCodexPreferences: () => Preferences.getCodexPreferencesSync(),
+      readCodexCliCompatibleIdentity: () => Preferences.isAppFeatureFlagEnabled('codexCliCompatibleIdentity'),
       readChatPreferences: () => Preferences.getChatPreferencesSync(),
       reconcileUsage: async (input) => {
         await reconcileCodexSessionUsage(input)

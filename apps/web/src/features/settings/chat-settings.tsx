@@ -35,6 +35,7 @@ import type { WorkspaceSession } from '../workspace/use-session'
 import { sessionsQueryKey, useAllSessions } from '../workspace/use-session'
 import { SettingsGroup, SettingsPage } from './settings-container'
 import { SettingsRow } from './settings-row'
+import { useFeatureFlag } from './use-app-preferences'
 import type { ContinuationBehavior, TitleGenerationPreferences, TitleGenerationThinkingEffort } from './use-chat-preferences'
 import { useChatPreferences } from './use-chat-preferences'
 import { useCodexPreferences } from './use-codex-preferences'
@@ -487,6 +488,10 @@ export function ChatSettings() {
   const { t } = useTranslation('settings')
   const { prefs, isSaving, savePrefs } = useChatPreferences()
   const { prefs: codexPrefs, isSaving: isSavingCodexPrefs, savePrefs: saveCodexPrefs } = useCodexPreferences()
+  const codexCliCompatibleIdentityEnabled = useFeatureFlag('codexCliCompatibleIdentity')
+  const codexUserAgentDescriptionKey: SettingsKey = codexCliCompatibleIdentityEnabled
+    ? 'chat.codexUserAgent.cliIdentityDisabled'
+    : 'chat.codexUserAgent.description'
   const handleTitleGenerationChange = (titleGeneration: Partial<TitleGenerationPreferences>) => {
     void savePrefs({ titleGeneration })
   }
@@ -515,12 +520,12 @@ export function ChatSettings() {
       <SettingsGroup>
         <SettingsRow
           label={t('chat.codexUserAgent.label' as SettingsKey)}
-          description={t('chat.codexUserAgent.description' as SettingsKey)}
+          description={t(codexUserAgentDescriptionKey)}
         >
           <Switch
-            checked={codexPrefs?.useCradleUserAgent ?? true}
+            checked={!codexCliCompatibleIdentityEnabled && (codexPrefs?.useCradleUserAgent ?? true)}
             onCheckedChange={handleCradleUserAgentChange}
-            disabled={!codexPrefs || isSavingCodexPrefs}
+            disabled={codexCliCompatibleIdentityEnabled || !codexPrefs || isSavingCodexPrefs}
             aria-label={t('chat.codexUserAgent.label' as SettingsKey)}
             data-testid="chat-codex-user-agent"
           />

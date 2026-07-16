@@ -10,6 +10,7 @@ export interface AppPreferences {
     localAuthForDangerousActions: boolean
     continueBlockedCodexGoals: boolean
     blockCodexAppServerLogInserts: boolean
+    codexCliCompatibleIdentity: boolean
     nativeProviderSkillProjection: boolean
     turnCheckpoints: boolean
   }
@@ -27,6 +28,7 @@ const AppPreferencesSchema = z.object({
     localAuthForDangerousActions: z.boolean().default(false),
     continueBlockedCodexGoals: z.boolean().default(false),
     blockCodexAppServerLogInserts: z.boolean().default(false),
+    codexCliCompatibleIdentity: z.boolean().default(false),
     nativeProviderSkillProjection: z.boolean().default(false),
     turnCheckpoints: z.boolean().default(false),
   }).default({
@@ -34,6 +36,7 @@ const AppPreferencesSchema = z.object({
     localAuthForDangerousActions: false,
     continueBlockedCodexGoals: false,
     blockCodexAppServerLogInserts: false,
+    codexCliCompatibleIdentity: false,
     nativeProviderSkillProjection: false,
     turnCheckpoints: false,
   }),

@@ -197,4 +197,17 @@ describe('createCodexAppServerHostFingerprint', () => {
 
     expect(fp1).not.toBe(fp2)
   })
+
+  it('includes CLI-compatible identity mode in fingerprint', () => {
+    const defaultIdentity = createCodexAppServerHostFingerprint({
+      options: {},
+      chatgptAuth: null,
+    })
+    const cliCompatibleIdentity = createCodexAppServerHostFingerprint({
+      options: { cliCompatibleIdentity: true },
+      chatgptAuth: null,
+    })
+
+    expect(cliCompatibleIdentity).not.toBe(defaultIdentity)
+  })
 })

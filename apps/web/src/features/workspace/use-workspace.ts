@@ -27,6 +27,7 @@ const DEFAULT_FEATURE_FLAGS = {
   localAuthForDangerousActions: false,
   continueBlockedCodexGoals: false,
   blockCodexAppServerLogInserts: false,
+  codexCliCompatibleIdentity: false,
   nativeProviderSkillProjection: false,
   turnCheckpoints: false,
 }

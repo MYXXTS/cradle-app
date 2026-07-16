@@ -138,6 +138,7 @@ interface CodexAccountDiagnosticsDeps {
   readSecretValueWithMetadata: typeof Secrets.readSecretValueWithMetadata
   updateSecretValue: typeof Secrets.updateSecretValue
   readCodexPreferences: typeof Preferences.getCodexPreferencesSync
+  readCodexCliCompatibleIdentity?: () => boolean
   createAppServerClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike
   fetchWhamEndpoint?: (key: CodexWhamEndpointKey, url: string, auth: CodexWhamAuth) => Promise<CodexWhamEndpointResult>
 }
@@ -165,6 +166,7 @@ const DEFAULT_CODEX_ACCOUNT_DIAGNOSTICS_DEPS: CodexAccountDiagnosticsDeps = {
   readSecretValueWithMetadata: Secrets.readSecretValueWithMetadata,
   updateSecretValue: Secrets.updateSecretValue,
   readCodexPreferences: Preferences.getCodexPreferencesSync,
+  readCodexCliCompatibleIdentity: () => Preferences.isAppFeatureFlagEnabled('codexCliCompatibleIdentity'),
 }
 
 const CODEX_WHAM_ENDPOINTS: ReadonlyArray<{ key: CodexWhamEndpointKey, url: string }> = [
@@ -387,6 +389,7 @@ async function acquireDiagnosticsHostLease(input: {
     deps: {
       createAppServerClient: input.deps.createAppServerClient,
       readCodexPreferences: input.deps.readCodexPreferences,
+      readCodexCliCompatibleIdentity: input.deps.readCodexCliCompatibleIdentity,
       updateSecretValue: input.deps.updateSecretValue,
     },
   })

@@ -27,6 +27,7 @@ const initialPreferences: AppPreferences = {
     localAuthForDangerousActions: false,
     continueBlockedCodexGoals: false,
     blockCodexAppServerLogInserts: false,
+    codexCliCompatibleIdentity: false,
     nativeProviderSkillProjection: false,
     turnCheckpoints: false,
   },

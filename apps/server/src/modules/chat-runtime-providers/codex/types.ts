@@ -24,6 +24,7 @@ import type { CodexNativeHistorySnapshot } from './projection/state-projector'
 export interface CodexProviderConfig {
   createAppServerClient?: (options: CodexAppServerClientOptions) => CodexAppServerClientLike
   readCodexPreferences?: () => { useCradleUserAgent: boolean }
+  readCodexCliCompatibleIdentity?: () => boolean
   readChatPreferences?: () => {
     titleGeneration: {
       providerTargetId: string | null

@@ -41,6 +41,7 @@ export function createCodexAppServerHostFingerprint(input: {
     processLevelConfig: stableJson(processLevelConfig),
     processLevelEnv: stableJson(processLevelEnv),
     userAgentMode: input.options.userAgentMode ?? null,
+    cliCompatibleIdentity: input.options.cliCompatibleIdentity ?? false,
   })
 }
 

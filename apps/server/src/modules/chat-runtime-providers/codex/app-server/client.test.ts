@@ -313,6 +313,7 @@ describe('codexAppServerClient', () => {
 
     expect(syncLogInsertBlockerMock).toHaveBeenCalledTimes(2)
     expect(JSON.parse(writtenLine.trim())).toEqual({
+      jsonrpc: '2.0',
       id: 1,
       method: 'initialize',
       params: {
@@ -359,10 +360,63 @@ describe('codexAppServerClient', () => {
     await client.initialize()
 
     expect(JSON.parse(writtenLine.trim())).toEqual({
+      jsonrpc: '2.0',
       id: 1,
       method: 'initialize',
       params: {
         clientInfo: { name: 'codex', title: 'Codex', version: '0.135.0' },
+        capabilities: { experimentalApi: true },
+      },
+    })
+    client.close()
+  })
+
+  it('uses the interactive Codex CLI request identity in CLI-compatible mode', async () => {
+    const stdout = new PassThrough()
+    let writtenLine = ''
+
+    managedProcessMock.mockReturnValueOnce(asManagedProcess({
+      stdin: new Writable({
+        write: (chunk, _encoding, callback) => {
+          writtenLine += chunk.toString('utf8')
+          stdout.write(`${JSON.stringify({ id: 1, result: {} })}\n`)
+          callback()
+        },
+      }),
+      stdout,
+      stderr: new EventEmitter(),
+      once: vi.fn(),
+      kill: vi.fn(),
+    }))
+    spawnMock.mockReturnValueOnce(createCodexVersionProcess('codex-cli 0.144.4\n'))
+
+    const client = new CodexAppServerClient({
+      appServerPath: 'codex-app-server-cli-compatible-test',
+      env: { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'cradle' },
+      userAgentMode: 'cradle',
+      cliCompatibleIdentity: true,
+    })
+
+    await client.initialize()
+
+    expect(managedProcessMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ['--listen', 'stdio://', '--session-source', 'cli'],
+        env: expect.not.objectContaining({
+          CODEX_INTERNAL_ORIGINATOR_OVERRIDE: expect.anything(),
+        }),
+      }),
+    )
+    expect(JSON.parse(writtenLine.trim())).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        clientInfo: {
+          name: 'codex-tui',
+          title: 'Codex CLI',
+          version: '0.144.4',
+        },
         capabilities: { experimentalApi: true },
       },
     })

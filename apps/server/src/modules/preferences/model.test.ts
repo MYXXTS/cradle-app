@@ -5,6 +5,7 @@ import { AppPreferencesJsonSchema, KeybindingsPreferencesJsonSchema } from './mo
 describe('appPreferencesJsonSchema', () => {
   it('keeps experimental turn checkpoints disabled by default', () => {
     expect(AppPreferencesJsonSchema.parse(undefined).featureFlags.turnCheckpoints).toBe(false)
+    expect(AppPreferencesJsonSchema.parse(undefined).featureFlags.codexCliCompatibleIdentity).toBe(false)
   })
 })
 

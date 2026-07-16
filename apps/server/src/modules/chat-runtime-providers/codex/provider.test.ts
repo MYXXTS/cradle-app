@@ -5016,7 +5016,7 @@ describe('codexProvider app-server integration', () => {
     await drainStream(stream)
   })
 
-  it('uses native Codex user agent mode when Codex preferences disable Cradle UA', async () => {
+  it('projects Codex identity preferences into app-server client options', async () => {
     const appServerOptions: CodexAppServerClientOptions[] = []
     const clients: FakeCodexAppServerClient[] = []
     const provider = new CodexProvider({
@@ -5024,6 +5024,7 @@ describe('codexProvider app-server integration', () => {
       resolveSkillPaths: () => ['/tmp/cradle-skill'],
       recordObservability: vi.fn(),
       readCodexPreferences: () => ({ useCradleUserAgent: false }),
+      readCodexCliCompatibleIdentity: () => true,
       createAppServerClient: (options) => {
         appServerOptions.push(options)
         const client = new FakeCodexAppServerClient(options)
@@ -5042,6 +5043,7 @@ describe('codexProvider app-server integration', () => {
 
     await vi.waitFor(() => {
       expect(appServerOptions[0]?.userAgentMode).toBe('native')
+      expect(appServerOptions[0]?.cliCompatibleIdentity).toBe(true)
     })
 
     clients[0]?.pushNotification({

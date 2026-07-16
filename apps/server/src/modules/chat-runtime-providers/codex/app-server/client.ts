@@ -19,6 +19,7 @@ type RequestId = number
 type CodexUserAgentMode = 'cradle' | 'native'
 
 export interface CodexAppServerMessage {
+  jsonrpc?: '2.0'
   id?: RequestId
   method?: string
   params?: unknown
@@ -42,6 +43,7 @@ export interface CodexAppServerClientOptions {
   config?: Record<string, unknown>
   env?: Record<string, string | undefined>
   userAgentMode?: CodexUserAgentMode
+  cliCompatibleIdentity?: boolean
   serverRequestHandler?: (request: CodexAppServerServerRequest) => Promise<unknown> | unknown
   exposeServerRequestsAsNotifications?: boolean
 }
@@ -81,6 +83,7 @@ export class CodexAppServerClient {
   private readonly clientInfoVersion: string
   private readonly executablePath: string
   private readonly userAgentMode: CodexUserAgentMode
+  private readonly cliCompatibleIdentity: boolean
   private nextRequestId = 1
   private closed = false
   private stderrText = ''
@@ -100,6 +103,10 @@ export class CodexAppServerClient {
       )
     }
     const args = [...launch.args]
+    this.cliCompatibleIdentity = options.cliCompatibleIdentity ?? false
+    if (this.cliCompatibleIdentity) {
+      delete env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE
+    }
     if (options.config) {
       for (const override of serializeConfigOverrides(options.config)) {
         args.push('--config', override)
@@ -157,6 +164,13 @@ export class CodexAppServerClient {
   }
 
   private async readClientInfo(): Promise<ClientInfo> {
+    if (this.cliCompatibleIdentity) {
+      return {
+        name: 'codex-tui',
+        title: 'Codex CLI',
+        version: await readCodexNativeClientVersion(this.executablePath),
+      }
+    }
     if (this.userAgentMode === 'native') {
       return {
         name: 'codex',
@@ -177,7 +191,9 @@ export class CodexAppServerClient {
     }
     const id = this.nextRequestId
     this.nextRequestId += 1
-    const payload = params === undefined ? { id, method } : { id, method, params }
+    const payload = params === undefined
+      ? { jsonrpc: '2.0' as const, id, method }
+      : { jsonrpc: '2.0' as const, id, method, params }
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject })
       this.writeMessage(payload).catch((error) => {

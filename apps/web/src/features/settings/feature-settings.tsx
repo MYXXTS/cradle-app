@@ -90,6 +90,18 @@ export function FeatureSettings() {
               />
             </SettingsRow>
             <SettingsRow
+              label={t('features.codexCliCompatibleIdentity.label' as SettingsKey)}
+              description={t('features.codexCliCompatibleIdentity.description' as SettingsKey)}
+            >
+              <Switch
+                size="sm"
+                checked={prefs.featureFlags.codexCliCompatibleIdentity}
+                disabled={isSaving}
+                onCheckedChange={checked => saveFeatureFlags({ codexCliCompatibleIdentity: checked })}
+                aria-label={t('features.codexCliCompatibleIdentity.label' as SettingsKey)}
+              />
+            </SettingsRow>
+            <SettingsRow
               label={t('features.blockCodexAppServerLogInserts.label' as SettingsKey)}
               description={t('features.blockCodexAppServerLogInserts.description' as SettingsKey)}
             >
