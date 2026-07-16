@@ -1,6 +1,9 @@
 name: Deploy Web
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       source_ref:
@@ -30,7 +33,7 @@ jobs:
         with:
           repository: wibus-wee/cradle-app
           token: ${{ secrets.PRIVATE_REPO_PAT }}
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || 'main' }}
 
       - name: Setup pnpm & Node.js
         uses: ./.github/actions/setup
@@ -38,12 +41,16 @@ jobs:
           node-version: 24
 
       - name: Build Web App
-        run: pnpm build:web
+        run: |
+          pnpm --filter @cradle/landing build
+          pnpm build:web
 
       - name: Prepare Pages artifact
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p apps/web/dist/changelog
+          cp -R apps/landing/dist/changelog/. apps/web/dist/changelog/
           echo "app.cradle.wibus.ren" > apps/web/dist/CNAME
           cp apps/web/dist/index.html apps/web/dist/404.html
 
