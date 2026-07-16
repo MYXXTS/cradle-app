@@ -12,6 +12,7 @@ export const zPutPreferencesAppBody = z.object({
         localAuthForDangerousActions: z.boolean().optional().default(false),
         continueBlockedCodexGoals: z.boolean().optional().default(false),
         blockCodexAppServerLogInserts: z.boolean().optional().default(false),
+        codexCliCompatibleIdentity: z.boolean().optional().default(false),
         nativeProviderSkillProjection: z.boolean().optional().default(false),
         turnCheckpoints: z.boolean().optional().default(false)
     }),
@@ -234,6 +235,14 @@ export const zPatchWorkspacesByWorkspaceIdBody = z.object({
 });
 
 export const zPatchWorkspacesByWorkspaceIdPath = z.object({
+    workspaceId: z.string().min(1)
+});
+
+export const zPatchWorkspacesByWorkspaceIdLocationBody = z.object({
+    path: z.string().min(1).regex(/.*\S.*/)
+});
+
+export const zPatchWorkspacesByWorkspaceIdLocationPath = z.object({
     workspaceId: z.string().min(1)
 });
 
@@ -771,75 +780,28 @@ export const zPatchExternalProviderSourcesBySourceKeyRecordsByExternalRecordIdRu
     externalRecordId: z.string().min(1)
 });
 
-export const zPostExternalWorkImportPreviewBody = z.object({
-    includeHome: z.boolean().optional(),
-    cwds: z.array(z.string().min(1)).optional(),
-    sourceApps: z.array(z.enum([
-        'claude',
-        'codex',
-        'cursor',
-        'windsurf',
-        'gemini',
-        'unknown'
-    ])).optional(),
-    limitPerSource: z.number().gte(1).lte(500).optional()
+export const zPostExternalSessionImportScansBody = z.object({
+    sourceHostId: z.string().min(1).optional(),
+    sourceApps: z.array(z.enum(['claude', 'codex'])).optional(),
+    limitPerSource: z.number().gte(1).lte(2000).optional()
 });
 
-export const zPostExternalWorkImportUploadPreviewBody = z.object({
-    files: z.array(z.object({
-        sourceApp: z.enum([
-            'claude',
-            'codex',
-            'cursor',
-            'windsurf',
-            'gemini',
-            'unknown'
-        ]),
-        path: z.string().min(1),
-        content: z.string(),
-        workspacePath: z.string().min(1).nullish(),
-        modifiedAt: z.number().nullish()
-    }))
+export const zGetExternalSessionImportScansByScanIdPath = z.object({
+    scanId: z.string().min(1)
 });
 
-export const zPostExternalWorkImportImportBody = z.object({
-    items: z.array(z.object({
-        id: z.string(),
-        sourceApp: z.enum([
-            'claude',
-            'codex',
-            'cursor',
-            'windsurf',
-            'gemini',
-            'unknown'
-        ]),
-        sourceScope: z.enum(['server', 'electron-upload']),
-        sourceKind: z.enum([
-            'settings',
-            'project',
-            'session',
-            'instruction',
-            'mcp',
-            'command',
-            'hook',
-            'skill',
-            'plugin',
-            'subagent'
-        ]),
-        title: z.string(),
-        summary: z.string().nullable(),
-        sourcePath: z.string().nullable(),
-        externalId: z.string(),
-        fingerprint: z.string(),
-        workspacePath: z.string().nullable(),
-        createdAt: z.number().nullable(),
-        updatedAt: z.number().nullable(),
-        duplicate: z.boolean(),
-        duplicateImportId: z.string().nullable(),
-        importable: z.boolean(),
-        reason: z.string().nullable(),
-        payloadJson: z.string()
-    }))
+export const zPostExternalSessionImportImportsBody = z.object({
+    scanId: z.string().min(1),
+    candidateIds: z.array(z.string().min(1)).min(1)
+});
+
+export const zPostExternalSessionImportImportsByImportIdSyncBody = z.object({
+    scanId: z.string().min(1),
+    candidateId: z.string().min(1)
+});
+
+export const zPostExternalSessionImportImportsByImportIdSyncPath = z.object({
+    importId: z.string().min(1)
 });
 
 export const zPostSecretsBody = z.object({
@@ -4193,6 +4155,30 @@ export const zGetChroniclePrivacyBreadcrumbsQuery = z.object({
 
 export const zPostChronicleEmbeddingsBody = z.object({
     texts: z.array(z.string().min(1)).min(1).max(64)
+});
+
+export const zDeleteManagedResourcesByNamespaceByResourceTypeByResourceIdPath = z.object({
+    namespace: z.string().min(1),
+    resourceType: z.string().min(1),
+    resourceId: z.string().min(1)
+});
+
+export const zGetManagedResourcesByNamespaceByResourceTypeByResourceIdPath = z.object({
+    namespace: z.string().min(1),
+    resourceType: z.string().min(1),
+    resourceId: z.string().min(1)
+});
+
+export const zPostManagedResourcesByNamespaceByResourceTypeByResourceIdInstallPath = z.object({
+    namespace: z.string().min(1),
+    resourceType: z.string().min(1),
+    resourceId: z.string().min(1)
+});
+
+export const zPostManagedResourcesByNamespaceByResourceTypeByResourceIdUpdatePath = z.object({
+    namespace: z.string().min(1),
+    resourceType: z.string().min(1),
+    resourceId: z.string().min(1)
 });
 
 export const zGetAgentSessionsByAgentSessionIdPath = z.object({

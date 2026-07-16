@@ -1,5 +1,4 @@
-import { readdir, readFile, realpath, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative } from 'node:path'
 
 import type { DownloadTaskView } from '@cradle/download-center'
@@ -129,91 +128,6 @@ async function readExternalTerminalApp(): Promise<string | undefined> {
 }
 
 const MAX_CODEX_APP_CAPTURE_BYTES = 25 * 1024 * 1024
-const MAX_EXTERNAL_WORK_IMPORT_BYTES = 8 * 1024 * 1024
-
-type ExternalWorkImportSourceApp = 'claude' | 'codex'
-
-interface ExternalWorkImportFile {
-  sourceApp: ExternalWorkImportSourceApp
-  path: string
-  content: string
-  workspacePath: string | null
-  modifiedAt: number | null
-}
-
-async function readExternalWorkImportFile(
-  sourceApp: ExternalWorkImportSourceApp,
-  path: string,
-  workspacePath: string | null = null,
-): Promise<ExternalWorkImportFile | null> {
-  try {
-    const fileStat = await stat(path)
-    if (!fileStat.isFile() || fileStat.size > MAX_EXTERNAL_WORK_IMPORT_BYTES) {
-      return null
-    }
-    return {
-      sourceApp,
-      path,
-      content: await readFile(path, 'utf8'),
-      workspacePath,
-      modifiedAt: Math.floor(fileStat.mtimeMs / 1000),
-    }
-  }
-  catch {
-    return null
-  }
-}
-
-async function collectExternalWorkImportFiles(input: {
-  sourceApp: ExternalWorkImportSourceApp
-  root: string
-  extensions: string | Set<string>
-  limit: number
-  workspacePath?: string | null
-}): Promise<ExternalWorkImportFile[]> {
-  const allowedExtensions = typeof input.extensions === 'string' ? new Set([input.extensions]) : input.extensions
-  const found: Array<{ path: string, modifiedAt: number }> = []
-
-  async function visit(dir: string, depth: number): Promise<void> {
-    if (depth > 4 || found.length > input.limit * 8) {
-      return
-    }
-    let children: Array<{ name: string, isDirectory: () => boolean, isFile: () => boolean }>
-    try {
-      children = await readdir(dir, { withFileTypes: true })
-    }
-    catch {
-      return
-    }
-
-    await Promise.all(children.map(async (entry) => {
-      const childPath = join(dir, entry.name)
-      if (entry.isDirectory()) {
-        await visit(childPath, depth + 1)
-        return
-      }
-      if (!entry.isFile() || !allowedExtensions.has(extname(childPath).toLowerCase())) {
-        return
-      }
-      try {
-        const fileStat = await stat(childPath)
-        found.push({ path: childPath, modifiedAt: Math.floor(fileStat.mtimeMs / 1000) })
-      }
-      catch {
-        // Ignore unreadable candidates.
-      }
-    }))
-  }
-
-  await visit(input.root, 0)
-  const files = await Promise.all(
-    found
-      .sort((left, right) => right.modifiedAt - left.modifiedAt)
-      .slice(0, input.limit)
-      .map(entry => readExternalWorkImportFile(input.sourceApp, entry.path, input.workspacePath ?? null)),
-  )
-  return files.filter((file): file is ExternalWorkImportFile => Boolean(file))
-}
 
 async function validateNativePath(targetPath: string): Promise<string> {
   if (!targetPath || !isAbsolute(targetPath)) {
@@ -380,45 +294,6 @@ class NativeService extends IpcService {
       autoDownloadUpdates: preferences.autoDownloadUpdates,
     })
     return preferences
-  }
-
-  @IpcMethod()
-  async scanExternalWorkImportFiles(options: {
-    limitPerSource?: number
-  } = {}): Promise<{ files: ExternalWorkImportFile[], warnings: string[] }> {
-    const limit = Math.min(Math.max(options.limitPerSource ?? 500, 1), 500)
-    const home = homedir()
-    const files: ExternalWorkImportFile[] = []
-    const warnings: string[] = []
-    const fixedCandidates: Array<{ sourceApp: ExternalWorkImportSourceApp, path: string }> = [
-      { sourceApp: 'codex', path: join(home, '.codex', 'history.jsonl') },
-    ]
-
-    for (const candidate of fixedCandidates) {
-      const file = await readExternalWorkImportFile(candidate.sourceApp, candidate.path)
-      if (file) {
-        files.push(file)
-      }
-    }
-
-    files.push(...await collectExternalWorkImportFiles({
-      sourceApp: 'claude',
-      root: join(home, '.claude', 'projects'),
-      extensions: '.jsonl',
-      limit,
-    }))
-    files.push(...await collectExternalWorkImportFiles({
-      sourceApp: 'codex',
-      root: join(home, '.codex', 'archived_sessions'),
-      extensions: '.jsonl',
-      limit,
-    }))
-
-    if (files.length === 0) {
-      warnings.push('No supported Claude or Codex work files were found on this device.')
-    }
-
-    return { files, warnings }
   }
 }
 

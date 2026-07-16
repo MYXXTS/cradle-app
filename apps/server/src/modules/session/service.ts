@@ -62,6 +62,8 @@ import {
 export type { SessionExecutionTarget }
 
 export type SessionStatus = 'idle' | 'streaming' | 'error'
+type SessionDb = ReturnType<typeof db>
+export type SessionTransaction = Parameters<Parameters<SessionDb['transaction']>[0]>[0]
 export type SessionView = Session & {
   execution: SessionExecutionTarget
   modelId: string | null
@@ -621,6 +623,77 @@ export function markUnread(id: string): SessionView | null {
     .run()
 
   return get(id)
+}
+
+export function createImportedSessionInTransaction(
+  transaction: SessionTransaction,
+  input: {
+    id?: string
+    workspaceId: string
+    title: string
+    runtimeKind: RuntimeKind
+    configJson: string
+    createdAt: number
+    updatedAt: number
+  },
+): Session {
+  return transaction.insert(sessions).values({
+    id: input.id ?? randomUUID(),
+    workspaceId: input.workspaceId,
+    title: input.title,
+    titleSource: 'provider',
+    origin: 'external-import',
+    providerTargetId: null,
+    runtimeKind: input.runtimeKind,
+    agentId: null,
+    configJson: input.configJson,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+  }).returning().get()
+}
+
+export function adoptLegacyImportedSessionInTransaction(
+  transaction: SessionTransaction,
+  input: {
+    sessionId: string
+    workspaceId: string
+    title: string
+    runtimeKind: RuntimeKind
+    configJson: string
+    updatedAt: number
+  },
+): Session {
+  const session = transaction
+    .select()
+    .from(sessions)
+    .where(eq(sessions.id, input.sessionId))
+    .get()
+  if (!session) {
+    throw new AppError({
+      code: 'external_import_legacy_session_not_found',
+      status: 409,
+      message: 'The legacy imported session no longer exists',
+      details: { sessionId: input.sessionId },
+    })
+  }
+  return transaction.update(sessions).set({
+    workspaceId: input.workspaceId,
+    title: session.title.trim() || input.title,
+    titleSource: session.titleSource === 'user' ? 'user' : 'provider',
+    origin: 'external-import',
+    runtimeKind: input.runtimeKind,
+    configJson: input.configJson,
+    updatedAt: Math.max(session.updatedAt, input.updatedAt),
+  }).where(eq(sessions.id, input.sessionId)).returning().get()
+}
+
+export function touchImportedSessionInTransaction(
+  transaction: SessionTransaction,
+  input: { sessionId: string, updatedAt: number },
+): void {
+  transaction.update(sessions).set({
+    updatedAt: input.updatedAt,
+  }).where(eq(sessions.id, input.sessionId)).run()
 }
 
 export async function create(input: {

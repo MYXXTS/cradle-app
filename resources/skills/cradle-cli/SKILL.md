@@ -286,10 +286,12 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `chronicle` | 56 | Generated Cradle CLI module. | `cradle man chronicle` |
 | `download-center` | 3 | Generated Cradle CLI module. | `cradle man download-center` |
 | `external-issue-source` | 9 | Generated Cradle CLI module. | `cradle man external-issue-source` |
+| `external-session-import` | 5 | Generated Cradle CLI module. | `cradle man external-session-import` |
 | `health` | 1 | Check server health. | `cradle man health` |
 | `issue` | 30 | Manage Kanban issues, comments, relations, delegation, and context refs. | `cradle man issue` |
 | `issue-agent-session` | 3 | Inspect and control issue agent sessions. | `cradle man issue-agent-session` |
 | `link-preview` | 1 | Generated Cradle CLI module. | `cradle man link-preview` |
+| `managed-resources` | 5 | Generated Cradle CLI module. | `cradle man managed-resources` |
 | `observability` | 5 | Inspect local observability events, incidents, and exports. | `cradle man observability` |
 | `opencode` | 1 | Generated Cradle CLI module. | `cradle man opencode` |
 | `plugin` | 10 | Generated Cradle CLI module. | `cradle man plugin` |
@@ -308,6 +310,6 @@ It intentionally lists modules, not routes or leaf actions. Use `cradle man <mod
 | `usage` | 10 | Inspect usage and cost data. | `cradle man usage` |
 | `work` | 6 | Manage user-controlled local Work containers and Draft PR delivery. | `cradle man work` |
 | `workflow-rule` | 4 | Manage workflow rules. | `cradle man workflow-rule` |
-| `workspace` | 53 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
+| `workspace` | 54 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
 
 <!-- CRADLE_CLI_MODULES_END -->

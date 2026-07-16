@@ -214,6 +214,23 @@ export async function recordImportedSessionMessages(input: {
   )
 }
 
+export function recordImportedSessionMessagesInTransaction(
+  transaction: ChatRuntimeTx,
+  input: {
+    sessionId: string
+    messages: Array<MessageRecordedFact & { status: 'complete' }>
+  },
+): StoredChatSessionEvent[] {
+  return appendDecidedSessionEvents(
+    transaction,
+    input.sessionId,
+    input.messages.map((message): ChatSessionEvent => ({
+      type: 'MessageImported',
+      payload: { message },
+    })),
+  )
+}
+
 export function clearProviderTargetFromSessionQueuesInTransaction(
   tx: ChatRuntimeTx,
   input: {

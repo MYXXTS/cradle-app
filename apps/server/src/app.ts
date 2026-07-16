@@ -32,7 +32,7 @@ import { createDownloadCenterModule } from './modules/download-center'
 import { DownloadCenterService } from './modules/download-center/service'
 import { externalIssueSources } from './modules/external-issue-sources'
 import { externalProviderSources } from './modules/external-provider-sources'
-import { externalWorkImport } from './modules/external-work-import'
+import { externalSessionImport } from './modules/external-session-import'
 import { filesystem } from './modules/filesystem'
 import { git } from './modules/git'
 import { health } from './modules/health'
@@ -189,7 +189,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(remoteHosts)
   app.use(externalIssueSources)
   app.use(externalProviderSources)
-  app.use(externalWorkImport)
+  app.use(externalSessionImport)
   app.use(secrets)
   app.use(modelRegistry)
   app.use(providers)

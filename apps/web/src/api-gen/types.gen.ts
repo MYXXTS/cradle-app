@@ -94,6 +94,7 @@ export type GetPreferencesAppResponses = {
             localAuthForDangerousActions?: boolean;
             continueBlockedCodexGoals?: boolean;
             blockCodexAppServerLogInserts?: boolean;
+            codexCliCompatibleIdentity?: boolean;
             nativeProviderSkillProjection?: boolean;
             turnCheckpoints?: boolean;
         };
@@ -113,6 +114,7 @@ export type PutPreferencesAppData = {
             localAuthForDangerousActions?: boolean;
             continueBlockedCodexGoals?: boolean;
             blockCodexAppServerLogInserts?: boolean;
+            codexCliCompatibleIdentity?: boolean;
             nativeProviderSkillProjection?: boolean;
             turnCheckpoints?: boolean;
         };
@@ -469,6 +471,7 @@ export type GetWorkspacesResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -538,6 +541,7 @@ export type PostWorkspacesResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -595,6 +599,7 @@ export type PostWorkspacesFromDirectoryResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -689,6 +694,7 @@ export type PostWorkspacesMultiFolderResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -746,6 +752,7 @@ export type PostWorkspacesMultiFolderFromConfigResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -784,6 +791,7 @@ export type GetWorkspacesResolveResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -1141,6 +1149,7 @@ export type GetWorkspacesByWorkspaceIdResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -1181,6 +1190,7 @@ export type PatchWorkspacesByWorkspaceIdResponses = {
             branch?: string | null;
         };
         identifier: string;
+        availability: 'available' | 'missing' | 'remote';
         pinned: number;
         createdAt: number;
         updatedAt: number;
@@ -1188,6 +1198,46 @@ export type PatchWorkspacesByWorkspaceIdResponses = {
 };
 
 export type PatchWorkspacesByWorkspaceIdResponse = PatchWorkspacesByWorkspaceIdResponses[keyof PatchWorkspacesByWorkspaceIdResponses];
+
+export type PatchWorkspacesByWorkspaceIdLocationData = {
+    body: {
+        path: string;
+    };
+    path: {
+        workspaceId: string;
+    };
+    query?: never;
+    url: '/workspaces/{workspaceId}/location';
+};
+
+export type PatchWorkspacesByWorkspaceIdLocationResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        name: string;
+        locator: {
+            hostId: string;
+            path: string;
+            kind?: 'project' | 'managed-worktree';
+            sourceWorkspaceId?: string | null;
+        };
+        gitIdentity: {
+            originUrl?: string | null;
+            repoRoot?: string | null;
+            headSha?: string | null;
+            branch?: string | null;
+        };
+        identifier: string;
+        availability: 'available' | 'missing' | 'remote';
+        pinned: number;
+        createdAt: number;
+        updatedAt: number;
+    } | null;
+};
+
+export type PatchWorkspacesByWorkspaceIdLocationResponse = PatchWorkspacesByWorkspaceIdLocationResponses[keyof PatchWorkspacesByWorkspaceIdLocationResponses];
 
 export type PostWorkspacesByWorkspaceIdMigrateData = {
     body: {
@@ -3554,193 +3604,200 @@ export type PatchExternalProviderSourcesBySourceKeyRecordsByExternalRecordIdRunt
 
 export type PatchExternalProviderSourcesBySourceKeyRecordsByExternalRecordIdRuntimeTargetResponse = PatchExternalProviderSourcesBySourceKeyRecordsByExternalRecordIdRuntimeTargetResponses[keyof PatchExternalProviderSourcesBySourceKeyRecordsByExternalRecordIdRuntimeTargetResponses];
 
-export type GetExternalWorkImportRecordsData = {
+export type PostExternalSessionImportScansData = {
+    body: {
+        sourceHostId?: string;
+        sourceApps?: Array<'claude' | 'codex'>;
+        limitPerSource?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/external-session-import/scans';
+};
+
+export type PostExternalSessionImportScansResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        createdAt: number;
+        candidates: Array<{
+            candidateId: string;
+            sourceHostId: string;
+            sourceApp: 'claude' | 'codex';
+            externalSessionId: string;
+            sourceRevision: string;
+            title: string;
+            summary: string | null;
+            workspacePath: string;
+            createdAt: number | null;
+            updatedAt: number | null;
+            archived: boolean;
+            estimatedBytes: number | null;
+            childSessionCount: number | null;
+            alreadyImported: boolean;
+            importState: 'available' | 'imported' | 'update-available';
+            importRecordId: string | null;
+            workspacePlan: {
+                kind: 'existing' | 'create';
+                reason: 'exact-path' | 'containing-path' | 'git-identity' | 'import-record' | 'available-project-root' | 'offline-historical-root';
+                historicalKey: string;
+                workspaceId: string | null;
+                name: string;
+                path: string;
+                availability: 'available' | 'missing' | 'remote';
+            };
+        }>;
+        warnings: Array<string>;
+    };
+};
+
+export type PostExternalSessionImportScansResponse = PostExternalSessionImportScansResponses[keyof PostExternalSessionImportScansResponses];
+
+export type GetExternalSessionImportScansByScanIdData = {
+    body?: never;
+    path: {
+        scanId: string;
+    };
+    query?: never;
+    url: '/external-session-import/scans/{scanId}';
+};
+
+export type GetExternalSessionImportScansByScanIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        createdAt: number;
+        candidates: Array<{
+            candidateId: string;
+            sourceHostId: string;
+            sourceApp: 'claude' | 'codex';
+            externalSessionId: string;
+            sourceRevision: string;
+            title: string;
+            summary: string | null;
+            workspacePath: string;
+            createdAt: number | null;
+            updatedAt: number | null;
+            archived: boolean;
+            estimatedBytes: number | null;
+            childSessionCount: number | null;
+            alreadyImported: boolean;
+            importState: 'available' | 'imported' | 'update-available';
+            importRecordId: string | null;
+            workspacePlan: {
+                kind: 'existing' | 'create';
+                reason: 'exact-path' | 'containing-path' | 'git-identity' | 'import-record' | 'available-project-root' | 'offline-historical-root';
+                historicalKey: string;
+                workspaceId: string | null;
+                name: string;
+                path: string;
+                availability: 'available' | 'missing' | 'remote';
+            };
+        }>;
+        warnings: Array<string>;
+    };
+};
+
+export type GetExternalSessionImportScansByScanIdResponse = GetExternalSessionImportScansByScanIdResponses[keyof GetExternalSessionImportScansByScanIdResponses];
+
+export type GetExternalSessionImportImportsData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/external-work-import/records';
+    url: '/external-session-import/imports';
 };
 
-export type GetExternalWorkImportRecordsResponses = {
+export type GetExternalSessionImportImportsResponses = {
     /**
      * Response for status 200
      */
     200: Array<{
         id: string;
-        sourceApp: 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown';
-        sourceScope: 'server' | 'electron-upload';
-        sourceKind: 'settings' | 'project' | 'session' | 'instruction' | 'mcp' | 'command' | 'hook' | 'skill' | 'plugin' | 'subagent';
+        sourceHostId: string;
+        sourceApp: 'claude' | 'codex';
+        externalSessionId: string;
         sourcePath: string | null;
-        externalId: string;
-        fingerprint: string;
-        title: string;
-        summary: string | null;
-        workspaceId: string | null;
-        sessionId: string | null;
-        messageId: string | null;
-        status: 'imported' | 'skipped' | 'error';
+        sourceWorkspacePath: string;
+        sourceRevision: string;
+        contentHash: string;
+        sourceGitIdentityJson: string;
+        workspaceId: string;
+        sessionId: string;
+        fidelityJson: string;
+        checkpointJson: string;
+        status: 'imported' | 'update-available' | 'error';
         statusReason: string | null;
         importedAt: number;
+        lastSyncedAt: number;
         createdAt: number;
         updatedAt: number;
     }>;
 };
 
-export type GetExternalWorkImportRecordsResponse = GetExternalWorkImportRecordsResponses[keyof GetExternalWorkImportRecordsResponses];
+export type GetExternalSessionImportImportsResponse = GetExternalSessionImportImportsResponses[keyof GetExternalSessionImportImportsResponses];
 
-export type PostExternalWorkImportPreviewData = {
+export type PostExternalSessionImportImportsData = {
     body: {
-        includeHome?: boolean;
-        cwds?: Array<string>;
-        sourceApps?: Array<'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown'>;
-        limitPerSource?: number;
+        scanId: string;
+        candidateIds: Array<string>;
     };
     path?: never;
     query?: never;
-    url: '/external-work-import/preview';
+    url: '/external-session-import/imports';
 };
 
-export type PostExternalWorkImportPreviewResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        items: Array<{
-            id: string;
-            sourceApp: 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown';
-            sourceScope: 'server' | 'electron-upload';
-            sourceKind: 'settings' | 'project' | 'session' | 'instruction' | 'mcp' | 'command' | 'hook' | 'skill' | 'plugin' | 'subagent';
-            title: string;
-            summary: string | null;
-            sourcePath: string | null;
-            externalId: string;
-            fingerprint: string;
-            workspacePath: string | null;
-            createdAt: number | null;
-            updatedAt: number | null;
-            duplicate: boolean;
-            duplicateImportId: string | null;
-            importable: boolean;
-            reason: string | null;
-            payloadJson: string;
-        }>;
-        warnings: Array<string>;
-    };
-};
-
-export type PostExternalWorkImportPreviewResponse = PostExternalWorkImportPreviewResponses[keyof PostExternalWorkImportPreviewResponses];
-
-export type PostExternalWorkImportUploadPreviewData = {
-    body: {
-        files: Array<{
-            sourceApp: 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown';
-            path: string;
-            content: string;
-            workspacePath?: string | null;
-            modifiedAt?: number | null;
-        }>;
-    };
-    path?: never;
-    query?: never;
-    url: '/external-work-import/upload-preview';
-};
-
-export type PostExternalWorkImportUploadPreviewResponses = {
-    /**
-     * Response for status 200
-     */
-    200: {
-        items: Array<{
-            id: string;
-            sourceApp: 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown';
-            sourceScope: 'server' | 'electron-upload';
-            sourceKind: 'settings' | 'project' | 'session' | 'instruction' | 'mcp' | 'command' | 'hook' | 'skill' | 'plugin' | 'subagent';
-            title: string;
-            summary: string | null;
-            sourcePath: string | null;
-            externalId: string;
-            fingerprint: string;
-            workspacePath: string | null;
-            createdAt: number | null;
-            updatedAt: number | null;
-            duplicate: boolean;
-            duplicateImportId: string | null;
-            importable: boolean;
-            reason: string | null;
-            payloadJson: string;
-        }>;
-        warnings: Array<string>;
-    };
-};
-
-export type PostExternalWorkImportUploadPreviewResponse = PostExternalWorkImportUploadPreviewResponses[keyof PostExternalWorkImportUploadPreviewResponses];
-
-export type PostExternalWorkImportImportData = {
-    body: {
-        items: Array<{
-            id: string;
-            sourceApp: 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown';
-            sourceScope: 'server' | 'electron-upload';
-            sourceKind: 'settings' | 'project' | 'session' | 'instruction' | 'mcp' | 'command' | 'hook' | 'skill' | 'plugin' | 'subagent';
-            title: string;
-            summary: string | null;
-            sourcePath: string | null;
-            externalId: string;
-            fingerprint: string;
-            workspacePath: string | null;
-            createdAt: number | null;
-            updatedAt: number | null;
-            duplicate: boolean;
-            duplicateImportId: string | null;
-            importable: boolean;
-            reason: string | null;
-            payloadJson: string;
-        }>;
-    };
-    path?: never;
-    query?: never;
-    url: '/external-work-import/import';
-};
-
-export type PostExternalWorkImportImportResponses = {
+export type PostExternalSessionImportImportsResponses = {
     /**
      * Response for status 200
      */
     200: {
         imported: number;
         duplicates: number;
-        skipped: number;
         errors: number;
         items: Array<{
-            fingerprint: string;
-            status: 'pending' | 'imported' | 'duplicate' | 'skipped' | 'error';
-            record: {
-                id: string;
-                sourceApp: 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown';
-                sourceScope: 'server' | 'electron-upload';
-                sourceKind: 'settings' | 'project' | 'session' | 'instruction' | 'mcp' | 'command' | 'hook' | 'skill' | 'plugin' | 'subagent';
-                sourcePath: string | null;
-                externalId: string;
-                fingerprint: string;
-                title: string;
-                summary: string | null;
-                workspaceId: string | null;
-                sessionId: string | null;
-                messageId: string | null;
-                status: 'imported' | 'skipped' | 'error';
-                statusReason: string | null;
-                importedAt: number;
-                createdAt: number;
-                updatedAt: number;
-            } | null;
+            candidateId: string;
+            status: 'imported' | 'duplicate' | 'error';
             sessionId: string | null;
             workspaceId: string | null;
+            recordId: string | null;
             reason: string | null;
         }>;
     };
 };
 
-export type PostExternalWorkImportImportResponse = PostExternalWorkImportImportResponses[keyof PostExternalWorkImportImportResponses];
+export type PostExternalSessionImportImportsResponse = PostExternalSessionImportImportsResponses[keyof PostExternalSessionImportImportsResponses];
+
+export type PostExternalSessionImportImportsByImportIdSyncData = {
+    body: {
+        scanId: string;
+        candidateId: string;
+    };
+    path: {
+        importId: string;
+    };
+    query?: never;
+    url: '/external-session-import/imports/{importId}/sync';
+};
+
+export type PostExternalSessionImportImportsByImportIdSyncResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        importId: string;
+        sessionId: string;
+        workspaceId: string;
+        status: 'unchanged' | 'synced' | 'diverged';
+        appendedMessages: number;
+        reason: string | null;
+    };
+};
+
+export type PostExternalSessionImportImportsByImportIdSyncResponse = PostExternalSessionImportImportsByImportIdSyncResponses[keyof PostExternalSessionImportImportsByImportIdSyncResponses];
 
 export type GetSecretsData = {
     body?: never;
@@ -23904,6 +23961,252 @@ export type PostChronicleEmbeddingsResponses = {
 };
 
 export type PostChronicleEmbeddingsResponse = PostChronicleEmbeddingsResponses[keyof PostChronicleEmbeddingsResponses];
+
+export type GetManagedResourcesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/managed-resources';
+};
+
+export type GetManagedResourcesResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        key: {
+            namespace: string;
+            resourceType: string;
+            resourceId: string;
+        };
+        displayName: string;
+        description: string | null;
+        kind: string;
+        required: boolean;
+        state: 'not-installed' | 'installing' | 'installed' | 'update-available' | 'error' | 'unavailable';
+        installationSource: 'built-in' | 'managed' | 'external' | null;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        installedSizeBytes: number | null;
+        downloadSizeBytes: number | null;
+        actions: {
+            install: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            update: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            uninstall: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+        };
+    }>;
+};
+
+export type GetManagedResourcesResponse = GetManagedResourcesResponses[keyof GetManagedResourcesResponses];
+
+export type DeleteManagedResourcesByNamespaceByResourceTypeByResourceIdData = {
+    body?: never;
+    path: {
+        namespace: string;
+        resourceType: string;
+        resourceId: string;
+    };
+    query?: never;
+    url: '/managed-resources/{namespace}/{resourceType}/{resourceId}';
+};
+
+export type DeleteManagedResourcesByNamespaceByResourceTypeByResourceIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        key: {
+            namespace: string;
+            resourceType: string;
+            resourceId: string;
+        };
+        displayName: string;
+        description: string | null;
+        kind: string;
+        required: boolean;
+        state: 'not-installed' | 'installing' | 'installed' | 'update-available' | 'error' | 'unavailable';
+        installationSource: 'built-in' | 'managed' | 'external' | null;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        installedSizeBytes: number | null;
+        downloadSizeBytes: number | null;
+        actions: {
+            install: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            update: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            uninstall: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+        };
+    };
+};
+
+export type DeleteManagedResourcesByNamespaceByResourceTypeByResourceIdResponse = DeleteManagedResourcesByNamespaceByResourceTypeByResourceIdResponses[keyof DeleteManagedResourcesByNamespaceByResourceTypeByResourceIdResponses];
+
+export type GetManagedResourcesByNamespaceByResourceTypeByResourceIdData = {
+    body?: never;
+    path: {
+        namespace: string;
+        resourceType: string;
+        resourceId: string;
+    };
+    query?: never;
+    url: '/managed-resources/{namespace}/{resourceType}/{resourceId}';
+};
+
+export type GetManagedResourcesByNamespaceByResourceTypeByResourceIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        key: {
+            namespace: string;
+            resourceType: string;
+            resourceId: string;
+        };
+        displayName: string;
+        description: string | null;
+        kind: string;
+        required: boolean;
+        state: 'not-installed' | 'installing' | 'installed' | 'update-available' | 'error' | 'unavailable';
+        installationSource: 'built-in' | 'managed' | 'external' | null;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        installedSizeBytes: number | null;
+        downloadSizeBytes: number | null;
+        actions: {
+            install: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            update: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            uninstall: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+        };
+    };
+};
+
+export type GetManagedResourcesByNamespaceByResourceTypeByResourceIdResponse = GetManagedResourcesByNamespaceByResourceTypeByResourceIdResponses[keyof GetManagedResourcesByNamespaceByResourceTypeByResourceIdResponses];
+
+export type PostManagedResourcesByNamespaceByResourceTypeByResourceIdInstallData = {
+    body?: never;
+    path: {
+        namespace: string;
+        resourceType: string;
+        resourceId: string;
+    };
+    query?: never;
+    url: '/managed-resources/{namespace}/{resourceType}/{resourceId}/install';
+};
+
+export type PostManagedResourcesByNamespaceByResourceTypeByResourceIdInstallResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        key: {
+            namespace: string;
+            resourceType: string;
+            resourceId: string;
+        };
+        displayName: string;
+        description: string | null;
+        kind: string;
+        required: boolean;
+        state: 'not-installed' | 'installing' | 'installed' | 'update-available' | 'error' | 'unavailable';
+        installationSource: 'built-in' | 'managed' | 'external' | null;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        installedSizeBytes: number | null;
+        downloadSizeBytes: number | null;
+        actions: {
+            install: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            update: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            uninstall: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+        };
+    };
+};
+
+export type PostManagedResourcesByNamespaceByResourceTypeByResourceIdInstallResponse = PostManagedResourcesByNamespaceByResourceTypeByResourceIdInstallResponses[keyof PostManagedResourcesByNamespaceByResourceTypeByResourceIdInstallResponses];
+
+export type PostManagedResourcesByNamespaceByResourceTypeByResourceIdUpdateData = {
+    body?: never;
+    path: {
+        namespace: string;
+        resourceType: string;
+        resourceId: string;
+    };
+    query?: never;
+    url: '/managed-resources/{namespace}/{resourceType}/{resourceId}/update';
+};
+
+export type PostManagedResourcesByNamespaceByResourceTypeByResourceIdUpdateResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        key: {
+            namespace: string;
+            resourceType: string;
+            resourceId: string;
+        };
+        displayName: string;
+        description: string | null;
+        kind: string;
+        required: boolean;
+        state: 'not-installed' | 'installing' | 'installed' | 'update-available' | 'error' | 'unavailable';
+        installationSource: 'built-in' | 'managed' | 'external' | null;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        installedSizeBytes: number | null;
+        downloadSizeBytes: number | null;
+        actions: {
+            install: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            update: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+            uninstall: {
+                available: boolean;
+                reasonCode: string | null;
+            };
+        };
+    };
+};
+
+export type PostManagedResourcesByNamespaceByResourceTypeByResourceIdUpdateResponse = PostManagedResourcesByNamespaceByResourceTypeByResourceIdUpdateResponses[keyof PostManagedResourcesByNamespaceByResourceTypeByResourceIdUpdateResponses];
 
 export type GetOpencodeServerResourcesData = {
     body?: never;

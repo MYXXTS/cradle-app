@@ -321,18 +321,6 @@ interface NativeServiceMethods {
   installDesktopCliCommand: () => Promise<DesktopCliStatus>
   removeDesktopCliCommand: () => Promise<DesktopCliStatus>
   setDesktopPreferences: (preferences: DesktopPreferences) => Promise<DesktopPreferences>
-  scanExternalWorkImportFiles: (options?: {
-    limitPerSource?: number
-  }) => Promise<{
-    files: Array<{
-      sourceApp: 'claude' | 'codex'
-      path: string
-      content: string
-      workspacePath: string | null
-      modifiedAt: number | null
-    }>
-    warnings: string[]
-  }>
 }
 
 export interface NativeAuthCapability {

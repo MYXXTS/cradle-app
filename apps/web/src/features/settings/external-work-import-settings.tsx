@@ -1,13 +1,17 @@
 import {
-  CheckCircleLine as CheckCircle2Icon,
-  CylinderLine as DatabaseIcon,
+  CheckCircleLine as CheckCircleIcon,
+  CloudLine as CloudIcon,
   DownloadLine as DownloadIcon,
-  LaptopLine as LaptopIcon,
-  Refresh1Line as RefreshCwIcon,
+  ExternalLinkLine as ExternalLinkIcon,
+  FolderOpenLine as FolderIcon,
+  Link2Line as LinkIcon,
+  Refresh1Line as RefreshIcon,
   ServerLine as ServerIcon,
-  WarningLine as TriangleAlertIcon,
+  WarningLine as WarningIcon,
 } from '@mingcute/react'
-import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { VList } from 'virtua'
 import { useStore } from 'zustand'
@@ -20,452 +24,531 @@ import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Spinner } from '~/components/ui/spinner'
 import { cn } from '~/lib/cn'
-import { getServerUrl, isElectron, nativeIpc } from '~/lib/electron'
+import { openChatSession } from '~/navigation/navigation-commands'
 
+import type {
+  PostExternalSessionImportImportsResponse,
+  PostExternalSessionImportScansResponse,
+} from './api/external-session-import'
+import {
+  getExternalSessionImportImportsOptions,
+  getExternalSessionImportImportsQueryKey,
+  getSessionsQueryKey,
+  getWorkspacesQueryKey,
+  postExternalSessionImportImportsByImportIdSyncMutation,
+  postExternalSessionImportImportsMutation,
+  postExternalSessionImportScansMutation,
+} from './api/external-session-import'
 import { SettingsGroup, SettingsPage } from './settings-container'
-import { SettingsRow } from './settings-row'
 
-type SourceApp = 'claude' | 'codex' | 'cursor' | 'windsurf' | 'gemini' | 'unknown'
-type SourceScope = 'server' | 'electron-upload'
-type SourceKind = 'settings' | 'project' | 'session' | 'instruction' | 'mcp' | 'command' | 'hook' | 'skill' | 'plugin' | 'subagent'
-
-interface ExternalWorkImportItem {
-  id: string
-  sourceApp: SourceApp
-  sourceScope: SourceScope
-  sourceKind: SourceKind
-  title: string
-  summary: string | null
-  sourcePath: string | null
-  externalId: string
-  fingerprint: string
-  workspacePath: string | null
-  createdAt: number | null
-  updatedAt: number | null
-  duplicate: boolean
-  duplicateImportId: string | null
-  importable: boolean
-  reason: string | null
-  payloadJson: string
-}
-
-interface PreviewResponse {
-  items: ExternalWorkImportItem[]
-  warnings: string[]
-}
-
-interface ImportResponse {
-  imported: number
-  duplicates: number
-  skipped: number
-  errors: number
-}
-
-type ImportStatus = 'idle' | 'scanning' | 'importing' | 'ready' | 'error'
+type ImportScan = PostExternalSessionImportScansResponse
+type ImportCandidate = ImportScan['candidates'][number]
+type ImportResultItem = PostExternalSessionImportImportsResponse['items'][number]
+type SourceFilter = 'all' | 'claude' | 'codex'
+type ImportFilter = 'all' | 'available' | 'update-available' | 'imported'
 
 interface SelectionState {
-  fingerprints: Set<string>
+  candidateIds: Set<string>
   count: number
-}
-
-const IMPORT_ROW_SIZE = 92
-
-interface ImportSelectionState extends SelectionState {
-  replace: (fingerprints: string[]) => void
   clear: () => void
-  toggle: (fingerprint: string, checked: boolean) => void
+  replace: (candidateIds: string[]) => void
+  toggle: (candidateId: string, selected: boolean) => void
 }
 
-type ImportSelectionStore = StoreApi<ImportSelectionState>
+type SelectionStore = StoreApi<SelectionState>
 
-function createImportSelectionStore(): ImportSelectionStore {
-  return createStore<ImportSelectionState>(set => ({
-    fingerprints: new Set(),
+const CANDIDATE_ROW_SIZE = 116
+
+function createSelectionStore(): SelectionStore {
+  return createStore<SelectionState>(set => ({
+    candidateIds: new Set(),
     count: 0,
-    replace: fingerprints => set({
-      fingerprints: new Set(fingerprints),
-      count: fingerprints.length,
-    }),
-    clear: () => set({
-      fingerprints: new Set(),
-      count: 0,
-    }),
-    toggle: (fingerprint, checked) => set((current) => {
-      const alreadySelected = current.fingerprints.has(fingerprint)
-      if (alreadySelected === checked) {
+    clear: () => set({ candidateIds: new Set(), count: 0 }),
+    replace: candidateIds => set({ candidateIds: new Set(candidateIds), count: candidateIds.length }),
+    toggle: (candidateId, selected) => set((current) => {
+      if (current.candidateIds.has(candidateId) === selected) {
         return current
       }
-      const next = new Set(current.fingerprints)
-      if (checked) {
-        next.add(fingerprint)
+      const candidateIds = new Set(current.candidateIds)
+      if (selected) {
+        candidateIds.add(candidateId)
       }
       else {
-        next.delete(fingerprint)
+        candidateIds.delete(candidateId)
       }
-      return {
-        fingerprints: next,
-        count: current.count + (checked ? 1 : -1),
-      }
+      return { candidateIds, count: current.count + (selected ? 1 : -1) }
     }),
   }))
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(new URL(path, getServerUrl()), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!response.ok) {
-    throw new Error(await response.text())
+function isImportable(candidate: ImportCandidate): boolean {
+  return candidate.importState === 'available'
+    || (candidate.importState === 'update-available' && candidate.importRecordId === null)
+}
+
+function formatBytes(bytes: number | null): string | null {
+  if (bytes === null) {
+    return null
   }
-  return await response.json() as T
-}
-
-function mergePreviewItems(responses: PreviewResponse[]): ExternalWorkImportItem[] {
-  const byFingerprint = new Map<string, ExternalWorkImportItem>()
-  for (const response of responses) {
-    for (const item of response.items.filter(item => item.sourceKind === 'session')) {
-      const existing = byFingerprint.get(item.fingerprint)
-      if (!existing) {
-        byFingerprint.set(item.fingerprint, item)
-        continue
-      }
-      if (existing.sourceScope === 'electron-upload' && item.sourceScope === 'server') {
-        byFingerprint.set(item.fingerprint, item)
-      }
-    }
+  if (bytes < 1_024) {
+    return `${bytes} B`
   }
-  return Array.from(byFingerprint.values()).sort((left, right) => {
-    if (left.importable !== right.importable) {
-      return left.importable ? -1 : 1
-    }
-    return (right.updatedAt ?? 0) - (left.updatedAt ?? 0)
-  })
+  if (bytes < 1_048_576) {
+    return `${(bytes / 1_024).toFixed(1)} KB`
+  }
+  return `${(bytes / 1_048_576).toFixed(1)} MB`
 }
 
-function formatItemMeta(item: ExternalWorkImportItem): string {
-  return [
-    item.sourceApp,
-    item.sourceKind,
-    item.sourceScope === 'server' ? 'server' : 'device',
-    item.workspacePath,
-  ]
-    .filter(Boolean)
-    .join(' / ')
+function formatDate(timestamp: number | null): string | null {
+  if (timestamp === null) {
+    return null
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(timestamp * 1_000)
 }
 
-interface ExternalWorkImportRowProps {
-  item: ExternalWorkImportItem
-  busy: boolean
-  duplicateLabel: string
-  selectionStore: ImportSelectionStore
+function workspaceReason(candidate: ImportCandidate, t: TFunction<'settings'>): string {
+  switch (candidate.workspacePlan.reason) {
+    case 'exact-path':
+      return t('import.workspace.exact')
+    case 'containing-path':
+      return t('import.workspace.ancestor')
+    case 'git-identity':
+      return t('import.workspace.git')
+    case 'import-record':
+      return t('import.workspace.importRecord')
+    case 'available-project-root':
+      return t('import.workspace.register')
+    case 'offline-historical-root':
+      return t('import.workspace.offline')
+  }
 }
 
-const ExternalWorkImportRow = ({
-  item,
+function importStateLabel(candidate: ImportCandidate, t: TFunction<'settings'>): string {
+  if (candidate.importState === 'imported') {
+    return t('import.state.imported')
+  }
+  if (candidate.importState === 'update-available') {
+    return candidate.importRecordId ? t('import.state.update') : t('import.state.legacy')
+  }
+  return t('import.state.ready')
+}
+
+function CandidateRow({
+  candidate,
   busy,
-  duplicateLabel,
+  importedSessionId,
   selectionStore,
-}: ExternalWorkImportRowProps) => {
-  const checked = useStore(
-    selectionStore,
-    state => state.fingerprints.has(item.fingerprint),
-  )
+  onSync,
+}: {
+  candidate: ImportCandidate
+  busy: boolean
+  importedSessionId: string | null
+  selectionStore: SelectionStore
+  onSync: (candidate: ImportCandidate) => void
+}) {
+  const { t } = useTranslation('settings')
+  const checked = useStore(selectionStore, state => state.candidateIds.has(candidate.candidateId))
   const toggle = useStore(selectionStore, state => state.toggle)
-  const handleToggle = (value: boolean | 'indeterminate') => {
-    toggle(item.fingerprint, value === true)
-  }
+  const importable = isImportable(candidate)
+  const date = formatDate(candidate.updatedAt ?? candidate.createdAt)
+  const bytes = formatBytes(candidate.estimatedBytes)
 
   return (
-    <div
-      className={cn(
-        'border-t border-foreground/5 py-3',
-        item.importable ? 'opacity-100' : 'opacity-60',
-      )}
-    >
-      <div className="flex items-start justify-between gap-4">
+    <div className="border-b border-border/60 px-3 py-3 last:border-b-0">
+      <div className="flex min-w-0 items-start gap-3">
+        <label className="relative flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg hover:bg-muted/60">
+          <Checkbox
+            checked={checked}
+            disabled={busy || !importable}
+            onCheckedChange={value => toggle(candidate.candidateId, value === true)}
+            aria-label={`Select ${candidate.title}`}
+          />
+        </label>
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            {item.sourceScope === 'server'
-              ? <ServerIcon className="size-3.5 shrink-0 !text-muted-foreground" aria-hidden="true" />
-              : <LaptopIcon className="size-3.5 shrink-0 !text-muted-foreground" aria-hidden="true" />}
-            <span className="truncate text-[13px] font-medium text-foreground">{item.title}</span>
-            {item.duplicate && (
-              <Badge variant="outline">{duplicateLabel}</Badge>
-            )}
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="truncate text-[13px] font-medium text-foreground">{candidate.title}</span>
+            <Badge variant="outline" className="uppercase">{candidate.sourceApp}</Badge>
+            <Badge
+              variant={candidate.workspacePlan.availability === 'missing' ? 'destructive' : 'secondary'}
+            >
+              {candidate.workspacePlan.availability === 'missing' ? t('import.state.missing') : importStateLabel(candidate, t)}
+            </Badge>
           </div>
-          <p className="mt-1 truncate text-[12px] text-muted-foreground">{formatItemMeta(item)}</p>
-          {item.summary && (
-            <p className="mt-1 line-clamp-2 text-[12px] text-muted-foreground">{item.summary}</p>
-          )}
-          {item.reason && (
-            <p className="mt-1 text-[12px] text-muted-foreground">{item.reason}</p>
-          )}
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground text-pretty">
+            <FolderIcon className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">
+{candidate.workspacePlan.name}
+{' '}
+·
+{' '}
+{candidate.workspacePlan.path}
+            </span>
+          </p>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground/80">
+            {workspaceReason(candidate, t)}
+            {date ? ` · ${date}` : ''}
+            {bytes ? ` · ${bytes}` : ''}
+            {candidate.childSessionCount ? ` · ${candidate.childSessionCount} subagents` : ''}
+          </p>
+          {candidate.summary
+? (
+            <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground text-pretty">{candidate.summary}</p>
+          )
+: null}
         </div>
-        <Checkbox
-          checked={checked}
-          onCheckedChange={handleToggle}
-          disabled={busy || !item.importable}
-          aria-label={item.title}
-        />
+        <div className="flex shrink-0 items-center gap-1">
+          {candidate.importState === 'update-available' && candidate.importRecordId
+? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => onSync(candidate)}
+            >
+              <RefreshIcon />
+              {t('import.action.sync')}
+            </Button>
+          )
+: null}
+          {importedSessionId
+? (
+            <Button type="button" size="icon-sm" variant="ghost" onClick={() => openChatSession(importedSessionId)} aria-label={t('import.action.open')}>
+              <ExternalLinkIcon />
+            </Button>
+          )
+: null}
+        </div>
       </div>
     </div>
   )
 }
 
-ExternalWorkImportRow.displayName = 'ExternalWorkImportRow'
-
-interface ImportActionButtonsProps {
-  status: ImportStatus
-  selectionStore: ImportSelectionStore
-  onScan: () => void
-  onImport: () => void
-}
-
-const ImportActionButtons = ({
-  status,
-  selectionStore,
-  onScan,
-  onImport,
-}: ImportActionButtonsProps) => {
-  const { t } = useTranslation('settings')
-  const selectedCount = useStore(selectionStore, state => state.count)
-  const busy = status === 'scanning' || status === 'importing'
-
+function FilterButton({ active, children, onClick }: {
+  active: boolean
+  children: React.ReactNode
+  onClick: () => void
+}) {
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={onScan}
-        disabled={busy}
-      >
-        {status === 'scanning' ? <Spinner className="size-3.5" /> : <RefreshCwIcon className="size-3.5" aria-hidden="true" />}
-        {t('import.action.scan')}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        onClick={onImport}
-        disabled={busy || selectedCount === 0}
-      >
-        {status === 'importing' ? <Spinner className="size-3.5" /> : <DownloadIcon className="size-3.5" aria-hidden="true" />}
-        {t('import.action.import')}
-      </Button>
-    </div>
-  )
-}
-
-ImportActionButtons.displayName = 'ImportActionButtons'
-
-interface ImportSelectionControlProps {
-  busy: boolean
-  importableCount: number
-  importableFingerprints: string[]
-  selectionStore: ImportSelectionStore
-}
-
-const ImportSelectionControl = ({
-  busy,
-  importableCount,
-  importableFingerprints,
-  selectionStore,
-}: ImportSelectionControlProps) => {
-  const { t } = useTranslation('settings')
-  const selectedCount = useStore(selectionStore, state => state.count)
-  const checked = importableCount > 0 && selectedCount === importableCount
-  const handleCheckedChange = (value: boolean | 'indeterminate') => {
-    if (value === true) {
-      selectionStore.getState().replace(importableFingerprints)
-      return
-    }
-    selectionStore.getState().clear()
-  }
-
-  return (
-    <SettingsRow
-      label={t('import.selection.label')}
-      description={t('import.selection.description', { selected: selectedCount, count: importableCount })}
+    <Button
+      type="button"
+      size="xs"
+      variant={active ? 'secondary' : 'ghost'}
+      onClick={onClick}
+      className="transition-[background-color,color,scale] duration-150 ease-out active:scale-[0.96]"
     >
-      <Checkbox
-        checked={checked}
-        onCheckedChange={handleCheckedChange}
-        disabled={busy || importableCount === 0}
-        aria-label={t('import.selection.toggleAll')}
-      />
-    </SettingsRow>
+      {children}
+    </Button>
   )
 }
-
-ImportSelectionControl.displayName = 'ImportSelectionControl'
 
 export function ExternalWorkImportSettings() {
   const { t } = useTranslation('settings')
-  const [status, setStatus] = useState<ImportStatus>('idle')
-  const [items, setItems] = useState<ExternalWorkImportItem[]>([])
-  const [selectionStore] = useState(createImportSelectionStore)
-  const [message, setMessage] = useState<string | null>(null)
-  const [warnings, setWarnings] = useState<string[]>([])
+  const queryClient = useQueryClient()
+  const [scan, setScan] = useState<ImportScan | null>(null)
+  const [selectionStore] = useState(createSelectionStore)
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [importFilter, setImportFilter] = useState<ImportFilter>('all')
+  const [results, setResults] = useState<ImportResultItem[]>([])
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const scanMutation = useMutation(postExternalSessionImportScansMutation())
+  const importMutation = useMutation(postExternalSessionImportImportsMutation())
+  const syncMutation = useMutation(postExternalSessionImportImportsByImportIdSyncMutation())
+  const importsQuery = useQuery(getExternalSessionImportImportsOptions())
+  const selectedCount = useStore(selectionStore, state => state.count)
+  const busy = scanMutation.isPending || importMutation.isPending || syncMutation.isPending
 
-  const itemByFingerprint = new Map<string, ExternalWorkImportItem>()
-  const importableFingerprints: string[] = []
-  for (const item of items) {
-    itemByFingerprint.set(item.fingerprint, item)
-    if (item.importable) {
-      importableFingerprints.push(item.fingerprint)
+  const importedSessionByRecordId = useMemo(() => new Map(
+    (importsQuery.data ?? []).map(record => [record.id, record.sessionId]),
+  ), [importsQuery.data])
+
+  const candidates = useMemo(() => (scan?.candidates ?? []).filter((candidate) => {
+    if (sourceFilter !== 'all' && candidate.sourceApp !== sourceFilter) {
+      return false
     }
-  }
-  const importableCount = importableFingerprints.length
+    return importFilter === 'all' || candidate.importState === importFilter
+  }), [importFilter, scan?.candidates, sourceFilter])
 
-  const scan = async () => {
-    setStatus('scanning')
-    setMessage(null)
-    setWarnings([])
+  const importableCandidateIds = useMemo(() => candidates
+    .filter(isImportable)
+    .map(candidate => candidate.candidateId), [candidates])
+  const workspaceCount = useMemo(() => new Set(
+    (scan?.candidates ?? []).map(candidate => candidate.workspacePlan.historicalKey),
+  ).size, [scan?.candidates])
+  const missingWorkspaceCount = useMemo(() => new Set(
+    (scan?.candidates ?? [])
+      .filter(candidate => candidate.workspacePlan.availability === 'missing')
+      .map(candidate => candidate.workspacePlan.historicalKey),
+  ).size, [scan?.candidates])
+
+  const runScan = async () => {
+    setStatusMessage(null)
+    setResults([])
+    selectionStore.getState().clear()
     try {
-      const serverPreview = await postJson<PreviewResponse>('/external-work-import/preview', {
-        includeHome: true,
-        limitPerSource: 500,
-      })
-      const responses = [serverPreview]
-      const nextWarnings = [...serverPreview.warnings]
-
-      if (isElectron && nativeIpc) {
-        const localFiles = await nativeIpc.native.scanExternalWorkImportFiles({
-          limitPerSource: 500,
-        })
-        nextWarnings.push(...localFiles.warnings)
-        if (localFiles.files.length > 0) {
-          responses.push(await postJson<PreviewResponse>('/external-work-import/upload-preview', {
-            files: localFiles.files,
-          }))
-        }
-      }
-
-      const merged = mergePreviewItems(responses)
-      const nextFingerprints: string[] = []
-      for (const item of merged) {
-        if (item.importable) {
-          nextFingerprints.push(item.fingerprint)
-        }
-      }
-      setItems(merged)
-      selectionStore.getState().replace(nextFingerprints)
-      setWarnings(nextWarnings)
-      setStatus('ready')
-      setMessage(t('import.status.scanned', { count: merged.length }))
+      const nextScan = await scanMutation.mutateAsync({ body: { limitPerSource: 2_000 } })
+      setScan(nextScan)
+      setStatusMessage(t('import.status.scanned', { count: nextScan.candidates.length }))
     }
     catch (error) {
-      setStatus('error')
-      setMessage(error instanceof Error ? error.message : String(error))
+      setStatusMessage(error instanceof Error ? error.message : String(error))
     }
   }
 
   const importSelected = async () => {
-    setStatus('importing')
-    setMessage(null)
+    if (!scan || selectedCount === 0) {
+      return
+    }
+    setStatusMessage(null)
     try {
-      const selectedItems: ExternalWorkImportItem[] = []
-      for (const fingerprint of selectionStore.getState().fingerprints) {
-        const item = itemByFingerprint.get(fingerprint)
-        if (item?.importable && item.sourceKind === 'session') {
-          selectedItems.push(item)
-        }
-      }
-      const result = await postJson<ImportResponse>('/external-work-import/import', {
-        items: selectedItems,
+      const result = await importMutation.mutateAsync({
+        body: {
+          scanId: scan.id,
+          candidateIds: [...selectionStore.getState().candidateIds],
+        },
       })
-      const importMessage = t('import.status.imported', {
+      setResults(result.items)
+      selectionStore.getState().clear()
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getExternalSessionImportImportsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getWorkspacesQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getSessionsQueryKey() }),
+      ])
+      setStatusMessage(t('import.status.imported', {
         imported: result.imported,
         duplicates: result.duplicates,
-        skipped: result.skipped,
+        skipped: 0,
         errors: result.errors,
-      })
-      await scan()
-      setStatus('ready')
-      setMessage(importMessage)
+      }))
+      const nextScan = await scanMutation.mutateAsync({ body: { limitPerSource: 2_000 } })
+      setScan(nextScan)
     }
     catch (error) {
-      setStatus('error')
-      setMessage(error instanceof Error ? error.message : String(error))
+      setStatusMessage(error instanceof Error ? error.message : String(error))
     }
   }
 
-  const busy = status === 'scanning' || status === 'importing'
+  const syncCandidate = async (candidate: ImportCandidate) => {
+    if (!scan || !candidate.importRecordId) {
+      return
+    }
+    setStatusMessage(null)
+    try {
+      const result = await syncMutation.mutateAsync({
+        path: { importId: candidate.importRecordId },
+        body: { scanId: scan.id, candidateId: candidate.candidateId },
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: getExternalSessionImportImportsQueryKey() }),
+        queryClient.invalidateQueries({ queryKey: getSessionsQueryKey() }),
+      ])
+      setStatusMessage(result.status === 'diverged'
+        ? result.reason
+        : t('import.status.synced', { count: result.appendedMessages }))
+      const nextScan = await scanMutation.mutateAsync({ body: { limitPerSource: 2_000 } })
+      setScan(nextScan)
+    }
+    catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   return (
     <SettingsPage
       title={t('import.page.title')}
       description={t('import.page.description')}
-      action={<Badge variant="outline">{isElectron ? t('import.badge.device') : t('import.badge.server')}</Badge>}
+      action={(
+<Badge variant="outline">
+<ServerIcon />
+{' '}
+{t('import.badge.local')}
+</Badge>
+)}
+      maxWidth="4xl"
       className="h-full min-h-0 pb-0"
       data-testid="external-work-import-settings"
     >
-
       <Alert>
-        <DatabaseIcon className="size-4" aria-hidden="true" />
+        <LinkIcon className="size-4" aria-hidden="true" />
         <AlertTitle>{t('import.alert.title')}</AlertTitle>
-        <AlertDescription>{t('import.alert.description')}</AlertDescription>
+        <AlertDescription>
+          {t('import.alert.description')}
+        </AlertDescription>
       </Alert>
 
-      <SettingsGroup>
-        <SettingsRow
-          label={t('import.scan.label')}
-          description={isElectron ? t('import.scan.descriptionElectron') : t('import.scan.descriptionServer')}
-        >
-          <ImportActionButtons
-            status={status}
-            selectionStore={selectionStore}
-            onScan={() => void scan()}
-            onImport={() => void importSelected()}
-          />
-        </SettingsRow>
-
-        <ImportSelectionControl
-          busy={busy}
-          importableCount={importableCount}
-          importableFingerprints={importableFingerprints}
-          selectionStore={selectionStore}
-        />
+      <SettingsGroup bare className="overflow-hidden">
+        <div className="grid grid-cols-3 gap-px bg-border/60">
+          <ImportStat label={t('import.stat.sessions')} value={scan?.candidates.length ?? 0} icon={<DownloadIcon />} />
+          <ImportStat label={t('import.stat.workspaces')} value={workspaceCount} icon={<FolderIcon />} />
+          <ImportStat label={t('import.stat.offline')} value={missingWorkspaceCount} icon={<CloudIcon />} warning={missingWorkspaceCount > 0} />
+        </div>
       </SettingsGroup>
 
-      {warnings.length > 0 && (
-        <Alert variant="destructive">
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          <AlertTitle>{t('import.warning.title')}</AlertTitle>
-          <AlertDescription>{warnings.join(' ')}</AlertDescription>
-        </Alert>
-      )}
+      <SettingsGroup
+        bare
+        label={t('import.center.title')}
+        description={t('import.center.description')}
+        action={(
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void runScan()}>
+              {scanMutation.isPending ? <Spinner /> : <RefreshIcon />}
+              {scan ? t('import.action.scanAgain') : t('import.action.scan')}
+            </Button>
+            <Button type="button" size="sm" disabled={busy || selectedCount === 0} onClick={() => void importSelected()}>
+              {importMutation.isPending ? <Spinner /> : <DownloadIcon />}
+              {t('import.action.import')}
+{' '}
+<span className="tabular-nums">{selectedCount || ''}</span>
+            </Button>
+          </div>
+        )}
+        sectionClassName="min-h-0 flex-1"
+        className="flex h-full min-h-0 flex-col overflow-hidden"
+      >
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+          <div className="flex items-center gap-1">
+            {(['all', 'claude', 'codex'] as const).map(source => (
+              <FilterButton key={source} active={sourceFilter === source} onClick={() => setSourceFilter(source)}>
+                {source === 'all' ? t('import.filter.allSources') : source}
+              </FilterButton>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            {(['all', 'available', 'update-available', 'imported'] as const).map(state => (
+              <FilterButton key={state} active={importFilter === state} onClick={() => setImportFilter(state)}>
+                {state === 'all' ? t('import.filter.allStates') : t(`import.filter.${state}`)}
+              </FilterButton>
+            ))}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+          <span className="tabular-nums">{t('import.selection.summary', { selected: selectedCount, count: candidates.length })}</span>
+          <div className="flex items-center gap-1">
+            <Button type="button" size="xs" variant="ghost" disabled={busy || importableCandidateIds.length === 0} onClick={() => selectionStore.getState().replace(importableCandidateIds)}>
+              {t('import.selection.selectShown')}
+            </Button>
+            <Button type="button" size="xs" variant="ghost" disabled={busy || selectedCount === 0} onClick={() => selectionStore.getState().clear()}>
+              {t('import.selection.clear')}
+            </Button>
+          </div>
+        </div>
 
-      {items.length > 0 && (
-        <SettingsGroup bare sectionClassName="min-h-0 flex-1" className="h-full min-h-0 overflow-hidden">
-          <VList
-            className="h-full min-h-0 pr-1"
-            data={items}
-            itemSize={IMPORT_ROW_SIZE}
-          >
-            {item => (
-              <ExternalWorkImportRow
-                key={item.fingerprint}
-                item={item}
+        {scan === null && !scanMutation.isPending
+? (
+          <div className="flex min-h-64 flex-1 flex-col items-center justify-center px-6 text-center">
+            <FolderIcon className="size-6 text-muted-foreground/60" aria-hidden="true" />
+            <h3 className="mt-3 text-sm font-medium text-foreground text-balance">{t('import.empty.title')}</h3>
+            <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground text-pretty">
+              {t('import.empty.description')}
+            </p>
+          </div>
+        )
+: scanMutation.isPending && scan === null
+? (
+          <div className="flex min-h-64 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
+            <Spinner />
+{' '}
+{t('import.status.scanning')}
+          </div>
+        )
+: candidates.length === 0
+? (
+          <div className="flex min-h-48 flex-1 items-center justify-center text-xs text-muted-foreground">
+            {t('import.empty.filtered')}
+          </div>
+        )
+: (
+          <VList className="min-h-0 flex-1" data={candidates} itemSize={CANDIDATE_ROW_SIZE}>
+            {candidate => (
+              <CandidateRow
+                key={candidate.candidateId}
+                candidate={candidate}
                 busy={busy}
-                duplicateLabel={t('import.badge.duplicate')}
+                importedSessionId={candidate.importRecordId
+                  ? importedSessionByRecordId.get(candidate.importRecordId) ?? null
+                  : null}
                 selectionStore={selectionStore}
+                onSync={candidateToSync => void syncCandidate(candidateToSync)}
               />
             )}
           </VList>
-        </SettingsGroup>
-      )}
+        )}
+      </SettingsGroup>
 
-      {message && (
-        <p className="flex items-center gap-2 text-[12px] text-muted-foreground" data-testid="external-work-import-status">
-          {status === 'error'
-            ? <TriangleAlertIcon className="size-3.5" aria-hidden="true" />
-            : <CheckCircle2Icon className="size-3.5" aria-hidden="true" />}
-          {message}
+      {scan?.warnings.length
+? (
+        <Alert variant="destructive">
+          <WarningIcon className="size-4" aria-hidden="true" />
+          <AlertTitle>{t('import.warning.title')}</AlertTitle>
+          <AlertDescription>{scan.warnings.join(' ')}</AlertDescription>
+        </Alert>
+      )
+: null}
+
+      {results.length > 0
+? (
+        <SettingsGroup label={t('import.results.title')} description={t('import.results.description')}>
+          {results.map(result => (
+            <div key={result.candidateId} className="flex min-h-12 items-center justify-between gap-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2">
+                {result.status === 'error'
+                  ? <WarningIcon className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+                  : <CheckCircleIcon className="size-4 shrink-0 text-success" aria-hidden="true" />}
+                <span className="truncate text-xs text-foreground">
+                  {result.reason ?? (result.status === 'imported'
+                    ? t('import.state.imported')
+                    : result.status === 'duplicate' ? t('import.badge.duplicate') : 'Error')}
+                </span>
+              </div>
+              {result.sessionId
+? (
+                <Button type="button" size="sm" variant="outline" onClick={() => openChatSession(result.sessionId!)}>
+                  {t('import.action.open')}
+{' '}
+<ExternalLinkIcon />
+                </Button>
+              )
+: null}
+            </div>
+          ))}
+        </SettingsGroup>
+      )
+: null}
+
+      {statusMessage
+? (
+        <p className={cn(
+          'flex items-center gap-2 text-xs text-muted-foreground text-pretty',
+          (scanMutation.isError || importMutation.isError || syncMutation.isError) && 'text-destructive',
+        )} data-testid="external-work-import-status"
+        >
+          {scanMutation.isError || importMutation.isError || syncMutation.isError
+            ? <WarningIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            : <CheckCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />}
+          {statusMessage}
         </p>
-      )}
+      )
+: null}
     </SettingsPage>
+  )
+}
+
+function ImportStat({ label, value, icon, warning = false }: {
+  label: string
+  value: number
+  icon: React.ReactNode
+  warning?: boolean
+}) {
+  return (
+    <div className="flex min-h-16 items-center gap-3 bg-card px-4 py-3">
+      <span className={cn('text-muted-foreground [&>svg]:size-4', warning && 'text-destructive')}>{icon}</span>
+      <div>
+        <div className="text-lg font-semibold leading-none tabular-nums text-foreground">{value}</div>
+        <div className="mt-1 text-[11px] text-muted-foreground">{label}</div>
+      </div>
+    </div>
   )
 }
