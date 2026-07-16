@@ -1,18 +1,22 @@
 import { createReadStream } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 import type { UIMessage } from 'ai'
 import { z } from 'zod'
 
 import {
+  captureExternalSessionBundle,
+  openExternalSessionBundleFile,
+} from '../bundle-store'
+import {
   compactText,
   createCandidateId,
   createContentHash,
   createImportedMessageId,
-  createSourceRevision,
+  createSourceFilesRevision,
   importedMessage,
   safeJsonValue,
   titleFromText,
@@ -25,6 +29,7 @@ import type {
   ExternalSessionImportMessage,
   ExternalSessionReadResult,
   ExternalSessionSourceAdapter,
+  ExternalSessionSourceFile,
 } from '../types'
 
 const CodexGitSchema = z.object({
@@ -48,6 +53,23 @@ const CodexEnvelopeSchema = z.object({
   type: z.string(),
   timestamp: z.union([z.string(), z.number()]).nullable().optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
+}).passthrough()
+
+const CodexSessionIndexSchema = z.object({
+  id: z.string(),
+  thread_name: z.string(),
+}).passthrough()
+
+const CodexHistorySchema = z.object({
+  session_id: z.string(),
+  text: z.string(),
+}).passthrough()
+
+const CodexUserEventSchema = z.object({
+  type: z.literal('user_message'),
+  message: z.string(),
+  images: z.array(z.unknown()).optional(),
+  local_images: z.array(z.unknown()).optional(),
 }).passthrough()
 
 const CodexMessageItemSchema = z.object({
@@ -106,6 +128,8 @@ interface CodexRolloutMetadata {
 
 export interface CodexSessionSourceOptions {
   roots?: CodexRolloutRoots
+  sessionIndex?: string
+  history?: string
   concurrency?: number
 }
 
@@ -116,35 +140,50 @@ export function createCodexSessionSource(
     current: join(homedir(), '.codex', 'sessions'),
     archived: join(homedir(), '.codex', 'archived_sessions'),
   }
+  const sessionIndex = options.sessionIndex ?? join(dirname(roots.current), 'session_index.jsonl')
+  const history = options.history ?? join(dirname(roots.current), 'history.jsonl')
   return {
     sourceApp: 'codex',
     async discover(input) {
-      return await discoverCodexSessions(roots, input, options.concurrency ?? 24)
+      return await discoverCodexSessions(roots, sessionIndex, history, input, options.concurrency ?? 24)
+    },
+    async capture(input) {
+      return await captureExternalSessionBundle(input.descriptor)
     },
     async read(input) {
-      return await readCodexSession(input.descriptor)
+      return await readCodexSession(input.descriptor, input.bundle)
     },
   }
 }
 
 async function discoverCodexSessions(
   roots: CodexRolloutRoots,
+  sessionIndex: string,
+  history: string,
   input: ExternalSessionDiscoverInput,
   concurrency: number,
 ): Promise<ExternalSessionDescriptor[]> {
-  const [currentPaths, archivedPaths] = await Promise.all([
+  const [currentPaths, archivedPaths, indexedTitles, historyPrompts] = await Promise.all([
     listJsonlFiles(roots.current),
     listJsonlFiles(roots.archived),
+    readCodexSessionTitles(sessionIndex),
+    readCodexHistoryPrompts(history),
   ])
   const paths = [
     ...currentPaths.map(path => ({ path, archived: false })),
     ...archivedPaths.map(path => ({ path, archived: true })),
   ]
   const metadata = (await mapConcurrent(paths, concurrency, async file =>
-    await readCodexRolloutMetadata(file.path, file.archived, input.sourceHostId)))
+    await readCodexRolloutMetadata(
+      file.path,
+      file.archived,
+      input.sourceHostId,
+      historyPrompts,
+    )))
     .filter((entry): entry is CodexRolloutMetadata => entry !== null)
 
   const childCounts = new Map<string, number>()
+  const childFiles = new Map<string, ExternalSessionSourceFile[]>()
   for (const entry of metadata) {
     if (entry.sourceKind !== 'subagent') {
       continue
@@ -152,17 +191,36 @@ async function discoverCodexSessions(
     const parentKey = entry.parentThreadId ?? entry.treeSessionId
     if (parentKey) {
       childCounts.set(parentKey, (childCounts.get(parentKey) ?? 0) + 1)
+      const files = childFiles.get(parentKey) ?? []
+      files.push(...entry.descriptor.sourceFiles.map(file => ({ ...file, kind: 'subagent' as const })))
+      childFiles.set(parentKey, files)
     }
   }
 
   return metadata
     .filter(entry => entry.sourceKind !== 'subagent')
-    .map(entry => ({
-      ...entry.descriptor,
-      childSessionCount: childCounts.get(entry.descriptor.externalSessionId)
-        ?? childCounts.get(entry.treeSessionId ?? '')
-        ?? 0,
-    }))
+    .map((entry) => {
+      const key = childFiles.has(entry.descriptor.externalSessionId)
+        ? entry.descriptor.externalSessionId
+        : entry.treeSessionId ?? ''
+      const sourceFiles = [
+        ...entry.descriptor.sourceFiles,
+        ...(childFiles.get(key) ?? []),
+      ]
+      return {
+        ...entry.descriptor,
+        title: indexedTitles.get(entry.descriptor.externalSessionId) ?? entry.descriptor.title,
+        sourceRevision: createSourceFilesRevision({
+          externalSessionId: entry.descriptor.externalSessionId,
+          files: sourceFiles,
+        }),
+        estimatedBytes: sourceFiles.reduce((total, file) => total + file.size, 0),
+        childSessionCount: childCounts.get(entry.descriptor.externalSessionId)
+          ?? childCounts.get(entry.treeSessionId ?? '')
+          ?? 0,
+        sourceFiles,
+      }
+    })
     .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
     .slice(0, input.limit ?? 2_000)
 }
@@ -171,6 +229,7 @@ async function readCodexRolloutMetadata(
   path: string,
   archived: boolean,
   sourceHostId: string,
+  historyPrompts: ReadonlyMap<string, string>,
 ): Promise<CodexRolloutMetadata | null> {
   const fileStat = await stat(path).catch(() => null)
   if (!fileStat?.isFile()) {
@@ -192,17 +251,21 @@ async function readCodexRolloutMetadata(
           if (readCodexSourceKind(meta.source) === 'subagent') {
             break
           }
+          firstUserText = historyPrompts.get(meta.id) ?? ''
+          if (firstUserText) {
+            break
+          }
         }
         continue
       }
-      if (envelope.type !== 'response_item' || !envelope.payload) {
+      if (envelope.type !== 'event_msg' || !envelope.payload) {
         continue
       }
-      const item = CodexMessageItemSchema.safeParse(envelope.payload)
-      if (!item.success || item.data.role !== 'user') {
+      const event = CodexUserEventSchema.safeParse(envelope.payload)
+      if (!event.success) {
         continue
       }
-      firstUserText = readCodexContentText(item.data.content)
+      firstUserText = event.data.message
       if (firstUserText) {
         break
       }
@@ -227,11 +290,7 @@ async function readCodexRolloutMetadata(
     sourceApp: 'codex',
     externalSessionId: meta.id,
     sourcePath: path,
-    sourceRevision: createSourceRevision({
-      externalSessionId: meta.id,
-      modifiedAt: updatedAt,
-      size: fileStat.size,
-    }),
+    sourceRevision: '',
     title: titleFromText(firstUserText, `Codex session ${meta.id.slice(0, 8)}`),
     summary: firstUserText ? compactText(firstUserText, 180) : null,
     workspacePath: meta.cwd,
@@ -246,7 +305,18 @@ async function readCodexRolloutMetadata(
     archived,
     estimatedBytes: fileStat.size,
     childSessionCount: null,
+    sourceFiles: [{
+      path,
+      kind: sourceKind === 'subagent' ? 'subagent' : 'main',
+      sourceId: meta.id,
+      size: fileStat.size,
+      modifiedAtMs: fileStat.mtimeMs,
+    }],
   }
+  descriptor.sourceRevision = createSourceFilesRevision({
+    externalSessionId: meta.id,
+    files: descriptor.sourceFiles,
+  })
   return {
     descriptor,
     sourceKind,
@@ -257,18 +327,11 @@ async function readCodexRolloutMetadata(
 
 async function readCodexSession(
   descriptor: ExternalSessionDescriptor,
+  bundle: Parameters<typeof openExternalSessionBundleFile>[0],
 ): Promise<ExternalSessionReadResult> {
-  if (!descriptor.sourcePath) {
-    throw new Error(`Codex session ${descriptor.externalSessionId} has no rollout path`)
-  }
-  const before = await stat(descriptor.sourcePath)
-  const observedRevision = createSourceRevision({
-    externalSessionId: descriptor.externalSessionId,
-    modifiedAt: Math.floor(before.mtimeMs / 1000),
-    size: before.size,
-  })
-  if (observedRevision !== descriptor.sourceRevision) {
-    throw new Error('Codex source session changed after preview; scan again before importing')
+  const mainFile = bundle.manifest.files.find(file => file.kind === 'main')
+  if (!mainFile) {
+    throw new Error(`Codex session ${descriptor.externalSessionId} bundle has no main rollout`)
   }
 
   const fidelity: ExternalSessionFidelityReport = {
@@ -278,12 +341,13 @@ async function readCodexSession(
     omittedSystemEntries: 0,
     unavailableAttachments: 0,
     childSessions: descriptor.childSessionCount ?? 0,
+    preservedUnknownEntries: 0,
   }
   const messages: ExternalSessionImportMessage[] = []
   let pendingAssistant: ExternalSessionImportMessage | null = null
   let lineNumber = 0
   const lines = createInterface({
-    input: createReadStream(descriptor.sourcePath),
+    input: openExternalSessionBundleFile(bundle, mainFile),
     crlfDelay: Infinity,
   })
 
@@ -299,11 +363,40 @@ async function readCodexSession(
   for await (const line of lines) {
     lineNumber += 1
     const envelope = parseCodexEnvelope(line)
-    if (!envelope || envelope.type !== 'response_item' || !envelope.payload) {
+    if (!envelope) {
+      fidelity.preservedUnknownEntries += 1
       continue
     }
     const sourceEntryId = `line-${lineNumber}`
     const createdAt = unixSeconds(envelope.timestamp ?? null)
+    if (envelope.type === 'event_msg' && envelope.payload) {
+      const userEvent = CodexUserEventSchema.safeParse(envelope.payload)
+      if (userEvent.success) {
+        flushAssistant()
+        messages.push(importedMessage({
+          id: importedMessageId(descriptor, sourceEntryId),
+          role: 'user',
+          parts: [{ type: 'text', text: userEvent.data.message }],
+          sourceEntryIds: [sourceEntryId],
+          createdAt,
+          descriptor,
+        }))
+        fidelity.unavailableAttachments += (userEvent.data.images?.length ?? 0)
+          + (userEvent.data.local_images?.length ?? 0)
+      }
+      else if (envelope.payload.type !== 'task_started'
+        && envelope.payload.type !== 'task_complete'
+        && envelope.payload.type !== 'token_count') {
+        fidelity.preservedUnknownEntries += 1
+      }
+      continue
+    }
+    if (envelope.type !== 'response_item' || !envelope.payload) {
+      if (!['session_meta', 'turn_context'].includes(envelope.type)) {
+        fidelity.preservedUnknownEntries += 1
+      }
+      continue
+    }
     const messageItem = CodexMessageItemSchema.safeParse(envelope.payload)
     if (messageItem.success) {
       if (messageItem.data.role === 'developer' || messageItem.data.role === 'system') {
@@ -311,18 +404,7 @@ async function readCodexSession(
         continue
       }
       if (messageItem.data.role === 'user') {
-        flushAssistant()
-        const parts = codexUserParts(messageItem.data.content, fidelity)
-        if (parts.length > 0) {
-          messages.push(importedMessage({
-            id: importedMessageId(descriptor, sourceEntryId),
-            role: 'user',
-            parts,
-            sourceEntryIds: [sourceEntryId],
-            createdAt,
-            descriptor,
-          }))
-        }
+        fidelity.preservedUnknownEntries += 1
         continue
       }
       if (messageItem.data.role === 'assistant') {
@@ -380,19 +462,11 @@ async function readCodexSession(
     const outputItem = CodexFunctionOutputSchema.safeParse(envelope.payload)
     if (outputItem.success) {
       applyCodexToolOutput(pendingAssistant, outputItem.data.call_id, outputItem.data.output)
+      continue
     }
+    fidelity.preservedUnknownEntries += 1
   }
   flushAssistant()
-
-  const after = await stat(descriptor.sourcePath)
-  const finalRevision = createSourceRevision({
-    externalSessionId: descriptor.externalSessionId,
-    modifiedAt: Math.floor(after.mtimeMs / 1000),
-    size: after.size,
-  })
-  if (finalRevision !== descriptor.sourceRevision) {
-    throw new Error('Codex source session changed while it was being imported; retry after scanning')
-  }
   fidelity.messages = messages.length
   return {
     descriptor,
@@ -426,24 +500,6 @@ function ensurePendingAssistant(
   })
 }
 
-function codexUserParts(
-  content: z.infer<typeof CodexMessageItemSchema>['content'],
-  fidelity: ExternalSessionFidelityReport,
-): UIMessage['parts'] {
-  const parts: UIMessage['parts'] = []
-  for (const item of content) {
-    if (item.type === 'input_text' && item.text) {
-      parts.push({ type: 'text', text: item.text })
-      continue
-    }
-    if (item.type === 'input_image') {
-      fidelity.unavailableAttachments += 1
-      parts.push({ type: 'text', text: '[Imported image was unavailable]' })
-    }
-  }
-  return parts
-}
-
 function applyCodexToolOutput(
   assistant: ExternalSessionImportMessage | null,
   toolCallId: string,
@@ -461,16 +517,6 @@ function applyCodexToolOutput(
   }
   part.state = 'output-available'
   part.output = typeof output === 'string' ? safeJsonValue(output) : output
-}
-
-function readCodexContentText(
-  content: z.infer<typeof CodexMessageItemSchema>['content'],
-): string {
-  return content
-    .filter(item => item.type === 'input_text' || item.type === 'output_text')
-    .map(item => item.text ?? '')
-    .filter(Boolean)
-    .join('\n')
 }
 
 function readCodexReasoning(
@@ -525,12 +571,54 @@ async function listJsonlFiles(root: string): Promise<string[]> {
   return files
 }
 
+async function readCodexSessionTitles(path: string): Promise<Map<string, string>> {
+  const titles = new Map<string, string>()
+  const fileStat = await stat(path).catch(() => null)
+  if (!fileStat?.isFile()) {
+    return titles
+  }
+  const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
+  for await (const line of lines) {
+    try {
+      const parsed = CodexSessionIndexSchema.safeParse(JSON.parse(line))
+      if (parsed.success && parsed.data.thread_name.trim()) {
+        titles.set(parsed.data.id, compactText(parsed.data.thread_name, 80))
+      }
+    }
+    catch {
+      // A malformed index row does not invalidate the underlying rollout.
+    }
+  }
+  return titles
+}
+
+async function readCodexHistoryPrompts(path: string): Promise<Map<string, string>> {
+  const prompts = new Map<string, string>()
+  const fileStat = await stat(path).catch(() => null)
+  if (!fileStat?.isFile()) {
+    return prompts
+  }
+  const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
+  for await (const line of lines) {
+    try {
+      const parsed = CodexHistorySchema.safeParse(JSON.parse(line))
+      if (parsed.success && parsed.data.text.trim() && !prompts.has(parsed.data.session_id)) {
+        prompts.set(parsed.data.session_id, parsed.data.text)
+      }
+    }
+    catch {
+      // A malformed history row does not invalidate the underlying rollout.
+    }
+  }
+  return prompts
+}
+
 async function mapConcurrent<TInput, TOutput>(
   inputs: TInput[],
   concurrency: number,
   mapper: (input: TInput) => Promise<TOutput>,
 ): Promise<TOutput[]> {
-  const results = Array.from({ length: inputs.length })
+  const results = Array.from<TOutput>({ length: inputs.length })
   let nextIndex = 0
   const workers = Array.from({ length: Math.min(concurrency, inputs.length) }, async () => {
     while (nextIndex < inputs.length) {

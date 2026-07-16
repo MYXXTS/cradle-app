@@ -16,12 +16,14 @@ import type { MessageRecordedFact } from '../chat-runtime/es/events'
 import { listDurableProviderRuntimeBindingsByProviderSession } from '../provider-runtime/service'
 import * as Session from '../session/service'
 import * as Workspace from '../workspace/service'
+import { removeExternalSessionBundle } from './bundle-store'
 import {
   resolveExternalSessionCandidates,
 } from './catalog'
 import { createContentHash, readMessageText, safeJsonValue } from './source-utils'
 import { createExternalSessionSources } from './sources'
 import type {
+  ExternalSessionBundle,
   ExternalSessionDescriptor,
   ExternalSessionImportMessage,
   ExternalSessionReadResult,
@@ -139,8 +141,16 @@ export async function importExternalSessions(input: {
     }
 
     try {
-      const source = await adapter.read({ descriptor })
-      const imported = persistImportedSession(source, legacy)
+      const bundle = await adapter.capture({ descriptor })
+      let imported: ReturnType<typeof persistImportedSession>
+      try {
+        const source = await adapter.read({ descriptor, bundle })
+        imported = persistImportedSession(source, bundle, legacy)
+      }
+      catch (error) {
+        await removeExternalSessionBundle(bundle)
+        throw error
+      }
       result.imported += 1
       result.items.push({
         candidateId: descriptor.candidateId,
@@ -187,10 +197,19 @@ export async function syncExternalSessionImport(input: {
   if (!adapter) {
     throw new Error(`No ${descriptor.sourceApp} import adapter is available`)
   }
-  const source = await adapter.read({ descriptor })
+  const bundle = await adapter.capture({ descriptor })
+  let source: ExternalSessionReadResult
+  try {
+    source = await adapter.read({ descriptor, bundle })
+  }
+  catch (error) {
+    await removeExternalSessionBundle(bundle)
+    throw error
+  }
   const checkpoint = parseCheckpoint(record.checkpointJson)
   const divergence = findCheckpointDivergence(checkpoint, source.messages)
   if (divergence) {
+    await removeExternalSessionBundle(bundle)
     const now = Math.floor(Date.now() / 1000)
     db().update(externalSessionImports).set({
       status: 'error',
@@ -216,32 +235,41 @@ export async function syncExternalSessionImport(input: {
   const updatedAt = source.descriptor.updatedAt
     ?? appended.at(-1)?.createdAt
     ?? record.updatedAt
-  db().transaction((transaction) => {
-    if (appended.length > 0) {
-      recordImportedSessionMessagesInTransaction(transaction, {
-        sessionId: record.sessionId,
-        messages: appended.map((message, index) =>
-          importedMessageFact(record.sessionId, message, updatedAt + index)),
-      })
-      Session.touchImportedSessionInTransaction(transaction, {
-        sessionId: record.sessionId,
-        updatedAt,
-      })
-    }
-    transaction.update(externalSessionImports).set({
-      sourcePath: source.descriptor.sourcePath,
-      sourceWorkspacePath: source.descriptor.workspacePath,
-      sourceRevision: source.descriptor.sourceRevision,
-      contentHash: source.contentHash,
-      sourceGitIdentityJson: JSON.stringify(source.descriptor.gitIdentity),
-      fidelityJson: JSON.stringify(source.fidelity),
-      checkpointJson: JSON.stringify(createCheckpoint(source, persistedMessageIds)),
-      status: 'imported',
-      statusReason: null,
-      lastSyncedAt: now,
-      updatedAt: now,
-    }).where(eq(externalSessionImports.id, record.id)).run()
-  })
+  try {
+    db().transaction((transaction) => {
+      if (appended.length > 0) {
+        recordImportedSessionMessagesInTransaction(transaction, {
+          sessionId: record.sessionId,
+          messages: appended.map((message, index) =>
+            importedMessageFact(record.sessionId, message, updatedAt + index)),
+        })
+        Session.touchImportedSessionInTransaction(transaction, {
+          sessionId: record.sessionId,
+          updatedAt,
+        })
+      }
+      transaction.update(externalSessionImports).set({
+        sourcePath: source.descriptor.sourcePath,
+        sourceWorkspacePath: source.descriptor.workspacePath,
+        sourceRevision: source.descriptor.sourceRevision,
+        contentHash: source.contentHash,
+        sourceGitIdentityJson: JSON.stringify(source.descriptor.gitIdentity),
+        bundlePath: bundle.storagePath,
+        bundleManifestJson: JSON.stringify(bundle.manifest),
+        parserVersion: bundle.manifest.parserVersion,
+        fidelityJson: JSON.stringify(source.fidelity),
+        checkpointJson: JSON.stringify(createCheckpoint(source, persistedMessageIds)),
+        status: 'imported',
+        statusReason: null,
+        lastSyncedAt: now,
+        updatedAt: now,
+      }).where(eq(externalSessionImports.id, record.id)).run()
+    })
+  }
+  catch (error) {
+    await removeExternalSessionBundle(bundle)
+    throw error
+  }
   return {
     importId: record.id,
     sessionId: record.sessionId,
@@ -252,15 +280,25 @@ export async function syncExternalSessionImport(input: {
   }
 }
 
-export function listExternalSessionImports(): ExternalSessionImport[] {
+export type ExternalSessionImportView = Omit<
+  ExternalSessionImport,
+  'bundlePath' | 'bundleManifestJson' | 'parserVersion'
+>
+
+export function listExternalSessionImports(): ExternalSessionImportView[] {
   return db()
     .select()
     .from(externalSessionImports)
     .orderBy(desc(externalSessionImports.lastSyncedAt))
     .all()
+    .map(({ bundlePath: _bundlePath, bundleManifestJson: _bundleManifestJson, parserVersion: _parserVersion, ...record }) => record)
 }
 
-function persistImportedSession(source: ExternalSessionReadResult, legacy: LegacyImport | null): {
+function persistImportedSession(
+  source: ExternalSessionReadResult,
+  bundle: ExternalSessionBundle,
+  legacy: LegacyImport | null,
+): {
   recordId: string
   sessionId: string
   workspaceId: string
@@ -336,6 +374,9 @@ function persistImportedSession(source: ExternalSessionReadResult, legacy: Legac
       sourceRevision: source.descriptor.sourceRevision,
       contentHash: source.contentHash,
       sourceGitIdentityJson: JSON.stringify(source.descriptor.gitIdentity),
+      bundlePath: bundle.storagePath,
+      bundleManifestJson: JSON.stringify(bundle.manifest),
+      parserVersion: bundle.manifest.parserVersion,
       workspaceId: workspace.id,
       sessionId: session.id,
       fidelityJson: JSON.stringify(source.fidelity),

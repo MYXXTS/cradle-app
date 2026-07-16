@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,6 +14,7 @@ import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { db, shutdownInfra } from '../src/infra'
+import { captureExternalSessionBundle } from '../src/modules/external-session-import/bundle-store'
 import { scanExternalSessions } from '../src/modules/external-session-import/catalog'
 import {
   importExternalSessions,
@@ -23,10 +24,12 @@ import {
   createCandidateId,
   createContentHash,
   createImportedMessageId,
+  createSourceFilesRevision,
   emptyGitIdentity,
   importedMessage,
 } from '../src/modules/external-session-import/source-utils'
 import type {
+  ExternalSessionBundle,
   ExternalSessionDescriptor,
   ExternalSessionImportMessage,
   ExternalSessionSourceAdapter,
@@ -122,7 +125,12 @@ describe('external session import', () => {
       origin: 'external-import',
     })
     expect(db().select().from(messages).all()).toHaveLength(2)
-    expect(db().select().from(externalSessionImports).all()).toHaveLength(1)
+    expect(db().select().from(externalSessionImports).all()).toEqual([
+      expect.objectContaining({
+        bundlePath: 'external-session-import/codex/codex-session-1',
+        parserVersion: 1,
+      }),
+    ])
     expect(db().select().from(backendSessionBindings).all()).toHaveLength(0)
     expect(Workspace.get(imported.items[0]!.workspaceId!)?.availability).toBe('missing')
     expect(Workspace.getLocalWorkspacePath(imported.items[0]!.workspaceId!)).toBeNull()
@@ -169,6 +177,54 @@ describe('external session import', () => {
     expect(db().select().from(workspaces).all()).toHaveLength(0)
     expect(db().select().from(sessions).all()).toHaveLength(0)
     expect(db().select().from(messages).all()).toHaveLength(0)
+    expect(db().select().from(externalSessionImports).all()).toHaveLength(0)
+  })
+
+  it('removes a newly captured bundle when parsing fails', async () => {
+    activateTestDatabase()
+    const workspacePath = makeTempDirectory('cradle-import-bundle-failure-workspace-')
+    const sourceDirectory = makeTempDirectory('cradle-import-bundle-failure-source-')
+    const sourcePath = join(sourceDirectory, 'failed.jsonl')
+    writeFileSync(sourcePath, '{"type":"broken-fixture"}\n', 'utf8')
+    const fileStat = statSync(sourcePath)
+    const sourceFiles = [{
+      path: sourcePath,
+      kind: 'main' as const,
+      sourceId: 'failed-session',
+      size: fileStat.size,
+      modifiedAtMs: fileStat.mtimeMs,
+    }]
+    const failedDescriptor: ExternalSessionDescriptor = {
+      ...descriptor({ workspacePath, externalSessionId: 'failed-session' }),
+      sourcePath,
+      sourceFiles,
+      sourceRevision: createSourceFilesRevision({
+        externalSessionId: 'failed-session',
+        files: sourceFiles,
+      }),
+    }
+    let capturedPath = ''
+    const adapter: ExternalSessionSourceAdapter = {
+      sourceApp: 'codex',
+      discover: async () => [failedDescriptor],
+      capture: async () => {
+        const bundle = await captureExternalSessionBundle(failedDescriptor)
+        capturedPath = bundle.absolutePath
+        return bundle
+      },
+      read: async () => {
+        throw new Error('Injected parser failure')
+      },
+    }
+    const scan = await scanExternalSessions({}, { adapters: [adapter] })
+    const result = await importExternalSessions({
+      scanId: scan.id,
+      candidateIds: [scan.candidates[0]!.candidateId],
+    }, { adapters: [adapter] })
+
+    expect(result).toMatchObject({ imported: 0, errors: 1 })
+    expect(capturedPath).not.toBe('')
+    expect(existsSync(capturedPath)).toBe(false)
     expect(db().select().from(externalSessionImports).all()).toHaveLength(0)
   })
 
@@ -328,6 +384,7 @@ function createMutableSource(input: {
   fixture.adapter = {
     sourceApp: 'codex',
     discover: async () => [fixture.descriptor],
+    capture: async () => testBundle(fixture.descriptor),
     read: async () => ({
       descriptor: fixture.descriptor,
       contentHash: createContentHash(fixture.messages),
@@ -339,6 +396,7 @@ function createMutableSource(input: {
         omittedSystemEntries: 0,
         unavailableAttachments: 0,
         childSessions: 0,
+        preservedUnknownEntries: 0,
       },
     }),
   }
@@ -373,6 +431,31 @@ function descriptor(input: {
     archived: false,
     estimatedBytes: 512,
     childSessionCount: 0,
+    sourceFiles: [{
+      path: `/provider/${input.externalSessionId}.jsonl`,
+      kind: 'main',
+      sourceId: input.externalSessionId,
+      size: 512,
+      modifiedAtMs: 1_800_000_010_000,
+    }],
+  }
+}
+
+function testBundle(descriptor: ExternalSessionDescriptor): ExternalSessionBundle {
+  return {
+    storagePath: `external-session-import/${descriptor.sourceApp}/${descriptor.externalSessionId}`,
+    absolutePath: '',
+    created: false,
+    manifest: {
+      version: 1,
+      parserVersion: 1,
+      sourceHostId: descriptor.sourceHostId,
+      sourceApp: descriptor.sourceApp,
+      externalSessionId: descriptor.externalSessionId,
+      sourceRevision: descriptor.sourceRevision,
+      capturedAt: 1_800_000_000,
+      files: [],
+    },
   }
 }
 

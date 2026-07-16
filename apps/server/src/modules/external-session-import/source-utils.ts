@@ -7,6 +7,7 @@ import type {
   ExternalSessionGitIdentity,
   ExternalSessionImportMessage,
   ExternalSessionSourceApp,
+  ExternalSessionSourceFile,
 } from './types'
 
 export function createCandidateId(input: {
@@ -27,6 +28,17 @@ export function createSourceRevision(input: {
   return createHash('sha256')
     .update(`${input.externalSessionId}\0${input.modifiedAt ?? ''}\0${input.size ?? ''}`)
     .digest('hex')
+}
+
+export function createSourceFilesRevision(input: {
+  externalSessionId: string
+  files: ExternalSessionSourceFile[]
+}): string {
+  const hash = createHash('sha256').update(input.externalSessionId)
+  for (const file of [...input.files].sort((left, right) => left.path.localeCompare(right.path))) {
+    hash.update(`\0${file.path}\0${file.kind}\0${file.sourceId}\0${file.modifiedAtMs}\0${file.size}`)
+  }
+  return hash.digest('hex')
 }
 
 export function createContentHash(messages: ExternalSessionImportMessage[]): string {

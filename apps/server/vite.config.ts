@@ -37,7 +37,6 @@ export default defineConfig({
       },
       input: {
         'agent-tools-mcp': resolve(__dirname, 'src/modules/agent-tools/mcp-entry.ts'),
-        'claude-external-session-source': resolve(__dirname, 'src/modules/external-session-import/sources/claude-source-worker.ts'),
         'main': resolve(__dirname, 'src/index.ts'),
         'managed-process-runner': resolve(__dirname, 'src/infra/managed-process-runner.ts'),
       },

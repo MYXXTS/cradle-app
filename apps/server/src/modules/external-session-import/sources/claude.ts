@@ -1,43 +1,38 @@
-import { fork } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import type { Stats } from 'node:fs'
+import { createReadStream } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, dirname, join, sep } from 'node:path'
+import { createInterface } from 'node:readline'
 
-import type {
-  getSessionMessages,
-  GetSessionMessagesOptions,
-  listSessions,
-  ListSessionsOptions,
-  listSubagents,
-  SessionMessage,
-} from '@anthropic-ai/claude-agent-sdk'
 import type { UIMessage } from 'ai'
 import { z } from 'zod'
 
+import {
+  captureExternalSessionBundle,
+  openExternalSessionBundleFile,
+} from '../bundle-store'
 import {
   compactText,
   createCandidateId,
   createContentHash,
   createImportedMessageId,
-  createSourceRevision,
+  createSourceFilesRevision,
   emptyGitIdentity,
   importedMessage,
   titleFromText,
   unixSeconds,
 } from '../source-utils'
 import type {
+  ExternalSessionBundleFile,
   ExternalSessionDescriptor,
   ExternalSessionDiscoverInput,
   ExternalSessionFidelityReport,
   ExternalSessionImportMessage,
   ExternalSessionReadResult,
   ExternalSessionSourceAdapter,
+  ExternalSessionSourceFile,
 } from '../types'
-import type {
-  ClaudeSourceWorkerRequest,
-  ClaudeSourceWorkerResponse,
-  ClaudeSourceWorkerResult,
-} from './claude-worker-protocol'
 
 const ClaudeContentBlockSchema = z.object({
   type: z.string(),
@@ -53,14 +48,22 @@ const ClaudeContentBlockSchema = z.object({
 
 const ClaudeMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
-  content: z.union([
-    z.string(),
-    z.array(ClaudeContentBlockSchema),
-  ]),
+  content: z.union([z.string(), z.array(ClaudeContentBlockSchema)]),
+}).passthrough()
+
+const ClaudeEnvelopeSchema = z.object({
+  type: z.string(),
+  uuid: z.string().optional(),
+  sessionId: z.string().optional(),
+  agentId: z.string().optional(),
+  cwd: z.string().optional(),
+  gitBranch: z.string().optional(),
+  timestamp: z.union([z.string(), z.number()]).optional(),
+  message: ClaudeMessageSchema.optional(),
 }).passthrough()
 
 type ClaudeContentBlock = z.infer<typeof ClaudeContentBlockSchema>
-type ClaudeSessionMessage = SessionMessage & { timestamp?: string }
+type ClaudeEnvelope = z.infer<typeof ClaudeEnvelopeSchema>
 type MutableToolPart = UIMessage['parts'][number] & {
   toolCallId?: string
   state?: string
@@ -68,229 +71,201 @@ type MutableToolPart = UIMessage['parts'][number] & {
   errorText?: string
 }
 
-export interface ClaudeSessionSourceDependencies {
-  listSessions: (options?: ListSessionsOptions) => ReturnType<typeof listSessions>
-  getSessionMessages: (
-    sessionId: string,
-    options?: GetSessionMessagesOptions,
-  ) => ReturnType<typeof getSessionMessages>
-  listSubagents: (sessionId: string) => ReturnType<typeof listSubagents>
-}
-
-const defaultDependencies: ClaudeSessionSourceDependencies = {
-  listSessions: async options => await runClaudeSourceWorker({
-    id: randomUUID(),
-    operation: 'list-sessions',
-    options,
-  }),
-  getSessionMessages: async (sessionId, options) => await runClaudeSourceWorker({
-    id: randomUUID(),
-    operation: 'get-session-messages',
-    sessionId,
-    options,
-  }),
-  listSubagents: async sessionId => await runClaudeSourceWorker({
-    id: randomUUID(),
-    operation: 'list-subagents',
-    sessionId,
-  }),
-}
-
-function runClaudeSourceWorker<T extends ClaudeSourceWorkerResult>(
-  request: ClaudeSourceWorkerRequest,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env }
-    delete env.CLAUDE_CONFIG_DIR
-    delete env.CLAUDE_SECURESTORAGE_CONFIG_DIR
-    const workerPath = resolveClaudeSourceWorkerPath()
-    const child = fork(workerPath, [], {
-      env,
-      execArgv: workerPath.endsWith('.ts') ? ['--import', 'tsx'] : [],
-      serialization: 'advanced',
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    })
-    const timeout = setTimeout(() => {
-      child.kill()
-      reject(new Error('Claude session discovery worker timed out'))
-    }, 120_000)
-    child.once('error', (error) => {
-      clearTimeout(timeout)
-      reject(error)
-    })
-    child.once('exit', (code) => {
-      if (code !== 0) {
-        clearTimeout(timeout)
-        reject(new Error(`Claude session discovery worker exited with code ${code}`))
-      }
-    })
-    child.on('message', (response: ClaudeSourceWorkerResponse) => {
-      if (response.id !== request.id) {
-        return
-      }
-      clearTimeout(timeout)
-      if (!response.ok) {
-        reject(new Error(response.error))
-        return
-      }
-      resolve(response.result as T)
-    })
-    child.send(request)
-  })
-}
-
-function resolveClaudeSourceWorkerPath(): string {
-  const builtWorker = fileURLToPath(new URL('./claude-external-session-source.js', import.meta.url))
-  if (existsSync(builtWorker)) {
-    return builtWorker
-  }
-  return fileURLToPath(new URL('./claude-source-worker.ts', import.meta.url))
+export interface ClaudeSessionSourceOptions {
+  root?: string
+  concurrency?: number
 }
 
 export function createClaudeSessionSource(
-  dependencies: ClaudeSessionSourceDependencies = defaultDependencies,
+  options: ClaudeSessionSourceOptions = {},
 ): ExternalSessionSourceAdapter {
+  const root = options.root ?? join(homedir(), '.claude', 'projects')
   return {
     sourceApp: 'claude',
     async discover(input) {
-      return await discoverClaudeSessions(dependencies, input)
+      return await discoverClaudeSessions(root, input, options.concurrency ?? 16)
+    },
+    async capture(input) {
+      return await captureExternalSessionBundle(input.descriptor)
     },
     async read(input) {
-      return await readClaudeSession(dependencies, input.descriptor)
+      return await readClaudeSession(input.descriptor, input.bundle.manifest.files, input.bundle)
     },
   }
 }
 
 async function discoverClaudeSessions(
-  dependencies: ClaudeSessionSourceDependencies,
+  root: string,
   input: ExternalSessionDiscoverInput,
+  concurrency: number,
 ): Promise<ExternalSessionDescriptor[]> {
-  const limit = input.limit ?? 2_000
-  const sessions = await dependencies.listSessions({
-    includeProgrammatic: false,
-    limit,
-  })
+  const paths = (await listJsonlFiles(root))
+    .filter(path => !path.includes(`${sep}subagents${sep}`))
+  const descriptors = (await mapConcurrent(paths, concurrency, async path =>
+    await readClaudeDescriptor(path, input.sourceHostId)))
+    .filter((descriptor): descriptor is ExternalSessionDescriptor => descriptor !== null)
+    .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+  return descriptors.slice(0, input.limit ?? 2_000)
+}
 
-  return sessions
-    .filter((session): session is typeof session & { cwd: string } => Boolean(session.cwd))
-    .map((session): ExternalSessionDescriptor => {
-      const createdAt = unixSeconds(session.createdAt ?? null)
-      const updatedAt = unixSeconds(session.lastModified)
-      const title = titleFromText(
-        session.customTitle ?? session.summary ?? session.firstPrompt ?? '',
-        `Claude session ${session.sessionId.slice(0, 8)}`,
-      )
-      return {
-        candidateId: createCandidateId({
-          sourceHostId: input.sourceHostId,
-          sourceApp: 'claude',
-          externalSessionId: session.sessionId,
-        }),
-        sourceHostId: input.sourceHostId,
-        sourceApp: 'claude',
-        externalSessionId: session.sessionId,
-        sourcePath: null,
-        sourceRevision: createSourceRevision({
-          externalSessionId: session.sessionId,
-          modifiedAt: updatedAt,
-          size: session.fileSize ?? null,
-        }),
-        title,
-        summary: session.firstPrompt
-          ? compactText(session.firstPrompt, 180)
-          : null,
-        workspacePath: session.cwd,
-        gitIdentity: {
-          ...emptyGitIdentity(),
-          branch: session.gitBranch ?? null,
-        },
-        createdAt,
-        updatedAt,
-        archived: false,
-        estimatedBytes: session.fileSize ?? null,
-        childSessionCount: null,
+async function readClaudeDescriptor(
+  path: string,
+  sourceHostId: string,
+): Promise<ExternalSessionDescriptor | null> {
+  const mainStat = await stat(path).catch(() => null)
+  if (!mainStat?.isFile()) {
+    return null
+  }
+  const fallbackSessionId = basename(path, '.jsonl')
+  let externalSessionId = fallbackSessionId
+  let workspacePath = ''
+  let gitBranch: string | null = null
+  let firstUserText = ''
+  let createdAt: number | null = null
+  const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
+  let inspectedRows = 0
+  try {
+    for await (const line of lines) {
+      inspectedRows += 1
+      const envelope = parseClaudeEnvelope(line)
+      if (!envelope) {
+        continue
       }
-    })
+      externalSessionId = envelope.sessionId ?? externalSessionId
+      workspacePath ||= envelope.cwd ?? ''
+      gitBranch ??= envelope.gitBranch ?? null
+      createdAt ??= unixSeconds(envelope.timestamp)
+      if (envelope.message?.role === 'user') {
+        firstUserText ||= readClaudeUserText(envelope.message.content)
+      }
+      if (workspacePath && firstUserText && inspectedRows >= 8) {
+        break
+      }
+      if (inspectedRows >= 512) {
+        break
+      }
+    }
+  }
+  finally {
+    lines.close()
+  }
+  if (!workspacePath || externalSessionId !== fallbackSessionId) {
+    return null
+  }
+
+  const sourceFiles = await readClaudeSourceFiles(path, externalSessionId, mainStat)
+  const updatedAt = Math.floor(Math.max(...sourceFiles.map(file => file.modifiedAtMs)) / 1000)
+  const estimatedBytes = sourceFiles.reduce((total, file) => total + file.size, 0)
+  return {
+    candidateId: createCandidateId({ sourceHostId, sourceApp: 'claude', externalSessionId }),
+    sourceHostId,
+    sourceApp: 'claude',
+    externalSessionId,
+    sourcePath: path,
+    sourceRevision: createSourceFilesRevision({ externalSessionId, files: sourceFiles }),
+    title: titleFromText(firstUserText, `Claude session ${externalSessionId.slice(0, 8)}`),
+    summary: firstUserText ? compactText(firstUserText, 180) : null,
+    workspacePath,
+    gitIdentity: { ...emptyGitIdentity(), branch: gitBranch },
+    createdAt,
+    updatedAt,
+    archived: false,
+    estimatedBytes,
+    childSessionCount: sourceFiles.filter(file => file.kind === 'subagent').length,
+    sourceFiles,
+  }
+}
+
+async function readClaudeSourceFiles(
+  mainPath: string,
+  externalSessionId: string,
+  mainStat: Stats,
+): Promise<ExternalSessionSourceFile[]> {
+  const subagentRoot = join(dirname(mainPath), externalSessionId, 'subagents')
+  const childPaths = (await listJsonlFiles(subagentRoot))
+    .filter(path => basename(path).startsWith('agent-'))
+    .sort()
+  const children = (await Promise.all(childPaths.map(async (path) => {
+    const fileStat = await stat(path)
+    return {
+      path,
+      kind: 'subagent' as const,
+      sourceId: basename(path, '.jsonl'),
+      size: fileStat.size,
+      modifiedAtMs: fileStat.mtimeMs,
+    }
+  })))
+  return [{
+    path: mainPath,
+    kind: 'main',
+    sourceId: externalSessionId,
+    size: mainStat.size,
+    modifiedAtMs: mainStat.mtimeMs,
+  }, ...children]
 }
 
 async function readClaudeSession(
-  dependencies: ClaudeSessionSourceDependencies,
   descriptor: ExternalSessionDescriptor,
+  files: ExternalSessionBundleFile[],
+  bundle: Parameters<typeof openExternalSessionBundleFile>[0],
 ): Promise<ExternalSessionReadResult> {
-  const [entries, subagentIds] = await Promise.all([
-    dependencies.getSessionMessages(descriptor.externalSessionId, {
-      includeSystemMessages: true,
-    }),
-    dependencies.listSubagents(descriptor.externalSessionId),
-  ])
+  const mainFile = files.find(file => file.kind === 'main')
+  if (!mainFile) {
+    throw new Error(`Claude session ${descriptor.externalSessionId} bundle has no main JSONL file`)
+  }
   const fidelity: ExternalSessionFidelityReport = {
     messages: 0,
     toolCalls: 0,
     reasoningParts: 0,
     omittedSystemEntries: 0,
     unavailableAttachments: 0,
-    childSessions: subagentIds.length,
+    childSessions: files.filter(file => file.kind === 'subagent').length,
+    preservedUnknownEntries: 0,
   }
-  const messages = projectClaudeMessages(
-    entries as ClaudeSessionMessage[],
-    descriptor,
-    fidelity,
-  )
-  fidelity.messages = messages.length
-  return {
-    descriptor: {
-      ...descriptor,
-      childSessionCount: subagentIds.length,
-    },
-    contentHash: createContentHash(messages),
-    messages,
-    fidelity,
-  }
-}
-
-function projectClaudeMessages(
-  entries: ClaudeSessionMessage[],
-  descriptor: ExternalSessionDescriptor,
-  fidelity: ExternalSessionFidelityReport,
-): ExternalSessionImportMessage[] {
   const messages: ExternalSessionImportMessage[] = []
   let pendingAssistant: ExternalSessionImportMessage | null = null
+  let lineNumber = 0
+  const lines = createInterface({
+    input: openExternalSessionBundleFile(bundle, mainFile),
+    crlfDelay: Infinity,
+  })
 
   const flushAssistant = () => {
-    if (!pendingAssistant || pendingAssistant.message.parts.length === 0) {
-      pendingAssistant = null
-      return
+    if (pendingAssistant?.message.parts.length) {
+      messages.push(pendingAssistant)
     }
-    messages.push(pendingAssistant)
     pendingAssistant = null
   }
 
-  for (const entry of entries) {
+  for await (const line of lines) {
+    lineNumber += 1
+    const entry = parseClaudeEnvelope(line)
+    if (!entry) {
+      fidelity.preservedUnknownEntries += 1
+      continue
+    }
     if (entry.type === 'system') {
       fidelity.omittedSystemEntries += 1
       continue
     }
-    const parsed = ClaudeMessageSchema.safeParse(entry.message)
-    if (!parsed.success) {
-      fidelity.omittedSystemEntries += 1
+    if (!entry.message || !entry.uuid) {
+      if (!['mode', 'permission-mode', 'file-history-snapshot', 'last-prompt', 'attachment'].includes(entry.type)) {
+        fidelity.preservedUnknownEntries += 1
+      }
+      if (entry.type === 'attachment') {
+        fidelity.unavailableAttachments += 1
+      }
       continue
     }
-    const blocks = typeof parsed.data.content === 'string'
-      ? [{ type: 'text', text: parsed.data.content } satisfies ClaudeContentBlock]
-      : parsed.data.content
+    const blocks = typeof entry.message.content === 'string'
+      ? [{ type: 'text', text: entry.message.content } satisfies ClaudeContentBlock]
+      : entry.message.content
+    const sourceEntryId = entry.uuid || `line-${lineNumber}`
     const createdAt = unixSeconds(entry.timestamp)
 
-    if (parsed.data.role === 'assistant') {
-      pendingAssistant ??= importedMessage({
-        id: importedMessageId(descriptor, entry.uuid),
-        role: 'assistant',
-        parts: [],
-        sourceEntryIds: [],
-        createdAt,
-        descriptor,
-      })
-      pendingAssistant.sourceEntryIds.push(entry.uuid)
-      updateProvenance(pendingAssistant)
+    if (entry.message.role === 'assistant') {
+      pendingAssistant ??= createImportedMessage(descriptor, sourceEntryId, 'assistant', createdAt)
+      appendSourceEntryId(pendingAssistant, sourceEntryId)
       for (const block of blocks) {
         const part = assistantPart(block, fidelity)
         if (part) {
@@ -306,22 +281,45 @@ function projectClaudeMessages(
       }
     }
     const parts = userParts(blocks, fidelity)
-    if (parts.length === 0) {
-      continue
+    if (parts.length > 0) {
+      flushAssistant()
+      messages.push(importedMessage({
+        id: importedMessageId(descriptor, sourceEntryId),
+        role: 'user',
+        parts,
+        sourceEntryIds: [sourceEntryId],
+        createdAt,
+        descriptor,
+      }))
     }
-    flushAssistant()
-    messages.push(importedMessage({
-      id: importedMessageId(descriptor, entry.uuid),
-      role: 'user',
-      parts,
-      sourceEntryIds: [entry.uuid],
-      createdAt,
-      descriptor,
-    }))
   }
-
   flushAssistant()
-  return messages
+  fidelity.messages = messages.length
+  return { descriptor, contentHash: createContentHash(messages), messages, fidelity }
+}
+
+function createImportedMessage(
+  descriptor: ExternalSessionDescriptor,
+  sourceEntryId: string,
+  role: 'assistant',
+  createdAt: number | null,
+): ExternalSessionImportMessage {
+  return importedMessage({
+    id: importedMessageId(descriptor, sourceEntryId),
+    role,
+    parts: [],
+    sourceEntryIds: [],
+    createdAt,
+    descriptor,
+  })
+}
+
+function appendSourceEntryId(message: ExternalSessionImportMessage, sourceEntryId: string): void {
+  if (!message.sourceEntryIds.includes(sourceEntryId)) {
+    message.sourceEntryIds.push(sourceEntryId)
+  }
+  const metadata = message.message.metadata as { externalImport: { sourceEntryIds: string[] } }
+  metadata.externalImport.sourceEntryIds = [...message.sourceEntryIds]
 }
 
 function assistantPart(
@@ -355,9 +353,8 @@ function userParts(
   for (const block of blocks) {
     if (block.type === 'text' && block.text) {
       parts.push({ type: 'text', text: block.text })
-      continue
     }
-    if (block.type === 'image') {
+    else if (block.type === 'image') {
       fidelity.unavailableAttachments += 1
       parts.push({ type: 'text', text: '[Imported image was unavailable]' })
     }
@@ -369,13 +366,8 @@ function applyClaudeToolResult(
   assistant: ExternalSessionImportMessage | null,
   block: ClaudeContentBlock,
 ): void {
-  if (!assistant || !block.tool_use_id) {
-    return
-  }
-  const part = assistant.message.parts.find((candidate) => {
-    const toolPart = candidate as MutableToolPart
-    return toolPart.toolCallId === block.tool_use_id
-  }) as MutableToolPart | undefined
+  const part = assistant?.message.parts.find(candidate =>
+    (candidate as MutableToolPart).toolCallId === block.tool_use_id) as MutableToolPart | undefined
   if (!part) {
     return
   }
@@ -388,18 +380,68 @@ function applyClaudeToolResult(
   }
 }
 
-function readClaudeToolResult(value: unknown): string {
-  if (typeof value === 'string') {
-    return value
+function readClaudeUserText(content: z.infer<typeof ClaudeMessageSchema>['content']): string {
+  if (typeof content === 'string') {
+    return content
   }
-  return JSON.stringify(value ?? '')
+  return content
+    .filter(block => block.type === 'text')
+    .map(block => block.text ?? '')
+    .filter(Boolean)
+    .join('\n')
 }
 
-function updateProvenance(message: ExternalSessionImportMessage): void {
-  const metadata = message.message.metadata as {
-    externalImport: { sourceEntryIds: string[] }
+function readClaudeToolResult(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value ?? '')
+}
+
+function parseClaudeEnvelope(line: string): ClaudeEnvelope | null {
+  if (!line.trim()) {
+    return null
   }
-  metadata.externalImport.sourceEntryIds = [...message.sourceEntryIds]
+  try {
+    const parsed = ClaudeEnvelopeSchema.safeParse(JSON.parse(line))
+    return parsed.success ? parsed.data : null
+  }
+  catch {
+    return null
+  }
+}
+
+async function listJsonlFiles(root: string): Promise<string[]> {
+  const files: string[] = []
+  const visit = async (directory: string): Promise<void> => {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
+    await Promise.all(entries.map(async (entry) => {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        await visit(path)
+      }
+      else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        files.push(path)
+      }
+    }))
+  }
+  await visit(root)
+  return files
+}
+
+async function mapConcurrent<TInput, TOutput>(
+  inputs: TInput[],
+  concurrency: number,
+  mapper: (input: TInput) => Promise<TOutput>,
+): Promise<TOutput[]> {
+  const results = Array.from<TOutput>({ length: inputs.length })
+  let nextIndex = 0
+  const workers = Array.from({ length: Math.min(concurrency, inputs.length) }, async () => {
+    while (nextIndex < inputs.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(inputs[index]!)
+    }
+  })
+  await Promise.all(workers)
+  return results
 }
 
 function importedMessageId(

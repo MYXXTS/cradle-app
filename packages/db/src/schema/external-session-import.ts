@@ -13,6 +13,9 @@ export const externalSessionImports = sqliteTable('external_session_imports', {
   sourceRevision: text('source_revision').notNull(),
   contentHash: text('content_hash').notNull(),
   sourceGitIdentityJson: text('source_git_identity_json').notNull().default('{}'),
+  bundlePath: text('bundle_path'),
+  bundleManifestJson: text('bundle_manifest_json').notNull().default('{}'),
+  parserVersion: int('parser_version').notNull().default(0),
   workspaceId: text('workspace_id')
     .notNull()
     .references(() => workspaces.id, { onDelete: 'cascade' }),
