@@ -19,6 +19,16 @@ describe('sync-gateway protocol', () => {
       channel: 'session-tail',
       sessionId: 'session-1',
     })
+    expect(parseSyncClientFrame({
+      op: 'sub',
+      subId: 'sub-2',
+      channel: 'run-chunks',
+      sessionId: 'session-1',
+      after: { runId: 'run-1', cursor: 4 },
+    })).toMatchObject({
+      channel: 'run-chunks',
+      after: { runId: 'run-1', cursor: 4 },
+    })
   })
 })
 

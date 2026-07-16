@@ -115,16 +115,17 @@ export function getActiveRunReplayBufferSummary(
   if (!run) {
     return null
   }
+  const chunks = run.runChunkLog.readRetainedEntries().map(entry => entry.chunk)
   return {
     runId,
-    chunkCount: run.chunkBuffer.length,
-    textDeltaCount: run.chunkBuffer.filter(chunk => chunk.type === 'text-delta').length,
-    reasoningDeltaCount: run.chunkBuffer.filter(chunk => chunk.type === 'reasoning-delta').length,
-    toolInputDeltaCount: run.chunkBuffer.filter(chunk => chunk.type === 'tool-input-delta')
+    chunkCount: chunks.length,
+    textDeltaCount: chunks.filter(chunk => chunk.type === 'text-delta').length,
+    reasoningDeltaCount: chunks.filter(chunk => chunk.type === 'reasoning-delta').length,
+    toolInputDeltaCount: chunks.filter(chunk => chunk.type === 'tool-input-delta')
       .length,
-    toolOutputCount: run.chunkBuffer.filter(chunk => chunk.type === 'tool-output-available')
+    toolOutputCount: chunks.filter(chunk => chunk.type === 'tool-output-available')
       .length,
-    maxDeltaChars: run.chunkBuffer.reduce(
+    maxDeltaChars: chunks.reduce(
       (max, chunk) => Math.max(max, readDeltaChunkTextLength(chunk)),
       0,
     ),

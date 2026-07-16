@@ -115,6 +115,7 @@ describe('sync socket client', () => {
       sessionId: 'session-1',
       afterVersion: 4,
     })
+    expect(socket.sent.map(frame => JSON.parse(frame)).filter(frame => frame.op === 'sub')).toHaveLength(1)
   })
 
   it('resubscribes with the latest cursor after reconnect', async () => {
@@ -131,11 +132,7 @@ describe('sync socket client', () => {
     firstSocket.open()
     await flushMicrotasks()
 
-    firstSocket.emitMessage(JSON.stringify({
-      subId: 'sub-1',
-      kind: 'sub-ack',
-      cursor: 7,
-    }))
+    client.updateSyncSubscriptionCursor('sub-1', 7)
     firstSocket.close()
 
     await vi.advanceTimersByTimeAsync(500)
@@ -152,5 +149,82 @@ describe('sync socket client', () => {
       afterVersion: 7,
     })
     expect(client.getActiveSyncSubscriptionCount()).toBe(1)
+  })
+
+  it('resubscribes run chunks with the run-owned resume token', async () => {
+    client.subscribeSyncChannel({
+      op: 'sub',
+      subId: 'run-sub-1',
+      channel: 'run-chunks',
+      sessionId: 'session-1',
+    }, vi.fn())
+    const firstSocket = await waitForSocket()
+    firstSocket.open()
+    await flushMicrotasks()
+    expect(client.updateSyncRunSubscriptionCursor('run-sub-1', {
+      runId: 'run-1',
+      cursor: 7,
+    })).toBe('advanced')
+    firstSocket.close()
+
+    await vi.advanceTimersByTimeAsync(500)
+    const secondSocket = await waitForSocket(1)
+    secondSocket.open()
+    await flushMicrotasks()
+
+    expect(secondSocket.sent.map(frame => JSON.parse(frame))).toContainEqual({
+      op: 'sub',
+      subId: 'run-sub-1',
+      channel: 'run-chunks',
+      sessionId: 'session-1',
+      after: { runId: 'run-1', cursor: 7 },
+    })
+  })
+
+  it('closes a half-open socket when pong does not arrive', async () => {
+    client.subscribeSyncChannel({
+      op: 'sub',
+      subId: 'sub-1',
+      channel: 'session-tail',
+      sessionId: 'session-1',
+      afterVersion: 0,
+    }, vi.fn())
+    const firstSocket = await waitForSocket()
+    firstSocket.open()
+    await flushMicrotasks()
+
+    const ping = firstSocket.sent.map(frame => JSON.parse(frame)).find(frame => frame.op === 'ping')
+    expect(ping).toBeDefined()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(firstSocket.readyState).toBe(FakeWebSocket.CLOSED)
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(await waitForSocket(1)).toBeDefined()
+  })
+
+  it('accepts a matching pong and ignores a stale socket close', async () => {
+    client.subscribeSyncChannel({
+      op: 'sub',
+      subId: 'sub-1',
+      channel: 'session-tail',
+      sessionId: 'session-1',
+      afterVersion: 0,
+    }, vi.fn())
+    const firstSocket = await waitForSocket()
+    firstSocket.open()
+    await flushMicrotasks()
+    const ping = firstSocket.sent.map(frame => JSON.parse(frame)).find(frame => frame.op === 'ping')
+    firstSocket.emitMessage(JSON.stringify({ op: 'pong', ts: ping.ts }))
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(firstSocket.readyState).toBe(FakeWebSocket.OPEN)
+    firstSocket.close()
+    await vi.advanceTimersByTimeAsync(500)
+    const secondSocket = await waitForSocket(1)
+    secondSocket.open()
+    await flushMicrotasks()
+
+    firstSocket.close()
+    expect(secondSocket.readyState).toBe(FakeWebSocket.OPEN)
   })
 })

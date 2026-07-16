@@ -12,6 +12,10 @@ import { createServerApp } from '../src/app'
 import { db, shutdownInfra } from '../src/infra'
 import { publishSessionTailEvents } from '../src/modules/chat-runtime/es/event-tail'
 import type { StoredChatSessionEvent } from '../src/modules/chat-runtime/es/events'
+import { createFinalMessageProjectionState } from '../src/modules/chat-runtime/run/final-message-projection'
+import type { ActiveRun } from '../src/modules/chat-runtime/run-registry'
+import { runRegistry } from '../src/modules/chat-runtime/run-registry'
+import { createRunChunkLog } from '../src/modules/chat-runtime/stream/run-chunk-log'
 
 type ElysiaApp = Awaited<ReturnType<typeof createServerApp>>
 
@@ -23,7 +27,18 @@ const SyncServerFrameSchema = z.union([
   z.object({
     subId: z.string(),
     kind: z.literal('sub-ack'),
+    channel: z.string().optional(),
+    runId: z.string().optional(),
     cursor: z.number(),
+  }),
+  z.object({
+    subId: z.string(),
+    kind: z.literal('chunk'),
+    runId: z.string(),
+    cursor: z.number(),
+    chunk: z.object({ type: z.string() }).passthrough(),
+    terminal: z.boolean(),
+    replay: z.boolean(),
   }),
   z.object({
     subId: z.string(),
@@ -154,6 +169,34 @@ function seedSession(sessionId: string): void {
     .run()
 }
 
+function registerActiveRun(sessionId: string, runId: string): ActiveRun {
+  const activeRun: ActiveRun = {
+    runId,
+    sessionId,
+    messageId: `${runId}-message`,
+    providerTargetKind: null,
+    providerTargetId: null,
+    runtime: {} as ActiveRun['runtime'],
+    runtimeSession: { runtimeKind: 'standard', providerSessionId: null } as ActiveRun['runtimeSession'],
+    modelId: null,
+    runChunkLog: createRunChunkLog(runId, 100),
+    pendingDeltaChunk: null,
+    pendingDeltaFlushTimer: null,
+    snapshotTimer: null,
+    finalMessage: { id: `${runId}-message`, role: 'assistant', parts: [] },
+    finalProjection: createFinalMessageProjectionState(),
+    runtimeSettings: {} as ActiveRun['runtimeSettings'],
+    runSnapshotId: null,
+    runSnapshotSeq: 0,
+    snapshotEventIdByCoalesceKey: new Map(),
+    runSnapshotTruncatedEventId: null,
+    runSnapshotDroppedEventCount: 0,
+  }
+  runRegistry.setActiveRun(runId, activeRun)
+  runRegistry.setActiveRunIdForSession(sessionId, runId)
+  return activeRun
+}
+
 describe('sync websocket', () => {
   it('replays and streams session tail events over /sync', async () => {
     await withTempDataDir(async () => {
@@ -224,6 +267,114 @@ describe('sync websocket', () => {
 
       expect(frame).toEqual({ op: 'pong', ts })
       socket.close()
+      if (app.server) {
+        await app.stop()
+      }
+    })
+  }, 30_000)
+
+  it('resumes run chunks by run-owned cursor across sockets', async () => {
+    await withTempDataDir(async () => {
+      const { app, baseUrl } = await startTestServer()
+      const sessionId = 'session-run-sync-1'
+      const runId = 'run-sync-1'
+      seedSession(sessionId)
+      const activeRun = registerActiveRun(sessionId, runId)
+      activeRun.runChunkLog.append({ type: 'start', messageId: activeRun.messageId }, false)
+
+      const firstSocket = await openSyncSocket(toWebSocketUrl(baseUrl, '/sync'))
+      const firstFrame = waitForSyncFrame(firstSocket)
+      firstSocket.send(JSON.stringify({
+        op: 'sub',
+        subId: 'run-sub-1',
+        channel: 'run-chunks',
+        sessionId,
+      }))
+      await expect(firstFrame).resolves.toMatchObject({
+        kind: 'chunk',
+        runId,
+        cursor: 0,
+        replay: true,
+      })
+      firstSocket.close()
+
+      activeRun.runChunkLog.append({
+        type: 'tool-output-available',
+        toolCallId: 'tool-1',
+        output: 'done',
+      }, false)
+
+      const secondSocket = await openSyncSocket(toWebSocketUrl(baseUrl, '/sync'))
+      const resumedFrame = waitForSyncFrame(secondSocket)
+      secondSocket.send(JSON.stringify({
+        op: 'sub',
+        subId: 'run-sub-2',
+        channel: 'run-chunks',
+        sessionId,
+        after: { runId, cursor: 0 },
+      }))
+      await expect(resumedFrame).resolves.toMatchObject({
+        kind: 'chunk',
+        runId,
+        cursor: 1,
+        chunk: { type: 'tool-output-available', toolCallId: 'tool-1' },
+        replay: true,
+      })
+
+      const terminalFrame = waitForSyncFrame(secondSocket)
+      activeRun.runChunkLog.append({ type: 'finish', finishReason: 'stop' }, true)
+      await expect(terminalFrame).resolves.toMatchObject({
+        kind: 'chunk',
+        runId,
+        cursor: 2,
+        terminal: true,
+        replay: false,
+      })
+
+      secondSocket.close()
+      runRegistry.deleteActiveRun(runId)
+      runRegistry.deleteActiveRunIdForSession(sessionId)
+      if (app.server) {
+        await app.stop()
+      }
+    })
+  }, 30_000)
+
+  it('keeps an empty active run subscription live until its first chunk', async () => {
+    await withTempDataDir(async () => {
+      const { app, baseUrl } = await startTestServer()
+      const sessionId = 'session-empty-run-sync'
+      const runId = 'run-empty-sync'
+      seedSession(sessionId)
+      const activeRun = registerActiveRun(sessionId, runId)
+
+      const socket = await openSyncSocket(toWebSocketUrl(baseUrl, '/sync'))
+      const ackFrame = waitForSyncFrame(socket)
+      socket.send(JSON.stringify({
+        op: 'sub',
+        subId: 'run-empty-sub',
+        channel: 'run-chunks',
+        sessionId,
+      }))
+      await expect(ackFrame).resolves.toMatchObject({
+        kind: 'sub-ack',
+        channel: 'run-chunks',
+        runId,
+        cursor: -1,
+      })
+
+      const liveFrame = waitForSyncFrame(socket)
+      activeRun.runChunkLog.append({ type: 'start', messageId: activeRun.messageId }, false)
+      await expect(liveFrame).resolves.toMatchObject({
+        kind: 'chunk',
+        runId,
+        cursor: 0,
+        replay: false,
+      })
+
+      socket.close()
+      runRegistry.deleteActiveRun(runId)
+      runRegistry.deleteActiveRunIdForSession(sessionId)
       if (app.server) {
         await app.stop()
       }

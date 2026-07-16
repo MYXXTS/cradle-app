@@ -26,7 +26,6 @@ export function createBoundedSender(input: {
 }): SyncSubscriptionSender {
   const pending: SyncServerDataFrame[] = []
   let pendingBytes = 0
-  let nextSeq = 0
   let ended = false
 
   const flush = () => {
@@ -42,9 +41,8 @@ export function createBoundedSender(input: {
     if (ended) {
       return
     }
-    const sized = withSeq(frame, nextSeq++)
-    const bytes = estimateFrameBytes(sized)
-    pending.push(sized)
+    const bytes = estimateFrameBytes(frame)
+    pending.push(frame)
     pendingBytes += bytes
     if (pending.length > input.maxFrames || pendingBytes > input.maxBytes) {
       ended = true
@@ -65,13 +63,6 @@ export function createBoundedSender(input: {
       input.sendFrame({ subId: input.subId, kind: 'end', reason, detail })
     },
   }
-}
-
-function withSeq(frame: SyncServerDataFrame, seq: number): SyncServerDataFrame {
-  if (frame.kind === 'sub-ack' || frame.kind === 'end') {
-    return frame
-  }
-  return { ...frame, seq }
 }
 
 function estimateFrameBytes(frame: SyncServerDataFrame): number {

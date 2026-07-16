@@ -25,7 +25,10 @@ const SyncClientSubFrameSchema = z.discriminatedUnion('channel', [
     subId: z.string().min(1),
     channel: z.literal('run-chunks'),
     sessionId: z.string().min(1),
-    afterChunkSeq: z.number().int().nonnegative().optional(),
+    after: z.object({
+      runId: z.string().min(1),
+      cursor: z.number().int().nonnegative(),
+    }).optional(),
   }),
   z.object({
     op: z.literal('sub'),

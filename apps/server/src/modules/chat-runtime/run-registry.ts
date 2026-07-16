@@ -3,6 +3,7 @@ import type { UIMessage, UIMessageChunk } from 'ai'
 import type { FinalMessageProjectionState } from './run/final-message-projection'
 import type { ChatMessageStatus } from './run/stream-chunks'
 import type { ChatRuntime, RuntimeSession, RuntimeSettings, TokenUsage } from './runtime-provider-types'
+import type { RunChunkLog } from './stream/run-chunk-log'
 
 export type TerminalChatMessageStatus = Exclude<ChatMessageStatus, 'streaming'>
 
@@ -20,17 +21,7 @@ export interface ActiveRun {
   runtime: ChatRuntime
   runtimeSession: RuntimeSession
   modelId: string | null
-  chunkBuffer: UIMessageChunk[]
-  /**
-   * Coalesce key -> *logical* index into `chunkBuffer` (i.e. offset by
-   * `chunkBufferDroppedCount`, not a direct array index). Logical indexing
-   * lets old chunks be evicted from the front of `chunkBuffer` (see
-   * `chunkBufferDroppedCount`) without having to rewrite every stored index
-   * on each eviction.
-   */
-  chunkBufferIndexByKey: Map<string, number>
-  /** Number of chunks ever evicted from the front of `chunkBuffer` once it exceeded its cap. */
-  chunkBufferDroppedCount: number
+  runChunkLog: RunChunkLog
   pendingDeltaChunk: UIMessageChunk | null
   pendingDeltaFlushTimer: ReturnType<typeof setTimeout> | null
   snapshotTimer: ReturnType<typeof setInterval> | null

@@ -25,6 +25,7 @@ import {
   resolveRuntimeSessionForContext,
 } from '../runtime-session-context'
 import { readSessionRuntimeSettings, resolveRunRuntimeSettings } from '../runtime-settings'
+import { createActiveRunChunkLog } from '../stream/run-chunk-log'
 import { isChatStreamTraceEnabled, recordChatStreamTrace } from '../stream-trace'
 import {
   createAssistantMessage,
@@ -307,9 +308,7 @@ export async function createRun(
       runtime,
       runtimeSession,
       modelId: runtimeResolution.requestedModelId,
-      chunkBuffer: [],
-      chunkBufferIndexByKey: new Map(),
-      chunkBufferDroppedCount: 0,
+      runChunkLog: createActiveRunChunkLog(run.id),
       pendingDeltaChunk: null,
       pendingDeltaFlushTimer: null,
       snapshotTimer: null,

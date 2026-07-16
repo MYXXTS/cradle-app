@@ -2,8 +2,8 @@ export const DEFAULT_RUN_DELTA_FLUSH_MS = 16
 export const DEFAULT_RUN_DELTA_FLUSH_CHARS = 8_192
 export const DEFAULT_SNAPSHOT_INTERVAL_MS = 10_000
 /**
- * Hard cap on how many chunks a single run's SSE replay buffer
- * (`activeRun.chunkBuffer`) may hold. Defense against an upstream chunk
+ * Hard cap on how many entries a single active run's replay log may hold.
+ * Defense against an upstream chunk
  * storm (e.g. a runtime re-pushing a non-coalescable chunk type) growing the
  * buffer without bound for the lifetime of a single streaming run, mirroring
  * the same cap already applied to provider-thread replay buffers.

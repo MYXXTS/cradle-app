@@ -622,7 +622,7 @@ function completeRun(
       providerTargetId: activeRun.providerTargetId,
       modelId: activeRun.modelId,
       terminalStatus: activeRun.terminalStatus,
-      replayChunkCount: activeRun.chunkBuffer.length,
+      replayChunkCount: activeRun.runChunkLog.readRetainedEntries().length,
       finalPartCount: activeRun.finalMessage.parts.length,
     },
     diagnostics,

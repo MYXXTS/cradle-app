@@ -10,10 +10,9 @@ import {
   subscribeChatGlobalSessionTail,
   subscribeChatSessionTail,
 } from '../chat-runtime/es/event-tail'
+import type { SequencedRunChunk } from '../chat-runtime/stream/run-chunk-log'
 import {
-  hasActiveSessionRun,
-  readSessionRunChunkReplay,
-  subscribeSessionRunChunks,
+  openSessionRunChunkSubscription,
 } from '../chat-runtime/stream/session-run-chunk-sync'
 import type { SyncSubscriptionSender } from './buffer'
 import {
@@ -53,7 +52,7 @@ function attachSessionsTail(
   })
 
   sendGlobalTailReplay(frame.subId, sender, replay.events, replay.snapshotRequired)
-  sender.send({ subId: frame.subId, kind: 'sub-ack', cursor: replay.cursor })
+  sender.send({ subId: frame.subId, kind: 'sub-ack', channel: 'sessions-tail', cursor: replay.cursor })
 
   if (replay.snapshotRequired) {
     sender.end('snapshot-required')
@@ -80,7 +79,7 @@ function attachSessionTail(
   })
 
   sendSessionTailReplay(frame.subId, sender, replay.events, replay.snapshotRequired)
-  sender.send({ subId: frame.subId, kind: 'sub-ack', cursor: replay.cursor })
+  sender.send({ subId: frame.subId, kind: 'sub-ack', channel: 'session-tail', cursor: replay.cursor })
 
   if (replay.snapshotRequired) {
     sender.end('snapshot-required')
@@ -101,48 +100,80 @@ function attachRunChunks(
   frame: Extract<SyncClientSubFrame, { channel: 'run-chunks' }>,
   sender: SyncSubscriptionSender,
 ): () => void {
-  const afterChunkSeq = frame.afterChunkSeq ?? -1
-  const replay = readSessionRunChunkReplay(frame.sessionId, afterChunkSeq)
-
-  let lastSeq = afterChunkSeq
+  let replaying = true
+  const queuedLiveItems: SequencedRunChunk[] = []
+  const sendLiveItem = (item: SequencedRunChunk) => {
+    sender.send({
+      subId: frame.subId,
+      kind: 'chunk',
+      runId: item.runId,
+      cursor: item.cursor,
+      chunk: item.chunk,
+      terminal: item.terminal,
+      replay: false,
+    })
+    if (item.terminal) {
+      sender.send({
+        subId: frame.subId,
+        kind: 'sub-ack',
+        channel: 'run-chunks',
+        runId: item.runId,
+        cursor: item.cursor,
+      })
+      sender.end('terminal')
+    }
+  }
+  const subscription = openSessionRunChunkSubscription(frame.sessionId, frame.after, (item) => {
+    if (replaying) {
+      queuedLiveItems.push(item)
+      return
+    }
+    sendLiveItem(item)
+  })
+  if (subscription.kind === 'not-found') {
+    sender.end('not-found')
+    return () => {}
+  }
+  if (subscription.kind === 'snapshot-required') {
+    sender.end('snapshot-required')
+    return () => {}
+  }
+  const { replay } = subscription
   for (const item of replay.items) {
     sender.send({
       subId: frame.subId,
       kind: 'chunk',
+      runId: item.runId,
+      cursor: item.cursor,
       chunk: item.chunk,
       terminal: item.terminal,
       replay: true,
     })
-    lastSeq = item.seq
     if (item.terminal) {
-      sender.send({ subId: frame.subId, kind: 'sub-ack', cursor: item.seq })
+      sender.send({
+        subId: frame.subId,
+        kind: 'sub-ack',
+        channel: 'run-chunks',
+        runId: item.runId,
+        cursor: item.cursor,
+      })
       sender.end('terminal')
+      subscription.unsubscribe()
       return () => {}
     }
   }
-
-  sender.send({ subId: frame.subId, kind: 'sub-ack', cursor: replay.cursor })
-
-  if (!replay.live || !hasActiveSessionRun(frame.sessionId)) {
-    sender.end('upstream-closed')
-    return () => {}
-  }
-
-  let nextSeq = lastSeq + 1
-  return subscribeSessionRunChunks(frame.sessionId, (chunk, terminal) => {
-    sender.send({
-      subId: frame.subId,
-      kind: 'chunk',
-      chunk,
-      terminal,
-      replay: false,
-    })
-    nextSeq += 1
-    if (terminal) {
-      sender.send({ subId: frame.subId, kind: 'sub-ack', cursor: nextSeq - 1 })
-      sender.end('terminal')
-    }
+  sender.send({
+    subId: frame.subId,
+    kind: 'sub-ack',
+    channel: 'run-chunks',
+    runId: replay.runId,
+    cursor: replay.cursor,
   })
+  replaying = false
+  for (const item of queuedLiveItems) {
+    sendLiveItem(item)
+  }
+  return subscription.unsubscribe
 }
 
 function sendSessionTailReplay(

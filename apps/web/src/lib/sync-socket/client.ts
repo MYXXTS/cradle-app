@@ -1,4 +1,5 @@
 import type {
+  RunChunkResumeToken,
   SyncClientSubFrame,
   SyncEndReason,
   SyncServerFrame,
@@ -6,25 +7,47 @@ import type {
 
 export type SyncSubscriptionHandler = (frame: SyncServerFrame) => void
 
-interface ActiveSyncSubscription {
-  frame: SyncClientSubFrame
+interface ActiveSyncSubscriptionBase {
   handler: SyncSubscriptionHandler
-  cursor: number
-  ended: boolean
+  lastSentGeneration: number
 }
 
+type ActiveSyncSubscription
+  = | ActiveSyncSubscriptionBase & {
+    channel: 'sessions-tail'
+    frame: Extract<SyncClientSubFrame, { channel: 'sessions-tail' }>
+    cursor: number
+  }
+  | ActiveSyncSubscriptionBase & {
+    channel: 'session-tail'
+    frame: Extract<SyncClientSubFrame, { channel: 'session-tail' }>
+    cursor: number
+  }
+  | ActiveSyncSubscriptionBase & {
+    channel: 'run-chunks'
+    frame: Extract<SyncClientSubFrame, { channel: 'run-chunks' }>
+    resume: RunChunkResumeToken | undefined
+  }
+  | ActiveSyncSubscriptionBase & {
+    channel: 'workspace-files'
+    frame: Extract<SyncClientSubFrame, { channel: 'workspace-files' }>
+  }
+
 const PING_INTERVAL_MS = 25_000
+const PONG_TIMEOUT_MS = 10_000
 const IDLE_CLOSE_MS = 30_000
 const RECONNECT_BASE_MS = 500
 const RECONNECT_MAX_MS = 30_000
 
 let socket: WebSocket | null = null
+let socketGeneration = 0
 let connectPromise: Promise<void> | null = null
 let pingTimer: ReturnType<typeof setInterval> | null = null
+let pongDeadlineTimer: ReturnType<typeof setTimeout> | null = null
+let pendingPingTs: number | null = null
 let idleCloseTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempt = 0
-let intentionalClose = false
 const subscriptions = new Map<string, ActiveSyncSubscription>()
 
 export function isSyncSocketSupported(): boolean {
@@ -39,22 +62,13 @@ export function subscribeSyncChannel(
   frame: SyncClientSubFrame,
   handler: SyncSubscriptionHandler,
 ): () => void {
-  const active: ActiveSyncSubscription = {
-    frame,
-    handler,
-    cursor: readInitialCursor(frame),
-    ended: false,
-  }
+  const active = createActiveSubscription(frame, handler)
   subscriptions.set(frame.subId, active)
   clearIdleCloseTimer()
-  void ensureConnected().then(() => {
-    if (subscriptions.get(frame.subId) === active && !active.ended) {
-      sendClientFrame(buildResubFrame(active))
-    }
-  })
-  return () => {
-    unsubscribeSyncChannel(frame.subId)
-  }
+  void ensureConnected()
+    .then(() => sendSubscriptionForCurrentGeneration(active))
+    .catch(() => scheduleReconnect())
+  return () => unsubscribeSyncChannel(frame.subId)
 }
 
 export function unsubscribeSyncChannel(subId: string): void {
@@ -68,48 +82,42 @@ export function unsubscribeSyncChannel(subId: string): void {
 }
 
 export function disposeSyncSocketClient(): void {
-  intentionalClose = true
-  clearPingTimer()
+  clearHeartbeat()
   clearIdleCloseTimer()
   clearReconnectTimer()
   subscriptions.clear()
-  if (socket) {
-    socket.close()
-    socket = null
-  }
+  invalidateCurrentSocket()
   connectPromise = null
   reconnectAttempt = 0
-  intentionalClose = false
 }
 
-function readInitialCursor(frame: SyncClientSubFrame): number {
+function createActiveSubscription(
+  frame: SyncClientSubFrame,
+  handler: SyncSubscriptionHandler,
+): ActiveSyncSubscription {
+  const base = { handler, lastSentGeneration: -1 }
   switch (frame.channel) {
     case 'sessions-tail':
-      return frame.afterSequenceId
+      return { ...base, channel: frame.channel, frame, cursor: frame.afterSequenceId }
     case 'session-tail':
-      return frame.afterVersion
+      return { ...base, channel: frame.channel, frame, cursor: frame.afterVersion }
     case 'run-chunks':
-      return frame.afterChunkSeq ?? -1
+      return { ...base, channel: frame.channel, frame, resume: frame.after }
     case 'workspace-files':
-      return 0
-    default:
-      return 0
+      return { ...base, channel: frame.channel, frame }
   }
 }
 
 function buildResubFrame(active: ActiveSyncSubscription): SyncClientSubFrame {
-  const { frame, cursor } = active
-  switch (frame.channel) {
+  switch (active.channel) {
     case 'sessions-tail':
-      return { ...frame, afterSequenceId: cursor }
+      return { ...active.frame, afterSequenceId: active.cursor }
     case 'session-tail':
-      return { ...frame, afterVersion: cursor }
+      return { ...active.frame, afterVersion: active.cursor }
     case 'run-chunks':
-      return { ...frame, afterChunkSeq: cursor }
+      return { ...active.frame, after: active.resume }
     case 'workspace-files':
-      return frame
-    default:
-      return frame
+      return active.frame
   }
 }
 
@@ -120,48 +128,87 @@ async function ensureConnected(): Promise<void> {
   if (connectPromise) {
     return connectPromise
   }
-  connectPromise = openSocket().finally(() => {
-    connectPromise = null
-  })
-  return connectPromise
+  const pending = openSocket()
+  connectPromise = pending
+  try {
+    await pending
+  }
+  finally {
+    if (connectPromise === pending) {
+      connectPromise = null
+    }
+  }
 }
 
 async function openSocket(): Promise<void> {
   const { getAuthenticatedServerWebSocketUrl } = await import('~/lib/electron')
   const url = await getAuthenticatedServerWebSocketUrl('/sync')
-  intentionalClose = false
-  socket = new WebSocket(url)
+  const generation = ++socketGeneration
+  const currentSocket = new WebSocket(url)
+  socket = currentSocket
 
   await new Promise<void>((resolve, reject) => {
-    if (!socket) {
-      reject(new Error('Sync socket failed to initialize'))
-      return
-    }
-    const currentSocket = socket
+    let opened = false
     currentSocket.addEventListener('open', () => {
+      if (!isCurrentSocket(currentSocket, generation)) {
+        reject(new Error('Sync socket connection was superseded'))
+        return
+      }
+      opened = true
       reconnectAttempt = 0
-      startPingTimer()
-      resubscribeAll()
+      startHeartbeat(currentSocket, generation)
+      resubscribeAll(generation)
       resolve()
     }, { once: true })
     currentSocket.addEventListener('error', () => {
-      reject(new Error('Sync socket connection failed'))
+      if (!opened) {
+        reject(new Error('Sync socket connection failed'))
+      }
     }, { once: true })
-    currentSocket.addEventListener('message', handleSocketMessage)
-    currentSocket.addEventListener('close', handleSocketClose)
+    currentSocket.addEventListener('message', event => handleSocketMessage(currentSocket, generation, event))
+    currentSocket.addEventListener('close', () => {
+      if (!opened) {
+        reject(new Error('Sync socket closed before opening'))
+      }
+      handleSocketClose(currentSocket, generation)
+    })
   })
 }
 
-function resubscribeAll(): void {
+function resubscribeAll(generation: number): void {
   for (const active of subscriptions.values()) {
-    if (active.ended) {
-      continue
-    }
-    sendClientFrame(buildResubFrame(active))
+    sendSubscription(active, generation)
   }
 }
 
-function handleSocketMessage(event: MessageEvent<string>): void {
+function sendSubscriptionForCurrentGeneration(active: ActiveSyncSubscription): void {
+  if (subscriptions.get(active.frame.subId) !== active) {
+    return
+  }
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return
+  }
+  sendSubscription(active, socketGeneration)
+}
+
+function sendSubscription(active: ActiveSyncSubscription, generation: number): void {
+  if (active.lastSentGeneration === generation) {
+    return
+  }
+  if (!sendClientFrame(buildResubFrame(active), generation)) {
+    return
+  }
+  active.lastSentGeneration = generation
+}
+
+function handleSocketMessage(
+  currentSocket: WebSocket,
+  generation: number,
+  event: MessageEvent<string>,
+): void {
+  if (!isCurrentSocket(currentSocket, generation)) {
+    return
+  }
   let frame: SyncServerFrame
   try {
     frame = JSON.parse(event.data) as SyncServerFrame
@@ -171,43 +218,42 @@ function handleSocketMessage(event: MessageEvent<string>): void {
   }
 
   if ('op' in frame) {
+    if (frame.op === 'pong') {
+      acceptPong(frame.ts, currentSocket, generation)
+    }
     return
   }
-
   if (!('subId' in frame)) {
     return
   }
 
   const active = subscriptions.get(frame.subId)
-  if (!active || active.ended) {
+  if (!active) {
     return
   }
-
-  if (frame.kind === 'sub-ack') {
-    active.cursor = frame.cursor
-  }
-
-  if (frame.kind === 'end') {
-    active.ended = true
-  }
-
   active.handler(frame)
+  if (
+    frame.kind === 'end'
+    && active.channel === 'run-chunks'
+    && (frame.reason === 'backpressure' || frame.reason === 'upstream-closed')
+  ) {
+    currentSocket.close()
+  }
 }
 
-function handleSocketClose(): void {
-  clearPingTimer()
-  socket = null
-  if (intentionalClose) {
+function handleSocketClose(currentSocket: WebSocket, generation: number): void {
+  if (!isCurrentSocket(currentSocket, generation)) {
     return
   }
+  clearHeartbeat()
+  socket = null
   scheduleReconnect()
 }
 
 function scheduleReconnect(): void {
-  if (subscriptions.size === 0) {
+  if (subscriptions.size === 0 || reconnectTimer) {
     return
   }
-  clearReconnectTimer()
   const delay = Math.min(
     RECONNECT_MAX_MS,
     RECONNECT_BASE_MS * 2 ** reconnectAttempt + Math.random() * 200,
@@ -215,32 +261,62 @@ function scheduleReconnect(): void {
   reconnectAttempt += 1
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
-    void ensureConnected().catch(() => {
-      scheduleReconnect()
-    })
+    void ensureConnected().catch(() => scheduleReconnect())
   }, delay)
 }
 
-function sendClientFrame(frame: Parameters<typeof JSON.stringify>[0]): void {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    return
+function sendClientFrame(frame: Parameters<typeof JSON.stringify>[0], generation = socketGeneration): boolean {
+  if (!socket || generation !== socketGeneration || socket.readyState !== WebSocket.OPEN) {
+    return false
   }
   socket.send(JSON.stringify(frame))
+  return true
 }
 
-function startPingTimer(): void {
-  clearPingTimer()
-  pingTimer = setInterval(() => {
-    sendClientFrame({ op: 'ping', ts: Date.now() })
-  }, PING_INTERVAL_MS)
+function startHeartbeat(currentSocket: WebSocket, generation: number): void {
+  clearHeartbeat()
+  sendPing(currentSocket, generation)
+  pingTimer = setInterval(sendPing, PING_INTERVAL_MS, currentSocket, generation)
 }
 
-function clearPingTimer(): void {
-  if (!pingTimer) {
+function sendPing(currentSocket: WebSocket, generation: number): void {
+  if (!isCurrentSocket(currentSocket, generation) || pendingPingTs !== null) {
     return
   }
-  clearInterval(pingTimer)
-  pingTimer = null
+  const ts = Date.now()
+  if (!sendClientFrame({ op: 'ping', ts }, generation)) {
+    return
+  }
+  pendingPingTs = ts
+  pongDeadlineTimer = setTimeout(() => {
+    if (!isCurrentSocket(currentSocket, generation) || pendingPingTs !== ts) {
+      return
+    }
+    currentSocket.close()
+  }, PONG_TIMEOUT_MS)
+}
+
+function acceptPong(ts: number, currentSocket: WebSocket, generation: number): void {
+  if (!isCurrentSocket(currentSocket, generation) || pendingPingTs !== ts) {
+    return
+  }
+  pendingPingTs = null
+  if (pongDeadlineTimer) {
+    clearTimeout(pongDeadlineTimer)
+    pongDeadlineTimer = null
+  }
+}
+
+function clearHeartbeat(): void {
+  if (pingTimer) {
+    clearInterval(pingTimer)
+    pingTimer = null
+  }
+  if (pongDeadlineTimer) {
+    clearTimeout(pongDeadlineTimer)
+    pongDeadlineTimer = null
+  }
+  pendingPingTs = null
 }
 
 function scheduleIdleClose(): void {
@@ -250,44 +326,68 @@ function scheduleIdleClose(): void {
   }
   idleCloseTimer = setTimeout(() => {
     idleCloseTimer = null
-    if (subscriptions.size > 0) {
-      return
+    if (subscriptions.size === 0) {
+      clearHeartbeat()
+      invalidateCurrentSocket()
     }
-    intentionalClose = true
-    socket?.close()
-    socket = null
-    clearPingTimer()
-    intentionalClose = false
   }, IDLE_CLOSE_MS)
 }
 
+function invalidateCurrentSocket(): void {
+  const currentSocket = socket
+  socketGeneration += 1
+  socket = null
+  currentSocket?.close()
+}
+
+function isCurrentSocket(currentSocket: WebSocket, generation: number): boolean {
+  return socket === currentSocket && socketGeneration === generation
+}
+
 function clearIdleCloseTimer(): void {
-  if (!idleCloseTimer) {
-    return
+  if (idleCloseTimer) {
+    clearTimeout(idleCloseTimer)
+    idleCloseTimer = null
   }
-  clearTimeout(idleCloseTimer)
-  idleCloseTimer = null
 }
 
 function clearReconnectTimer(): void {
-  if (!reconnectTimer) {
-    return
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
   }
-  clearTimeout(reconnectTimer)
-  reconnectTimer = null
 }
 
 export function updateSyncSubscriptionCursor(subId: string, cursor: number): void {
   const active = subscriptions.get(subId)
-  if (!active) {
+  if (!active || active.channel === 'run-chunks' || active.channel === 'workspace-files') {
     return
   }
-  active.cursor = cursor
+  active.cursor = Math.max(active.cursor, cursor)
+}
+
+export function updateSyncRunSubscriptionCursor(
+  subId: string,
+  resume: RunChunkResumeToken,
+): 'advanced' | 'duplicate' | 'invalid' {
+  const active = subscriptions.get(subId)
+  if (!active || active.channel !== 'run-chunks') {
+    return 'invalid'
+  }
+  if (!active.resume) {
+    active.resume = resume
+    return 'advanced'
+  }
+  if (active.resume.runId !== resume.runId || resume.cursor < active.resume.cursor) {
+    return 'invalid'
+  }
+  if (resume.cursor === active.resume.cursor) {
+    return 'duplicate'
+  }
+  active.resume = resume
+  return 'advanced'
 }
 
 export function readSyncEndReason(frame: SyncServerFrame): SyncEndReason | null {
-  if (!('kind' in frame) || frame.kind !== 'end') {
-    return null
-  }
-  return frame.reason
+  return 'kind' in frame && frame.kind === 'end' ? frame.reason : null
 }

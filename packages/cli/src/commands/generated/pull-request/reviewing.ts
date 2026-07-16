@@ -8,7 +8,7 @@ const spec = {
     "pull-request",
     "reviewing"
   ],
-  "description": "List pull requests where the given GitHub login is a requested reviewer, most recently updated first, paginated via `after`",
+  "description": "List pull requests where the given GitHub login is involved as a reviewer (requested or already reviewed), most recently updated first, paginated via `after`",
   "flags": [
     {
       "name": "login",

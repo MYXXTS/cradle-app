@@ -47,7 +47,8 @@ function formatHistoryTime(
 }
 
 function isJarvisHistorySession(session: GetSessionsResponse[number]): boolean {
-  return session.workspaceId === null
+  return session.runtimeKind === 'jar-core'
+    && session.workspaceId === null
     && session.parentSessionId === null
     && session.sideContextSource === null
     && session.archivedAt === null

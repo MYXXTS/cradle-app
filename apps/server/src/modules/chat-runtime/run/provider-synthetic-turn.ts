@@ -7,6 +7,7 @@ import type { ActiveRun } from '../run-registry'
 import { runRegistry } from '../run-registry'
 import type { ProviderSyntheticTurnEvent } from '../runtime-provider-types'
 import { providerThreadStreamStore, waitForRunCompletion } from '../stream/live-run-streams'
+import { createActiveRunChunkLog } from '../stream/run-chunk-log'
 import { createAssistantMessage } from '../ui-message'
 import { createFinalMessageProjectionState } from './final-message-projection'
 import { isTerminalUIMessageChunk } from './stream-chunks'
@@ -109,9 +110,7 @@ async function startProviderSyntheticTurn(
     runtime: parentRun.runtime,
     runtimeSession: parentRun.runtimeSession,
     modelId: parentRun.modelId,
-    chunkBuffer: [],
-    chunkBufferIndexByKey: new Map(),
-    chunkBufferDroppedCount: 0,
+    runChunkLog: createActiveRunChunkLog(run.id),
     pendingDeltaChunk: null,
     pendingDeltaFlushTimer: null,
     snapshotTimer: null,

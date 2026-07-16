@@ -16,6 +16,11 @@ export type SyncEndReason
     | 'upstream-closed'
     | 'error'
 
+export interface RunChunkResumeToken {
+  runId: string
+  cursor: number
+}
+
 export type SyncClientSubFrame
   = | {
     op: 'sub'
@@ -36,7 +41,7 @@ export type SyncClientSubFrame
     subId: string
     channel: 'run-chunks'
     sessionId: string
-    afterChunkSeq?: number
+    after?: RunChunkResumeToken
   }
   | {
     op: 'sub'
@@ -51,10 +56,11 @@ export type SyncClientFrame
     | { op: 'ping', ts: number }
 
 export type SyncServerDataFrame
-  = | { subId: string, seq?: number, kind: 'tail-event', event: ChatSessionTailEvent | ChatGlobalSessionTailEvent }
-    | { subId: string, seq?: number, kind: 'chunk', chunk: UIMessageChunk, terminal?: boolean, replay?: boolean }
-    | { subId: string, seq?: number, kind: 'file-event', event: SyncWorkspaceFileChangeEvent }
-    | { subId: string, kind: 'sub-ack', cursor: number }
+  = | { subId: string, kind: 'tail-event', event: ChatSessionTailEvent | ChatGlobalSessionTailEvent }
+    | { subId: string, kind: 'chunk', runId: string, cursor: number, chunk: UIMessageChunk, terminal: boolean, replay: boolean }
+    | { subId: string, kind: 'file-event', event: SyncWorkspaceFileChangeEvent }
+    | { subId: string, kind: 'sub-ack', channel: 'sessions-tail' | 'session-tail', cursor: number }
+    | { subId: string, kind: 'sub-ack', channel: 'run-chunks', runId: string, cursor: number }
     | { subId: string, kind: 'end', reason: SyncEndReason, detail?: string }
 
 export type SyncServerFrame

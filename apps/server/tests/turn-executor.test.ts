@@ -13,6 +13,7 @@ import type { TurnExecutorDeps } from '../src/modules/chat-runtime/run/turn-exec
 import { executeRun } from '../src/modules/chat-runtime/run/turn-executor'
 import type { ActiveRun } from '../src/modules/chat-runtime/run-registry'
 import type { ChatRuntime } from '../src/modules/chat-runtime/runtime-provider-types'
+import { createRunChunkLog } from '../src/modules/chat-runtime/stream/run-chunk-log'
 
 async function withTempDataDir<T>(callback: () => Promise<T> | T): Promise<T> {
   const dataDir = mkdtempSync(join(tmpdir(), 'cradle-data-'))
@@ -55,9 +56,7 @@ function createActiveRun(input: {
       providerStateSnapshot: null,
     } as ActiveRun['runtimeSession'],
     modelId: 'gpt-4o-mini',
-    chunkBuffer: [],
-    chunkBufferIndexByKey: new Map(),
-    chunkBufferDroppedCount: 0,
+    runChunkLog: createRunChunkLog(input.runId, 100),
     pendingDeltaChunk: null,
     pendingDeltaFlushTimer: null,
     snapshotTimer: null,
