@@ -1087,7 +1087,7 @@ export function Composer({
           </div>
 
           {!inputCollapsed && pastedTexts.length > 0 && (
-            <div className="border-t border-border/40 px-3 py-2">
+            <div className="px-3 py-2 pb-0">
               <div className="flex gap-2">
                 <AnimatePresence mode="popLayout" initial={false}>
                   {pastedTexts.map(pastedText => (

@@ -31,7 +31,7 @@ export function useSessionGroups(workspaceId: string | null | undefined) {
         : undefined,
     ),
     enabled: !!workspaceId,
-    ...queryRefreshPolicy('active', { refetchInterval: false }),
+    ...queryRefreshPolicy('interactive', { refetchInterval: false }),
   })
 }
 

@@ -193,7 +193,7 @@ export function ComposerPastedTextCard({
       {...cardEntrance}
       // outer rounded-xl (12px), inner buttons rounded-lg (8px), gap 4px → concentric: 8+4=12 ✓
       // bg on the same element as ring here (no overflow-hidden on composer card, so no clipping)
-      className="flex max-w-72 items-center gap-0 rounded-xl bg-muted/60 py-1 pl-2 pr-1 dark:bg-muted/40"
+      className="flex max-w-72 items-center gap-0 rounded-xl bg-muted/60 py-1 pl-2 pr-1 dark:bg-muted/40 ring-1 ring-inset ring-border/30"
       data-testid="composer-pasted-text-card"
     >
       <Popover open={open} onOpenChange={setOpen}>

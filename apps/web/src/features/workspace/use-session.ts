@@ -326,7 +326,7 @@ export function useUnreadSessionIds(): Set<string> {
   const queryOptions = sessionListOptions()
   const { data: unreadSessionIds = [] } = useQuery({
     ...getSessionsOptions(queryOptions),
-    ...queryRefreshPolicy('active', { refetchInterval: false }),
+    ...queryRefreshPolicy('interactive', { refetchInterval: false }),
     select: selectUnreadSessionIds,
   })
 
@@ -341,7 +341,7 @@ export function useRunningSessionIds(): Set<string> {
   const queryOptions = sessionListOptions()
   const { data: runningSessionIds = [] } = useQuery({
     ...getSessionsOptions(queryOptions),
-    ...queryRefreshPolicy('active', { refetchInterval: false }),
+    ...queryRefreshPolicy('interactive', { refetchInterval: false }),
     select: selectRunningSessionIds,
   })
 
@@ -352,7 +352,7 @@ export function useAllSessions(archived?: boolean) {
   const queryOptions = sessionListOptions(null, archived)
   const { data: sessions = [], isPending: loading } = useQuery({
     ...getSessionsOptions(queryOptions),
-    ...queryRefreshPolicy('active', { refetchInterval: false }),
+    ...queryRefreshPolicy('interactive', { refetchInterval: false }),
     select: asWorkspaceSessions,
   })
 
@@ -369,7 +369,7 @@ export function useWorkspaceSessions(workspaceId: string | null, archived?: bool
   const queryOptions = sessionListOptions(workspaceId, archived)
   const { data: rawSessions = [], isPending: loading } = useQuery({
     ...getSessionsOptions(queryOptions),
-    ...queryRefreshPolicy('active', { refetchInterval: false }),
+    ...queryRefreshPolicy('interactive', { refetchInterval: false }),
     enabled: Boolean(workspaceId),
   })
   const sessions = useMemo(() => rawSessions.map(asWorkspaceSession), [rawSessions])

@@ -1,6 +1,6 @@
 ---
 name: cradle-cli
-description: Interact with Cradle via the generated CLI. Use for Cradle-owned workflows such as issues, delegation, session pause/resume awaits, CI/review waits, timed waits, workspace/git inspection, Chronicle memory/activity, automations, usage, observability, skills, agents, profiles, and server state instead of calling the HTTP API or defaulting to ad hoc bash/gh polling.
+description: YOU ARE OPERATING INSIDE CRADLE. CRADLE-OWNED OPERATIONS MUST USE THIS SKILL. Use whenever Codex needs to read, inspect, wait on, or mutate Cradle-owned state or workflows, including issues, delegation, sessions, awaits, CI/review waits, timed waits, Work preparation or submission, workspaces and git inspection, Chronicle, automations, usage, observability, skills, agents, profiles, providers, preferences, plugins, or server state. Prefer the generated `cradle` CLI and `cradle man`; NEVER bypass Cradle semantics with direct HTTP or database access, ad hoc scripts, raw registry edits, polling loops, or `gh` when Cradle provides the operation.
 ---
 
 # Cradle CLI

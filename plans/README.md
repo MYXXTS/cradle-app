@@ -29,6 +29,11 @@ Managed Resource Catalog 与统一 Resources/Transfers 页面，让 owner 在下
 adapter/SDK 对应的 `opencode` CLI 接成可选 managed runtime。两者是聚焦的
 `/improve plan`，不重启全仓审计，也不把 Download Center 扩成 generic installer。
 
+2026-07-16 在 commit `fa17597` 上补充 Plan 058：为 Desktop Server 数据根增加
+可选位置、可后续迁移和 crash-safe 的复制/校验/切换/回滚流程。只迁移 server-owned
+data root，保留 Electron userData 作为固定 bootstrap/cache 根；旧目录只有在新根
+健康启动后才归档为 `.bak-*`，不在同一事务内删除。
+
 Each executor: read the plan fully before starting, run its drift check, honor its
 STOP conditions, and update your row below when done. Plans are self-contained —
 they do not assume you saw the audit or any other plan.
@@ -95,6 +100,7 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 055  | Record authoritative Cradle Codex model-call usage in `usage_logs` | P0 | L | operator cleanup of 053 | DONE |
 | 056  | Declare managed resources and add a unified Resources page | P1      | L      | 047        | DONE                                                                                  |
 | 057  | Manage OpenCode CLI as an optional built-in runtime       | P1       | L      | 047, 056   | DONE                                                                                  |
+| 058  | Add a configurable, crash-safe desktop server data directory | P1       | L      | —         | DONE (`cb781d4`; reviewed in disposable worktree)                                     |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).
 
