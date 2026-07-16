@@ -2,6 +2,7 @@ import { Command } from 'commander'
 
 import { registerGeneratedCommands } from './commands/generated/index.generated'
 import { registerSessionAwaitCommand } from './commands/session-await'
+import { registerPluginDevCommand } from './commands/plugin-dev'
 import { createCommandContext } from './runtime/context'
 import { registerManualCommand } from './runtime/manual-command'
 import { resolveServerUrl } from './runtime/server-locator'
@@ -14,6 +15,7 @@ const program = new Command()
 
 registerGeneratedCommands(program)
 registerSessionAwaitCommand(program)
+registerPluginDevCommand(program)
 registerManualCommand(program)
 
 program.hook('preAction', (root) => {

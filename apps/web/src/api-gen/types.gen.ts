@@ -11074,6 +11074,182 @@ export type PostPluginsSourcesResponses = {
 
 export type PostPluginsSourcesResponse = PostPluginsSourcesResponses[keyof PostPluginsSourcesResponses];
 
+export type GetPluginsDevSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/plugins/dev-sessions';
+};
+
+export type GetPluginsDevSessionsResponses = {
+    /**
+     * Response for status 200
+     */
+    200: Array<{
+        id: string;
+        pluginName: string;
+        routeSegment: string;
+        displayName: string;
+        packageDir: string;
+        entries: {
+            server: string | null;
+            web: string | null;
+            desktop: string | null;
+        };
+        revisions: {
+            server: string | number;
+            web: string | number;
+            desktop: string | number;
+        };
+        createdAt: number;
+        updatedAt: number;
+    }>;
+};
+
+export type GetPluginsDevSessionsResponse = GetPluginsDevSessionsResponses[keyof GetPluginsDevSessionsResponses];
+
+export type PostPluginsDevSessionsData = {
+    body: {
+        packageDir: string;
+        entries: {
+            server?: string;
+            web?: string;
+            desktop?: string;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/plugins/dev-sessions';
+};
+
+export type PostPluginsDevSessionsResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        pluginName: string;
+        routeSegment: string;
+        displayName: string;
+        packageDir: string;
+        entries: {
+            server: string | null;
+            web: string | null;
+            desktop: string | null;
+        };
+        revisions: {
+            server: string | number;
+            web: string | number;
+            desktop: string | number;
+        };
+        createdAt: number;
+        updatedAt: number;
+    };
+};
+
+export type PostPluginsDevSessionsResponse = PostPluginsDevSessionsResponses[keyof PostPluginsDevSessionsResponses];
+
+export type PostPluginsDevSessionsByIdReloadData = {
+    body: {
+        layer: 'server' | 'web' | 'desktop';
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/plugins/dev-sessions/{id}/reload';
+};
+
+export type PostPluginsDevSessionsByIdReloadResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        pluginName: string;
+        routeSegment: string;
+        displayName: string;
+        packageDir: string;
+        entries: {
+            server: string | null;
+            web: string | null;
+            desktop: string | null;
+        };
+        revisions: {
+            server: string | number;
+            web: string | number;
+            desktop: string | number;
+        };
+        createdAt: number;
+        updatedAt: number;
+    };
+};
+
+export type PostPluginsDevSessionsByIdReloadResponse = PostPluginsDevSessionsByIdReloadResponses[keyof PostPluginsDevSessionsByIdReloadResponses];
+
+export type PostPluginsDevSessionsByIdHeartbeatData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/plugins/dev-sessions/{id}/heartbeat';
+};
+
+export type PostPluginsDevSessionsByIdHeartbeatResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        id: string;
+        pluginName: string;
+        routeSegment: string;
+        displayName: string;
+        packageDir: string;
+        entries: {
+            server: string | null;
+            web: string | null;
+            desktop: string | null;
+        };
+        revisions: {
+            server: string | number;
+            web: string | number;
+            desktop: string | number;
+        };
+        createdAt: number;
+        updatedAt: number;
+    };
+};
+
+export type PostPluginsDevSessionsByIdHeartbeatResponse = PostPluginsDevSessionsByIdHeartbeatResponses[keyof PostPluginsDevSessionsByIdHeartbeatResponses];
+
+export type DeletePluginsDevSessionsByIdData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/plugins/dev-sessions/{id}';
+};
+
+export type DeletePluginsDevSessionsByIdResponses = {
+    /**
+     * Response for status 200
+     */
+    200: {
+        removed: boolean;
+    };
+};
+
+export type DeletePluginsDevSessionsByIdResponse = DeletePluginsDevSessionsByIdResponses[keyof DeletePluginsDevSessionsByIdResponses];
+
+export type GetPluginsDevSessionsEventsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/plugins/dev-sessions/events';
+};
+
 export type PostPluginsSourcesPreviewData = {
     body: {
         kind: 'git' | 'npm';

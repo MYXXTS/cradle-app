@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia'
 
 import type { PluginSourceInstallerOptions } from '../../plugins/source-installer'
 import { pluginMarketplaceRoutes } from '../plugin-marketplace'
+import { pluginDevSessions } from './dev-session-service'
 import { PluginsModel } from './model'
 import * as Plugins from './service'
 
@@ -34,6 +35,40 @@ export function createPluginsModule(options: PluginSourceInstallerOptions = {}) 
       },
     },
     response: { 200: t.Array(PluginsModel.pluginSourceRegistryEntry) },
+  })
+  .get('/dev-sessions', () => pluginDevSessions.list(), {
+    detail: { summary: 'List active plugin development sessions' },
+    response: { 200: t.Array(PluginsModel.pluginDevSession) },
+  })
+  .post('/dev-sessions', ({ body }) => pluginDevSessions.create(body), {
+    detail: { summary: 'Start a temporary plugin development session' },
+    body: PluginsModel.createPluginDevSessionBody,
+    response: { 200: PluginsModel.pluginDevSession },
+  })
+  .post('/dev-sessions/:id/reload', ({ body, params }) => pluginDevSessions.reload(params.id, body.layer), {
+    detail: { summary: 'Reload a built plugin development layer' },
+    params: t.Object({ id: t.String({ minLength: 1 }) }),
+    body: PluginsModel.reloadPluginDevSessionBody,
+    response: { 200: PluginsModel.pluginDevSession },
+  })
+  .post('/dev-sessions/:id/heartbeat', ({ params }) => pluginDevSessions.heartbeat(params.id), {
+    detail: { summary: 'Keep a plugin development session alive' },
+    params: t.Object({ id: t.String({ minLength: 1 }) }),
+    response: { 200: PluginsModel.pluginDevSession },
+  })
+  .delete('/dev-sessions/:id', ({ params }) => pluginDevSessions.remove(params.id), {
+    detail: { summary: 'Stop a temporary plugin development session' },
+    params: t.Object({ id: t.String({ minLength: 1 }) }),
+    response: { 200: t.Object({ removed: t.Literal(true) }) },
+  })
+  .get('/dev-sessions/events', ({ request }) => new Response(pluginDevSessions.stream(request.signal), {
+    headers: {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      'connection': 'keep-alive',
+    },
+  }), {
+    detail: { summary: 'Subscribe to plugin development session changes' },
   })
   .post('/sources', ({ body }) => Plugins.createSource(body, options), {
     detail: {
@@ -134,4 +169,5 @@ export function createPluginsModule(options: PluginSourceInstallerOptions = {}) 
     body: PluginsModel.updatePluginActivationBody,
     response: { 200: PluginsModel.pluginDescriptor },
   })
+  .onStop(() => pluginDevSessions.shutdown())
 }

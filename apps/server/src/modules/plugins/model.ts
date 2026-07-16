@@ -200,6 +200,41 @@ const pluginSourcePreview = t.Object({
   warnings: t.Array(t.String()),
 }, { additionalProperties: false })
 
+const pluginDevLayerEntries = t.Object({
+  server: t.Optional(t.String({ minLength: 1 })),
+  web: t.Optional(t.String({ minLength: 1 })),
+  desktop: t.Optional(t.String({ minLength: 1 })),
+}, { additionalProperties: false })
+
+const pluginDevSession = t.Object({
+  id: t.String({ minLength: 1 }),
+  pluginName: t.String({ minLength: 1 }),
+  routeSegment: t.String({ minLength: 1 }),
+  displayName: t.String({ minLength: 1 }),
+  packageDir: t.String({ minLength: 1 }),
+  entries: t.Object({
+    server: t.Union([t.String(), t.Null()]),
+    web: t.Union([t.String(), t.Null()]),
+    desktop: t.Union([t.String(), t.Null()]),
+  }, { additionalProperties: false }),
+  revisions: t.Object({
+    server: t.Integer({ minimum: 0 }),
+    web: t.Integer({ minimum: 0 }),
+    desktop: t.Integer({ minimum: 0 }),
+  }, { additionalProperties: false }),
+  createdAt: t.Number(),
+  updatedAt: t.Number(),
+}, { additionalProperties: false })
+
+const createPluginDevSessionBody = t.Object({
+  packageDir: t.String({ minLength: 1 }),
+  entries: pluginDevLayerEntries,
+}, { additionalProperties: false })
+
+const reloadPluginDevSessionBody = t.Object({
+  layer: t.Union([t.Literal('server'), t.Literal('web'), t.Literal('desktop')]),
+}, { additionalProperties: false })
+
 export const PluginsModel = {
   addPluginSourceBody,
   addPluginSourceResult,
@@ -211,5 +246,8 @@ export const PluginsModel = {
   pluginPreviewItem,
   previewPluginSourceBody,
   pluginSourcePreview,
+  pluginDevSession,
+  createPluginDevSessionBody,
+  reloadPluginDevSessionBody,
   updatePluginActivationBody,
 } as const

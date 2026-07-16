@@ -6,6 +6,7 @@ import { defineConfig } from 'vite'
 const nodeRuntimeExternals = [
   ...builtinModules,
   ...builtinModules.map(moduleName => `node:${moduleName}`),
+  'vite',
 ]
 
 export default defineConfig({

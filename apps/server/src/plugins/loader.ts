@@ -56,6 +56,10 @@ interface ActivePlugin {
 const layerNames: PluginLayer[] = ['server', 'web', 'desktop']
 const activePlugins = new Map<string, ActivePlugin>()
 const discoveredPluginManifests = new Map<string, PluginManifest>()
+const shadowedDevelopmentPlugins = new Map<string, {
+  manifest: PluginManifest
+  source: PluginSourceDescriptor
+}>()
 const logger = createChildLogger({ module: 'plugins' })
 
 interface PluginRouteDispatcherContext {
@@ -335,7 +339,7 @@ async function deactivatePluginServerLayer(pluginName: string): Promise<void> {
   clearPluginRoutes(pluginName)
 }
 
-async function activatePluginServerLayer(manifest: PluginManifest): Promise<void> {
+async function activatePluginServerLayer(manifest: PluginManifest, moduleRevision?: number): Promise<void> {
   if (!manifest.cradle.server) { return }
   const descriptor = getPluginDescriptor(manifest.name)
   if (!descriptor || descriptor.layers.server.status === 'invalid') { return }
@@ -364,7 +368,11 @@ async function activatePluginServerLayer(manifest: PluginManifest): Promise<void
   let subscriptions: Disposable[] = []
   try {
     setPluginLayerState(manifest.name, 'server', 'activating')
-    const mod = await import(pathToFileURL(entryPath).href)
+    const moduleUrl = new URL(pathToFileURL(entryPath).href)
+    if (moduleRevision !== undefined) {
+      moduleUrl.searchParams.set('cradleDevRevision', String(moduleRevision))
+    }
+    const mod = await import(moduleUrl.href)
     validatePluginModule(mod, manifest.name, 'server')
 
     const ctx = createServerPluginContext(manifest, { routeSegment: descriptor.routeSegment })
@@ -385,6 +393,59 @@ async function activatePluginServerLayer(manifest: PluginManifest): Promise<void
     clearPluginRoutes(manifest.name)
     logger.error('plugin activation failed', { plugin: manifest.name, err })
   }
+}
+
+export async function activateDevelopmentPlugin(
+  manifest: PluginManifest,
+  moduleRevision: number,
+): Promise<PluginDescriptor> {
+  const currentDescriptor = getPluginDescriptor(manifest.name)
+  const currentManifest = discoveredPluginManifests.get(manifest.name)
+  if (currentDescriptor && currentManifest && !shadowedDevelopmentPlugins.has(manifest.name)) {
+    shadowedDevelopmentPlugins.set(manifest.name, {
+      manifest: currentManifest,
+      source: currentDescriptor.source,
+    })
+  }
+
+  await deactivatePluginServerLayer(manifest.name)
+  unregisterPluginDescriptor(manifest.name)
+
+  const source: PluginSourceDescriptor = {
+    kind: 'workspaceDev',
+    packageDir: manifest.packageDir,
+    trusted: true,
+    reason: 'Temporary plugin development session.',
+  }
+  registerPluginDescriptor(createPluginDescriptor(manifest, source))
+  discoveredPluginManifests.set(manifest.name, manifest)
+  await preparePluginWebLayer(manifest)
+  await activatePluginServerLayer(manifest, moduleRevision)
+  return requirePluginDescriptor(manifest.name)
+}
+
+export async function reloadDevelopmentPluginServerLayer(
+  pluginName: string,
+  moduleRevision: number,
+): Promise<PluginDescriptor> {
+  const manifest = requirePluginManifest(pluginName)
+  await deactivatePluginServerLayer(pluginName)
+  await activatePluginServerLayer(manifest, moduleRevision)
+  return requirePluginDescriptor(pluginName)
+}
+
+export async function deactivateDevelopmentPlugin(pluginName: string): Promise<void> {
+  await deactivatePluginServerLayer(pluginName)
+  discoveredPluginManifests.delete(pluginName)
+  unregisterPluginDescriptor(pluginName)
+
+  const shadowed = shadowedDevelopmentPlugins.get(pluginName)
+  shadowedDevelopmentPlugins.delete(pluginName)
+  if (!shadowed) { return }
+
+  registerPluginDescriptor(createPluginDescriptor(shadowed.manifest, shadowed.source))
+  discoveredPluginManifests.set(pluginName, shadowed.manifest)
+  await prepareAndActivateManifests([shadowed.manifest])
 }
 
 export async function activateServerPlugins(app: Elysia): Promise<void> {
@@ -660,6 +721,7 @@ export async function deactivateAllPlugins(): Promise<void> {
     await deactivatePluginServerLayer(name)
   }
   activePlugins.clear()
+  shadowedDevelopmentPlugins.clear()
   resetPluginSkillRegistry()
   resetPluginRouteRegistry()
   resetExternalProviderSourceRegistry()

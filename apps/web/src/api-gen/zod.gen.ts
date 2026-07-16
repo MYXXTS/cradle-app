@@ -2079,6 +2079,35 @@ export const zPostPluginsSourcesBody = z.object({
     addedReason: z.string().nullish()
 });
 
+export const zPostPluginsDevSessionsBody = z.object({
+    packageDir: z.string().min(1),
+    entries: z.object({
+        server: z.string().min(1).optional(),
+        web: z.string().min(1).optional(),
+        desktop: z.string().min(1).optional()
+    })
+});
+
+export const zPostPluginsDevSessionsByIdReloadBody = z.object({
+    layer: z.enum([
+        'server',
+        'web',
+        'desktop'
+    ])
+});
+
+export const zPostPluginsDevSessionsByIdReloadPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zPostPluginsDevSessionsByIdHeartbeatPath = z.object({
+    id: z.string().min(1)
+});
+
+export const zDeletePluginsDevSessionsByIdPath = z.object({
+    id: z.string().min(1)
+});
+
 export const zPostPluginsSourcesPreviewBody = z.object({
     kind: z.enum(['git', 'npm']),
     location: z.string().min(1),

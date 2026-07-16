@@ -39,6 +39,12 @@ const CradlePluginContributionsSchema = z.object({
   permissions: z.array(CradlePluginPermissionContributionSchema),
 })
 
+const CradlePluginDevEntriesSchema = z.object({
+  server: PluginEntryPathSchema.optional(),
+  web: PluginEntryPathSchema.optional(),
+  desktop: PluginEntryPathSchema.optional(),
+})
+
 const CradlePluginMetaSchema = z
   .object({
     apiVersion: z.literal('1'),
@@ -49,6 +55,7 @@ const CradlePluginMetaSchema = z
     server: PluginEntryPathSchema.optional(),
     web: PluginEntryPathSchema.optional(),
     desktop: PluginEntryPathSchema.optional(),
+    dev: CradlePluginDevEntriesSchema.optional(),
     contributes: CradlePluginContributionsSchema,
   })
   .passthrough()
@@ -67,8 +74,17 @@ const CradlePluginMetaSchema = z
         message: 'cradle.permissions is not supported in apiVersion 1; use cradle.contributes.permissions.',
       })
     }
+    for (const layer of ['server', 'web', 'desktop'] as const) {
+      if (value.dev?.[layer] && !value[layer]) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['dev', layer],
+          message: `requires cradle.${layer} to declare the production layer`,
+        })
+      }
+    }
   })
-  .transform(({ apiVersion, displayName, description, icon, deployments, server, web, desktop, contributes }) => ({
+  .transform(({ apiVersion, displayName, description, icon, deployments, server, web, desktop, dev, contributes }) => ({
     apiVersion,
     displayName,
     description,
@@ -77,6 +93,7 @@ const CradlePluginMetaSchema = z
     server,
     web,
     desktop,
+    dev,
     contributes,
   }))
 

@@ -30,8 +30,19 @@ export interface CradlePluginMeta {
   web?: string
   /** Entry point for desktop/Electron main plugin */
   desktop?: string
+  /** Explicit source entries used by `cradle plugin dev`. */
+  dev?: CradlePluginDevEntries
   /** Structured static contributions declared before runtime activation. */
   contributes: CradlePluginContributions
+}
+
+export interface CradlePluginDevEntries {
+  /** Source entry compiled into the development server bundle. */
+  server?: string
+  /** Source entry compiled into the development renderer bundle. */
+  web?: string
+  /** Source entry compiled into the development Electron main bundle. */
+  desktop?: string
 }
 
 export interface CradlePluginContributions {
