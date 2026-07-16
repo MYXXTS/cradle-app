@@ -222,7 +222,12 @@ const BASE64_RE = /^[\w+/=-]+$/
 // Common API key prefixes — keys starting with these are already plaintext
 const KNOWN_KEY_PREFIXES = ['sk-', 'sk-ant-', 'tp-', 'ak-', 'key-', 'api-']
 
-function tryDecodeBase64(token: string): string {
+export function isBase64Like(token: string): boolean {
+  if (KNOWN_KEY_PREFIXES.some(p => token.toLowerCase().startsWith(p))) { return false }
+  return BASE64_RE.test(token) && token.length >= 16
+}
+
+export function tryDecodeBase64(token: string): string {
   const lower = token.toLowerCase()
   if (KNOWN_KEY_PREFIXES.some(p => lower.startsWith(p))) { return token }
   if (!BASE64_RE.test(token) || token.length < 16) { return token }
@@ -352,21 +357,20 @@ function parseProviderConfigText(text: string): ParseResult {
     providers.push({ providerKind: kind, name, apiKey, baseUrl })
   }
 
-  // 1. Export groups (most reliable) — decode base64 keys
+  // 1. Export groups (most reliable)
   for (const [kind, group] of exportGroups) {
     if (group.baseUrl && group.apiKey) {
-      addProvider(kind, hostnameFromUrl(group.baseUrl), group.baseUrl, tryDecodeBase64(group.apiKey))
+      addProvider(kind, hostnameFromUrl(group.baseUrl), group.baseUrl, group.apiKey)
     }
   }
 
   // 2. Export token + remaining URLs of matching kind
   for (const [kind, group] of exportGroups) {
     if (!group.apiKey) { continue }
-    const decodedKey = tryDecodeBase64(group.apiKey)
     for (const u of urls) {
       const urlKind = u.kind === 'unknown' ? kind : u.kind
       if (urlKind === kind) {
-        addProvider(kind, hostnameFromUrl(u.url), u.url, decodedKey)
+        addProvider(kind, hostnameFromUrl(u.url), u.url, group.apiKey)
       }
     }
   }
@@ -374,14 +378,13 @@ function parseProviderConfigText(text: string): ParseResult {
   // 3. Freetext token + remaining URLs
   const rawToken
     = [...exportGroups.values()].find(g => g.apiKey)?.apiKey ?? freeToken
-  const bestToken = rawToken ? tryDecodeBase64(rawToken) : null
 
   for (const u of urls) {
     const kind = u.kind === 'unknown' ? 'openai-compatible' : u.kind
-    addProvider(kind as ApiProviderKind, hostnameFromUrl(u.url), u.url, bestToken ?? '')
+    addProvider(kind as ApiProviderKind, hostnameFromUrl(u.url), u.url, rawToken ?? '')
   }
 
-  return { token: bestToken, urls, providers }
+  return { token: rawToken, urls, providers }
 }
 
 export function parseProviderConfig(text: string): ParseResult {

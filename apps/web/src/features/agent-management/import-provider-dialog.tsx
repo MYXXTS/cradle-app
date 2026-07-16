@@ -4,6 +4,7 @@ import {
   GlobeLine as GlobeIcon,
   Key2Line as KeyIcon,
   SparklesLine as SparklesIcon,
+  UnlockLine as DecodeIcon,
 } from '@mingcute/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useRef, useState } from 'react'
@@ -36,7 +37,7 @@ import { useAgentProfiles } from '~/features/agent-runtime/use-agent-profiles'
 import { cn } from '~/lib/cn'
 
 import type { ParsedProvider, ParseResult } from './import-provider-parser'
-import { parseProviderConfig } from './import-provider-parser'
+import { isBase64Like, parseProviderConfig, tryDecodeBase64 } from './import-provider-parser'
 import { matchProviderEndpoint } from './provider-endpoint-registry'
 import { warmManualProviderModelCache } from './provider-model-cache'
 import { buildProfileId } from './provider-settings-utils'
@@ -125,6 +126,7 @@ export function ImportProviderDialog({
   const [anthropicBaseUrls, setAnthropicBaseUrls] = useState<string[]>([])
   const [manualUrl, setManualUrl] = useState('')
   const [manualKind, setManualKind] = useState<ApiProviderKind>('openai-compatible')
+  const [decodeHistory, setDecodeHistory] = useState<Map<number, string[]>>(() => new Map())
   const prevParsedConfigKeyRef = useRef<string | null>(null)
 
   const parseResult = useMemo(() => {
@@ -195,7 +197,38 @@ export function ImportProviderDialog({
     setOpenaiBaseUrls([])
     setAnthropicBaseUrls([])
     setEnabledSet(new Set())
+    setDecodeHistory(new Map())
   }
+
+  const canDecodeApiKey = useCallback((index: number): boolean => {
+    const key = apiKeys[index] ?? ''
+    return isBase64Like(key)
+  }, [apiKeys])
+
+  const handleDecodeKey = useCallback((index: number) => {
+    const currentKey = apiKeys[index] ?? ''
+    const decoded = tryDecodeBase64(currentKey)
+    if (decoded === currentKey) { return }
+    setApiKeys(prev => prev.map((entry, i) => i === index ? decoded : entry))
+    setDecodeHistory((prev) => {
+      const next = new Map(prev)
+      const history = next.get(index) ?? []
+      next.set(index, [...history, currentKey])
+      return next
+    })
+  }, [apiKeys])
+
+  const handleRevertKey = useCallback((index: number) => {
+    setDecodeHistory((prev) => {
+      const next = new Map(prev)
+      const history = next.get(index) ?? []
+      if (history.length === 0) { return prev }
+      const reverted = history.at(-1)!
+      next.set(index, history.slice(0, -1))
+      setApiKeys(keys => keys.map((entry, i) => i === index ? reverted : entry))
+      return next
+    })
+  }, [])
 
   const token = parseResult?.token ?? null
   const hasProviders = parseResult && parseResult.providers.length > 0
@@ -378,6 +411,8 @@ export function ImportProviderDialog({
                         openaiBaseUrl={openaiBaseUrls[i] ?? universalEndpointDefaults(p.baseUrl).openaiBaseUrl}
                         anthropicBaseUrl={anthropicBaseUrls[i] ?? universalEndpointDefaults(p.baseUrl).anthropicBaseUrl}
                         enabled={enabledSet.has(i)}
+                        canDecode={canDecodeApiKey(i)}
+                        canRevert={(decodeHistory.get(i)?.length ?? 0) > 0}
                         onToggle={() => {
                           setEnabledSet((prev) => {
                             const next = new Set(prev)
@@ -409,6 +444,8 @@ export function ImportProviderDialog({
                         onBaseUrlChange={value => setBaseUrls(prev => prev.map((entry, index) => index === i ? value : entry))}
                         onOpenaiBaseUrlChange={value => setOpenaiBaseUrls(prev => prev.map((entry, index) => index === i ? value : entry))}
                         onAnthropicBaseUrlChange={value => setAnthropicBaseUrls(prev => prev.map((entry, index) => index === i ? value : entry))}
+                        onDecode={() => handleDecodeKey(i)}
+                        onRevert={() => handleRevertKey(i)}
                       />
                     ))}
                   </div>
@@ -483,6 +520,8 @@ function ProviderCard({
   openaiBaseUrl,
   anthropicBaseUrl,
   enabled,
+  canDecode,
+  canRevert,
   onToggle,
   onKindChange,
   onNameChange,
@@ -490,6 +529,8 @@ function ProviderCard({
   onBaseUrlChange,
   onOpenaiBaseUrlChange,
   onAnthropicBaseUrlChange,
+  onDecode,
+  onRevert,
 }: {
   resolvedName: string
   kind: ApiProviderKind
@@ -498,6 +539,8 @@ function ProviderCard({
   openaiBaseUrl: string
   anthropicBaseUrl: string
   enabled: boolean
+  canDecode: boolean
+  canRevert: boolean
   onToggle: () => void
   onKindChange: (k: ApiProviderKind) => void
   onNameChange: (name: string) => void
@@ -505,6 +548,8 @@ function ProviderCard({
   onBaseUrlChange: (value: string) => void
   onOpenaiBaseUrlChange: (value: string) => void
   onAnthropicBaseUrlChange: (value: string) => void
+  onDecode: () => void
+  onRevert: () => void
 }) {
   return (
     <div
@@ -566,7 +611,32 @@ function ProviderCard({
                 </label>
               )}
           <label className="flex flex-col gap-0.5">
-            <span className={IMPORT_FIELD_LABEL_CLASS}>API key</span>
+            <div className="flex items-center gap-1.5">
+              <span className={IMPORT_FIELD_LABEL_CLASS}>API key</span>
+              {canDecode && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-4 gap-0.5 px-1 text-[9px] font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                  onClick={onDecode}
+                >
+                  <DecodeIcon className="size-2.5" />
+                  Decode
+                </Button>
+              )}
+              {canRevert && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-4 gap-0.5 px-1 text-[9px] font-medium text-muted-foreground hover:text-foreground"
+                  onClick={onRevert}
+                >
+                  Undo
+                </Button>
+              )}
+            </div>
             <Input type="password" value={apiKey} onChange={event => onApiKeyChange(event.target.value)} placeholder="Enter API key" className={FLAT_IMPORT_FIELD_CLASS} />
           </label>
           {kind !== 'universal' && shouldShowV1Reminder(baseUrl) && <BaseUrlV1Reminder />}
