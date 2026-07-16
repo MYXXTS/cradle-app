@@ -1170,6 +1170,16 @@ export interface QuickQuestionInput {
   workspacePath: string
 }
 
+export interface RuntimeHarnessFragment {
+  key: string
+  revision: string
+  content: string
+}
+
+export interface RuntimeHarnessContext {
+  fragments: RuntimeHarnessFragment[]
+}
+
 export interface StreamTurnInput {
   runId: string
   runtimeSession: RuntimeSession
@@ -1189,6 +1199,7 @@ export interface StreamTurnInput {
     runtimeSettings?: RuntimeSettings
   }
   systemPrompt?: string
+  harness?: RuntimeHarnessContext
   history?: UIMessage[]
   reportSessionTitle?: (title: string) => void
   onUsageEvent?: (event: RuntimeUsageEvent) => void | Promise<void>

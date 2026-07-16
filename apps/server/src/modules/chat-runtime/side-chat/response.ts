@@ -9,8 +9,8 @@ import {
   readSideConversation,
 } from '../../provider-runtime/side-conversation-registry'
 import { getRuntimeRegistry } from '../chat-runtime-provider-registry'
-import { resolveSessionSystemPrompt } from '../context/turn-context'
 import type { ChatContextPart } from '../context-parts'
+import { resolveSessionSystemPrompt } from '../harness/turn-context'
 import type { ChatThinkingEffort, RuntimeSettingsPatch } from '../runtime-provider-types'
 import {
   assertProviderBoundRunContext,

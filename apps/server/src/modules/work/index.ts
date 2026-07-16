@@ -1,8 +1,11 @@
 import { Elysia, t } from 'elysia'
 
 import { AppError } from '../../errors/app-error'
+import { registerWorkHarnessContextSource } from './agent-context'
 import { WorkModel } from './model'
 import * as Work from './service'
+
+registerWorkHarnessContextSource()
 
 export const work = new Elysia({
   prefix: '/works',

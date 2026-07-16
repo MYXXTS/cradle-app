@@ -13,10 +13,10 @@ import {
 import { releaseSideConversationsByParentSessionId } from '../provider-runtime/side-conversation-registry'
 import * as SessionService from '../session/service'
 import { getRuntimeRegistry } from './chat-runtime-provider-registry'
-import { resolveSessionSystemPrompt } from './context/turn-context'
 import type { ChatContextPart } from './context-parts'
 import type { ChatRuntimeRecoveryResult } from './es/recovery'
 import { recoverChatRuntimeProjections } from './es/recovery'
+import { resolveSessionSystemPrompt } from './harness/turn-context'
 import type { ExecuteBangCommandInput } from './interaction/bang-command-execution'
 import {
   executeBangCommand as executeBangCommandFromInteraction,

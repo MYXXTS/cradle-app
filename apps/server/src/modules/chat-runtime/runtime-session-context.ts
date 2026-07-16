@@ -25,7 +25,7 @@ import * as SessionService from '../session/service'
 import * as Workspace from '../workspace/service'
 import { assertIsolationExecutionReady, resolveSessionExecutionRoot } from '../worktree/service'
 import { getRuntimeRegistry } from './chat-runtime-provider-registry'
-import { resolveSessionSystemPrompt } from './context/turn-context'
+import { resolveSessionSystemPrompt } from './harness/turn-context'
 import type { ActiveRun } from './run-registry'
 import { runRegistry } from './run-registry'
 import type {

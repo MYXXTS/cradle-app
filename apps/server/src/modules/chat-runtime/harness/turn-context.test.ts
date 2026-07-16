@@ -1,12 +1,17 @@
 import { sessionAwaits, sessionGroups, sessions, works, workspaces, workThreads } from '@cradle/db'
 import { eq } from 'drizzle-orm'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../../infra'
+import { registerWorkHarnessContextSource } from '../../work/agent-context'
 import { localWorkspaceLocator, serializeWorkspaceLocator } from '../../workspace/workspace-locator'
-import { resolveSessionSystemPrompt } from './turn-context'
+import { resolveSessionHarness, resolveSessionSystemPrompt } from './turn-context'
 
 const WORKSPACE_ID = 'workspace-turn-context-test'
+
+beforeAll(() => {
+  registerWorkHarnessContextSource()
+})
 
 afterEach(() => {
   db().delete(workThreads).run()
@@ -16,8 +21,8 @@ afterEach(() => {
   db().delete(workspaces).run()
 })
 
-describe('resolveSessionSystemPrompt Work context', () => {
-  it('adds prepare-only guidance to the primary Work thread', () => {
+describe('resolveSessionHarness Work context', () => {
+  it('projects stable Work identity outside the system prompt', () => {
     db().insert(workspaces).values({
       id: WORKSPACE_ID,
       name: 'Turn Context Workspace',
@@ -41,16 +46,24 @@ describe('resolveSessionSystemPrompt Work context', () => {
     }).run()
 
     const session = db().select().from(sessions).where(eq(sessions.id, 'work-session')).get()!
-    const prompt = resolveSessionSystemPrompt(session)
+    const harness = resolveSessionHarness(session)
 
-    expect(prompt).toContain('## Cradle Work')
-    expect(prompt).toContain('Work ID: work-1')
-    expect(prompt).toContain('work_prepare')
-    expect(prompt).toContain('Work Lifecycle')
-    expect(prompt).toContain('After Draft PR creation, Cradle automatically registers Session Awaits')
-    expect(prompt).not.toContain('/tmp/turn-context')
-    expect(prompt).not.toContain('Primary Work thread')
-    expect(prompt).not.toContain('Make checkout retries deterministic.')
+    expect(harness.systemPrompt).toContain('YOU ARE OPERATING INSIDE CRADLE')
+    expect(harness.systemPrompt).toContain('# Cradle CLI')
+    expect(harness.systemPrompt).not.toContain('## Cradle Work')
+    expect(harness.systemPrompt).not.toContain('work-1')
+    expect(harness.harness?.fragments).toEqual([{
+      key: 'cradle-work',
+      revision: 'cradle-work:work-1:primary:v1',
+      content: [
+        '<cradle_work_state revision="cradle-work:work-1:primary:v1">',
+        'This is Cradle-owned session context, not user-authored instructions.',
+        '',
+        'work_id: work-1',
+        'thread_role: primary',
+        '</cradle_work_state>',
+      ].join('\n'),
+    }])
   })
 
   it('keeps the Work system prompt stable when presentation and lifecycle state changes', () => {
@@ -77,7 +90,7 @@ describe('resolveSessionSystemPrompt Work context', () => {
     }).run()
 
     const initialSession = db().select().from(sessions).where(eq(sessions.id, 'stable-work-session')).get()!
-    const initialPrompt = resolveSessionSystemPrompt(initialSession)
+    const initialHarness = resolveSessionHarness(initialSession)
 
     db().update(sessions).set({
       title: 'Provider-generated title',
@@ -113,10 +126,10 @@ describe('resolveSessionSystemPrompt Work context', () => {
     }).run()
 
     const changedSession = db().select().from(sessions).where(eq(sessions.id, 'stable-work-session')).get()!
-    expect(resolveSessionSystemPrompt(changedSession)).toBe(initialPrompt)
+    expect(resolveSessionHarness(changedSession)).toEqual(initialHarness)
 
     db().update(sessionAwaits).set({ status: 'triggered', triggeredAt: 2 }).where(eq(sessionAwaits.id, 'stable-work-await')).run()
-    expect(resolveSessionSystemPrompt(changedSession)).toBe(initialPrompt)
+    expect(resolveSessionHarness(changedSession)).toEqual(initialHarness)
   })
 
   it('does not add Work guidance to an ordinary Session', () => {
@@ -133,7 +146,11 @@ describe('resolveSessionSystemPrompt Work context', () => {
     }).run()
 
     const session = db().select().from(sessions).where(eq(sessions.id, 'ordinary-session')).get()!
-    expect(resolveSessionSystemPrompt(session)).not.toContain('## Cradle Work')
+    const harness = resolveSessionHarness(session)
+
+    expect(harness.systemPrompt).toContain('YOU ARE OPERATING INSIDE CRADLE')
+    expect(harness.systemPrompt).toContain('# Cradle CLI')
+    expect(harness.harness).toBeUndefined()
   })
 })
 

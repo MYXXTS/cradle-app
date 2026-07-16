@@ -14,6 +14,7 @@ import type { ActiveRun } from '../run-registry'
 import type {
   ChatThinkingEffort,
   RuntimeGoalContinuationOptions,
+  RuntimeHarnessContext,
   RuntimeProviderTargetProfile,
   RuntimeSettings,
   TokenUsage,
@@ -60,6 +61,7 @@ export interface ExecuteRunInput {
   thinkingEffort?: ChatThinkingEffort
   runtimeSettings?: RuntimeSettings
   systemPrompt?: string
+  harness?: RuntimeHarnessContext
   transcript?: CradleTurnTranscript
   history?: UIMessage[]
   originalMessages?: UIMessage[]
@@ -272,6 +274,7 @@ async function pumpRuntimeStream(
             }
           : undefined,
       systemPrompt: input.systemPrompt,
+      harness: input.harness,
       history: input.history,
       originalMessages: input.originalMessages,
       reportSessionTitle: (title) => {

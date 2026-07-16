@@ -21,10 +21,12 @@ Session, Worktree, Pull Request, Chat Runtime, and Await read models.
 - The builtin `cradle` MCP server exposes `work_prepare` as the required
   Agent-facing finalization tool; the tool delegates to this module's prepare
   API and does not own Work persistence.
-- Chat Runtime projects only cache-stable Work lifecycle policy and the immutable
-  Work id into the system prompt. The objective already enters the transcript as
-  the initial user message, while pull-request and Await state remain available
-  through tool results, delivered events, and on-demand Work reads.
+- Work contributes one deterministic `<cradle_work_state>` harness fragment for
+  its primary Session. The fragment contains only the Work id and
+  `thread_role: primary`; Work lifecycle instructions come from the permanently
+  resident `cradle-cli` skill. The objective already enters the transcript as
+  the initial user message, while pull-request, Await, and Worktree state remain
+  available through their owning modules, delivered events, and on-demand reads.
 - Creating or updating a Draft PR requires an explicit submit request.
 - Mark Ready and merge remain user-controlled outside this module.
 
@@ -43,6 +45,7 @@ Work reads and composes those services but does not duplicate their semantics.
 ## Files
 
 - `index.ts`: HTTP/OpenAPI/CLI routes.
+- `agent-context.ts`: Work-owned primary-Session harness fragment registration.
 - `model.ts`: TypeBox request and response schemas.
 - `service.ts`: Work persistence, aggregate reads, compensated creation,
   preparation, and explicit delivery orchestration.

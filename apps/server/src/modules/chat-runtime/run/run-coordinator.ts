@@ -5,9 +5,9 @@ import type { FileUIPart, UIMessage } from 'ai'
 import { AppError } from '../../../errors/app-error'
 import type { RuntimeKind } from '../../provider-contracts/types'
 import { getRuntimeRegistry } from '../chat-runtime-provider-registry'
-import { resolveSessionSystemPrompt, resolveTurnContext } from '../context/turn-context'
 import type { ChatContextPart } from '../context-parts'
 import { cancelQueuedSessionItem } from '../es/commands'
+import { resolveSessionHarness, resolveTurnContext } from '../harness/turn-context'
 import type { ChatSessionQueueMode } from '../queue/session-queue'
 import type { ActiveRun, PendingRunState } from '../run-registry'
 import { runRegistry } from '../run-registry'
@@ -359,7 +359,7 @@ export async function createRun(
 
     const turnContext = requestMessages
       ? {
-          systemPrompt: resolveSessionSystemPrompt(context.session),
+          ...resolveSessionHarness(context.session),
           history: requestMessages.slice(0, -1),
         }
       : resolveTurnContext({
@@ -378,6 +378,7 @@ export async function createRun(
       thinkingEffort: requestedThinkingEffort,
       runtimeSettings,
       systemPrompt: turnContext.systemPrompt,
+      harness: turnContext.harness,
       transcript: turnContext.transcript,
       history: turnContext.history?.length
         ? projectLightOcrMessages(turnContext.history)
