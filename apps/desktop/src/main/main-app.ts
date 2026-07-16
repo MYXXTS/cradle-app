@@ -745,14 +745,21 @@ export async function startDesktopApp(): Promise<void> {
         }
 
         let serverUrl: string
+        const publishServerStartupPhase = (phase: 'migrating' | 'compacting') => {
+          publishDesktopServerStatus(
+            phase === 'compacting'
+              ? { state: 'compacting' }
+              : { state: 'migrating', phase: 'database' },
+          )
+        }
         try {
-          serverUrl = await startServer()
+          serverUrl = await startServer(publishServerStartupPhase)
         }
         catch (error) {
           await rollbackDesktopDataMigrationAfterHealthFailure(error instanceof Error ? error.message : String(error))
           if (migration.migrated) {
             console.error('[desktop] new data root failed health check; restored previous root')
-            serverUrl = await startServer()
+            serverUrl = await startServer(publishServerStartupPhase)
           }
           else {
             throw error

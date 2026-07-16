@@ -108,6 +108,7 @@ try {
   }
   child.stdout?.pipe(process.stdout)
   child.stderr?.pipe(process.stderr)
+  child.on('message', message => emitStatus({ type: 'target-message', message }))
   child.once('error', (error) => {
     emitStatus({ type: 'error', message: error.message })
     process.exit(1)

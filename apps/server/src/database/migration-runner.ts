@@ -26,8 +26,10 @@ export class MigrationRunner {
     const { dbPath, migrationsDir } = this.config.getOptions()
 
     try {
+      this.publishStartupPhase('migrating')
       migrate(db, { migrationsFolder: migrationsDir })
       this.runPendingMaintenanceTasks()
+      this.publishStartupPhase('initializing')
     }
     catch (error) {
       const cause = ErrorCauseCarrierSchema.parse(error).cause
@@ -57,6 +59,7 @@ export class MigrationRunner {
       }
 
       try {
+        this.publishStartupPhase('compacting')
         const result = this.provider.compactDatabase()
         if (result.status === 'deferred') {
           this.logger.warn('Database compaction deferred because free space is insufficient', {
@@ -90,5 +93,12 @@ export class MigrationRunner {
         })
       }
     }
+  }
+
+  private publishStartupPhase(phase: 'migrating' | 'compacting' | 'initializing'): void {
+    process.send?.({
+      type: 'cradle-server-startup',
+      phase,
+    })
   }
 }

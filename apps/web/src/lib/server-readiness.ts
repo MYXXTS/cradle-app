@@ -4,6 +4,7 @@ import { getConfiguredServerUrl, setRuntimeServerUrl } from './server-endpoint-p
 type DesktopServerStatus
   = | { state: 'starting' }
     | { state: 'migrating', phase: string }
+    | { state: 'compacting' }
     | { state: 'ready', serverUrl: string }
     | { state: 'failed', message: string }
 
@@ -45,7 +46,8 @@ function waitForDesktopServer(): Promise<string> {
     let unsubscribe = () => {}
 
     const handleStatus = (status: DesktopServerStatus) => {
-      if (settled || status.state === 'starting' || status.state === 'migrating') {
+      updateBootstrapStatus(status)
+      if (settled || status.state === 'starting' || status.state === 'migrating' || status.state === 'compacting') {
         return
       }
       settled = true
@@ -67,6 +69,22 @@ function waitForDesktopServer(): Promise<string> {
     }
     void runtime.getStatus().then(handleStatus, reject)
   })
+}
+
+function updateBootstrapStatus(status: DesktopServerStatus): void {
+  const message = document.querySelector<HTMLElement>('[data-bootstrap-message]')
+  if (!message) {
+    return
+  }
+  if (status.state === 'migrating') {
+    message.textContent = 'Preparing your data…'
+  }
+  else if (status.state === 'compacting') {
+    message.textContent = 'Making a little room…'
+  }
+  else if (status.state === 'starting') {
+    message.textContent = 'Opening Cradle…'
+  }
 }
 
 export function waitForServer(): Promise<string> {

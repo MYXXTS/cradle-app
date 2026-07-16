@@ -93,6 +93,9 @@ let currentServerUrl = ''
 let currentServerAuthToken = ''
 const recentServerOutputLines: string[] = []
 
+export type ServerStartupPhase = 'migrating' | 'compacting'
+type ServerStartupSignal = ServerStartupPhase | 'initializing'
+
 interface DesktopServerExitExpectation {
   pid: number | null
   source: 'desktop'
@@ -143,7 +146,7 @@ export function readDesktopServerAccessMode(dataDir: string): DesktopServerAcces
  * Start the Cradle server as a forked child process.
  * Returns the full URL the server is listening on.
  */
-export async function startServer(): Promise<string> {
+export async function startServer(onStartupPhase?: (phase: ServerStartupPhase) => void): Promise<string> {
   expectedServerExit = null
   lastServerSignalBeforeExit = null
   restartCount = 0
@@ -163,10 +166,32 @@ export async function startServer(): Promise<string> {
   const host = desktopServerBindHostForAccessMode(readDesktopServerAccessMode(dataDir))
   currentServerUrl = `http://127.0.0.1:${port}`
 
-  await spawnServer({ host, port, dataDir, credentialSecret, serverAuthToken: currentServerAuthToken })
+  let startupPhase: ServerStartupPhase | null = null
+  let startupTimeoutStartedAt = Date.now()
+  await spawnServer({
+    host,
+    port,
+    dataDir,
+    credentialSecret,
+    serverAuthToken: currentServerAuthToken,
+    onStartupSignal: (signal) => {
+      if (signal === 'initializing') {
+        startupPhase = null
+        startupTimeoutStartedAt = Date.now()
+        return
+      }
+      startupPhase = signal
+      onStartupPhase?.(signal)
+    },
+  })
 
   // Wait for server to be ready
-  await waitForServer(currentServerUrl, SERVER_STARTUP_TIMEOUT_MS)
+  await waitForServer(
+    currentServerUrl,
+    SERVER_STARTUP_TIMEOUT_MS,
+    () => startupPhase !== null,
+    () => startupTimeoutStartedAt,
+  )
   writeCliServerLocator({
     dataDir: app.getPath('userData'),
     serverUrl: currentServerUrl,
@@ -227,6 +252,7 @@ async function spawnServer(opts: {
   dataDir: string
   credentialSecret: string
   serverAuthToken: string
+  onStartupSignal?: (signal: ServerStartupSignal) => void
 }): Promise<void> {
   const { host, port, dataDir, credentialSecret } = opts
 
@@ -288,6 +314,12 @@ async function spawnServer(opts: {
 
   child.stdout?.on('data', chunk => recordServerOutput('stdout', chunk))
   child.stderr?.on('data', chunk => recordServerOutput('stderr', chunk))
+  child.on('message', (message) => {
+    const signal = readServerStartupSignal(message)
+    if (signal) {
+      opts.onStartupSignal?.(signal)
+    }
+  })
   child.on('error', (err) => {
     const message = `[server:error] ${err instanceof Error ? err.stack ?? err.message : String(err)}`
     appendServerOutputLine(message)
@@ -837,9 +869,45 @@ function readServerTargetPid(child: ManagedChildProcess | null): number | null {
   return child?.targetPid ?? child?.pid ?? null
 }
 
-async function waitForServer(url: string, timeoutMs: number): Promise<void> {
+function readServerStartupSignal(message: unknown): ServerStartupSignal | null {
+  if (
+    typeof message !== 'object'
+    || message === null
+    || !('type' in message)
+    || message.type !== 'target-message'
+    || !('message' in message)
+  ) {
+    return null
+  }
+  const targetMessage = message.message
+  if (
+    typeof targetMessage !== 'object'
+    || targetMessage === null
+    || !('type' in targetMessage)
+    || targetMessage.type !== 'cradle-server-startup'
+    || !('phase' in targetMessage)
+  ) {
+    return null
+  }
+  return targetMessage.phase === 'migrating'
+    || targetMessage.phase === 'compacting'
+    || targetMessage.phase === 'initializing'
+    ? targetMessage.phase
+    : null
+}
+
+async function waitForServer(
+  url: string,
+  timeoutMs: number,
+  isLongRunningStartup: () => boolean = () => false,
+  readTimeoutStartedAt?: () => number,
+): Promise<void> {
   const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
+  const timeoutStartedAt = readTimeoutStartedAt ?? (() => start)
+  while (Date.now() - timeoutStartedAt() < timeoutMs || isLongRunningStartup()) {
+    if (serverProcess && (serverProcess.exitCode !== null || serverProcess.signalCode !== null)) {
+      throw createServerStartupError(url, timeoutMs)
+    }
     try {
       const res = await fetch(`${url}/health`, { headers: getDesktopServerAuthHeaders() })
       if (res.ok) {
