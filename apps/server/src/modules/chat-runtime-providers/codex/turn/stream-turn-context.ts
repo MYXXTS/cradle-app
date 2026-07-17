@@ -97,61 +97,61 @@ export function resolveCodexStreamTurnContext(
   const agentId = input.agentId ?? snapshot.agentId ?? null
   const runtimeContext = resolveCodexRuntimeContext(workspacePath, agentId)
   const runtimeSettings = input.providerOptions?.runtimeSettings
-    const requestedReasoningEffort = readCodexReasoningEffort(
-      input.providerOptions?.thinkingEffort,
-      config.reasoningEffort,
-    )
-    const runtimeAccess = runtimeSettings
-      ? projectCodexRuntimeAccessMode(readCodexLikeRuntimeSettings(runtimeSettings).accessMode, {
-          writableRoots: runtimeContext.runtimeWorkspaceRoots,
-          additionalDirectories: config.additionalDirectories,
-        })
-      : null
-    const skillExtraRoots = resolveCodexSkillExtraRoots(config, workspacePath, deps.resolveSkillPaths)
-    const codexConfig = buildCodexConfig(
-      config,
-      workspacePath,
-      deps.resolveSkillPaths,
-      effectiveModel,
-      auth,
-    )
-    if (runtimeAccess) {
-      codexConfig.approval_policy = runtimeAccess.approvalPolicy
-      codexConfig.sandbox_mode = runtimeAccess.sandbox
-    }
-    const codexEnv = {
-      ...buildCradleCodexAppServerEnv({
-        chatSessionId: input.runtimeSession.chatSessionId,
-        workspaceId: input.workspaceId,
-        workspacePath,
-        agentId,
-        agentHome: runtimeContext.agentHome,
-      }),
-      ...buildCodexAuthEnvironment(auth),
-    }
-
-    return {
-      config,
-      auth,
-      effectiveModel,
-      userInput,
-      userPromptText,
-      goalContinuationRequested,
-      goalCommandObjective,
-      compactCommandRequested,
+  const requestedReasoningEffort = readCodexReasoningEffort(
+    input.providerOptions?.thinkingEffort,
+    config.reasoningEffort,
+  )
+  const runtimeAccess = runtimeSettings
+    ? projectCodexRuntimeAccessMode(readCodexLikeRuntimeSettings(runtimeSettings).accessMode, {
+        writableRoots: runtimeContext.runtimeWorkspaceRoots,
+        additionalDirectories: config.additionalDirectories,
+      })
+    : null
+  const skillExtraRoots = resolveCodexSkillExtraRoots(config, workspacePath, deps.resolveSkillPaths)
+  const codexConfig = buildCodexConfig(
+    config,
+    workspacePath,
+    deps.resolveSkillPaths,
+    effectiveModel,
+    auth,
+  )
+  if (runtimeAccess) {
+    codexConfig.approval_policy = runtimeAccess.approvalPolicy
+    codexConfig.sandbox_mode = runtimeAccess.sandbox
+  }
+  const codexEnv = {
+    ...buildCradleCodexAppServerEnv({
+      chatSessionId: input.runtimeSession.chatSessionId,
+      workspaceId: input.workspaceId,
       workspacePath,
       agentId,
-      runtimeContext,
-      systemPrompt: input.systemPrompt,
-      runtimeSettings,
-      requestedReasoningEffort,
-      runtimeAccess,
-      skillExtraRoots,
-      codexConfig,
-      codexEnv,
-      serverRequestHandler: deps.createServerRequestHandler(auth),
-      shouldInjectReconstructedHistory: !input.runtimeSession.providerSessionId,
-      isFreshProviderThread: !input.runtimeSession.providerSessionId,
-      isLiveSideFork: isLiveCodexSideFork(input.runtimeSession),
+      agentHome: runtimeContext.agentHome,
+    }),
+    ...buildCodexAuthEnvironment(auth),
+  }
+
+  return {
+    config,
+    auth,
+    effectiveModel,
+    userInput,
+    userPromptText,
+    goalContinuationRequested,
+    goalCommandObjective,
+    compactCommandRequested,
+    workspacePath,
+    agentId,
+    runtimeContext,
+    systemPrompt: input.systemPrompt,
+    runtimeSettings,
+    requestedReasoningEffort,
+    runtimeAccess,
+    skillExtraRoots,
+    codexConfig,
+    codexEnv,
+    serverRequestHandler: deps.createServerRequestHandler(auth),
+    shouldInjectReconstructedHistory: !input.runtimeSession.providerSessionId,
+    isFreshProviderThread: !input.runtimeSession.providerSessionId,
+    isLiveSideFork: isLiveCodexSideFork(input.runtimeSession),
   }
 }
