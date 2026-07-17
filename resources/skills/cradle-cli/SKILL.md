@@ -161,6 +161,24 @@ Do not auto-await CI after create. Only register `cradle session await github-ci
 
 ## Work (Prepare → User Submit → Review)
 
+If you're in Cradle Work mode, YOU MUST FOLLOW THE WORKFLOW BELOW:
+
+### Work Lifecycle
+
+When you complete the Work user describes in prompt, follow these steps:
+
+0. Commit your changes locally and ensure the Worktree is clean. Do not push or submit yet. Keep the commit message as same as the repo's commit message style.
+1. Call `work_prepare` with this Work ID, a clear title, summary, and test plan.
+2. If `work_prepare` returns an error, resolve the issue and try again.
+3. After `work_prepare` succeeds, ask the user "I have completed my work. Do you want me to submit it?" and wait for confirmation.
+4. When the user requests submission, call `work submit` to create/update the Draft PR.
+5. After Draft PR creation, Cradle automatically registers Session Awaits for CI and review.
+6. When current Work, PR, or Await state matters, inspect it on demand with `cradle work get <Work ID>`.
+
+Do not run work submit, push, create or update a pull request, mark ready, or merge unless the user explicitly requests that action.
+
+When you complete your work, you MUST tell the user and give the next steps user or you may take. Do not assume the user will know what to do next.
+
 Work runs inside a managed local Worktree. Preparing a handoff is safe and does
 not push or call GitHub:
 

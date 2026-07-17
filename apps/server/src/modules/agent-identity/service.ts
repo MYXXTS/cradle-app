@@ -18,7 +18,7 @@ import {
   refreshExternalProviderSource,
 } from '../external-provider-sources/service'
 import {
-  runtimeOwnsProviderBinding,
+  runtimeSkipsProviderTarget,
   runtimeUsesAgentTerminalLaunch,
 } from '../provider-contracts/runtime-compatibility'
 import type { RuntimeKind } from '../provider-contracts/types'
@@ -183,7 +183,7 @@ const CreateAgentInputSchema = z
     }
 
     if (!input.providerTargetId) {
-      if (!runtimeOwnsProviderBinding(input.runtimeKind)) {
+      if (!runtimeSkipsProviderTarget(input.runtimeKind)) {
         ctx.addIssue({
           code: 'custom',
           message: 'Provider-backed agents require a provider target',
@@ -225,10 +225,7 @@ function canRunAgent(input: {
   runtimeKind: ParsedAgentInput['runtimeKind']
   providerTargetId: string | null
 }): boolean {
-  if (
-    runtimeUsesAgentTerminalLaunch(input.runtimeKind)
-    || runtimeOwnsProviderBinding(input.runtimeKind)
-  ) {
+  if (runtimeUsesAgentTerminalLaunch(input.runtimeKind) || runtimeSkipsProviderTarget(input.runtimeKind)) {
     return true
   }
   if (!input.providerTargetId) {

@@ -18375,7 +18375,7 @@ export type GetChatRuntimesResponses = {
             label: string;
             description?: string;
             providerKinds: Array<string>;
-            providerBinding?: 'required' | 'runtime-owned';
+            providerBinding?: 'required' | 'runtime-owned' | 'none';
             sessionLaunchMode: 'runtime-provider' | 'agent-terminal';
             iconKey?: string;
             surfaces?: Array<'chat' | 'jarvis'>;

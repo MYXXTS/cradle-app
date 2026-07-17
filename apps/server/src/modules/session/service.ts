@@ -44,6 +44,7 @@ import { normalizeClaudeAgentConfigPatch } from '../provider-contracts/claude-ag
 import {
   readRuntimeOwnedProviderTargetOwner,
   runtimeOwnsProviderBinding,
+  runtimeSkipsProviderTarget,
   runtimeUsesAgentTerminalLaunch,
 } from '../provider-contracts/runtime-compatibility'
 import type { RuntimeKind } from '../provider-contracts/types'
@@ -886,7 +887,7 @@ function resolveSessionCreateInput(input: {
       }
     }
 
-    if (!agent.providerTargetId && !runtimeOwnsProviderBinding(agent.runtimeKind)) {
+    if (!agent.providerTargetId && !runtimeSkipsProviderTarget(agent.runtimeKind)) {
       throw new AppError({
         code: 'invalid_session_input',
         status: 400,
@@ -942,7 +943,7 @@ function resolveSessionCreateInput(input: {
   }
 
   if (!input.providerTargetId) {
-    if (runtimeOwnsProviderBinding(runtimeKind)) {
+    if (runtimeSkipsProviderTarget(runtimeKind)) {
       return {
         providerTargetId: null,
         runtimeKind,
