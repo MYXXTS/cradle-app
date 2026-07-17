@@ -34,6 +34,10 @@ All events include `event_schema_version`; schema version 2 uses:
 - `task_started`: a typed product-value task began.
 - `task_finished`: the same typed task ended with outcome, duration bucket, and allowlisted failure category.
 
+Chat task events may also include server-issued opaque `session_id` and `run_id`
+properties. These correlate a product task with the matching AI generation without
+uploading Cradle resource IDs.
+
 Tasks use a discriminated `feature_domain + task_kind + task_variant` contract.
 Add new task combinations to `event-model.ts`; never pass arbitrary labels from
 feature code. Record a specific failure category only when the product knows its

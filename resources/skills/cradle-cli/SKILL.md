@@ -168,6 +168,10 @@ If you're in Cradle Work mode, YOU MUST FOLLOW THE WORKFLOW BELOW:
 When you complete the Work user describes in prompt, follow these steps:
 
 0. Commit your changes locally and ensure the Worktree is clean. Do not push or submit yet. Keep the commit message as same as the repo's commit message style.
+  > Please use --trailer "Co-authored-by: Cradle Agent <cradleagent@wibus.ren>" to make sure the commit is attributed to the Cradle Agent. For example:
+  ```bash
+  git commit -m "feat(login): add new login redirect handling" --trailer "Co-authored-by: Cradle Agent <cradleagent@wibus.ren>"
+  ```
 1. Call `work_prepare` with this Work ID, a clear title, summary, and test plan.
 2. If `work_prepare` returns an error, resolve the issue and try again.
 3. After `work_prepare` succeeds, ask the user "I have completed my work. Do you want me to submit it?" and wait for confirmation.

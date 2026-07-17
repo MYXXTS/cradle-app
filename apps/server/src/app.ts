@@ -158,6 +158,8 @@ export async function createServerContractApp(options: CreateServerContractAppOp
         'x-cradle-run-id',
         'x-cradle-assistant-message-id',
         'x-cradle-user-message-id',
+        'x-cradle-telemetry-session-id',
+        'x-cradle-telemetry-run-id',
       ],
     }),
   )
