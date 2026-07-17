@@ -1544,7 +1544,8 @@ export const zGetWorksQuery = z.object({
 export const zPostWorksBody = z.object({
     workspaceId: z.string().min(1),
     title: z.string().min(1),
-    objective: z.string().min(1),
+    goal: z.string().min(1).optional(),
+    objective: z.string().min(1).optional(),
     linkedIssueId: z.string().min(1).optional(),
     baseStrategy: z.enum(['source-head', 'remote-default']).optional(),
     providerTargetId: z.string().min(1).optional(),

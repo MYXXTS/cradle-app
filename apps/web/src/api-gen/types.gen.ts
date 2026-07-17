@@ -7494,7 +7494,8 @@ export type PostWorksData = {
     body: {
         workspaceId: string;
         title: string;
-        objective: string;
+        goal?: string;
+        objective?: string;
         linkedIssueId?: string;
         baseStrategy?: 'source-head' | 'remote-default';
         providerTargetId?: string;

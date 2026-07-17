@@ -3,6 +3,7 @@ export default {
   'nav.providers': 'Model Providers',
   'nav.registry': 'Model Registry',
   'nav.agents': 'Agents',
+  'nav.runtimes': 'Runtimes',
   'nav.chat': 'Chat',
   'nav.await': 'Await',
   'nav.worktrees': 'Worktrees',

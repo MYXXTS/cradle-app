@@ -8,6 +8,8 @@ import { AppError } from '../../errors/app-error'
 import { db } from '../../infra'
 import { hasPendingRuntimeToolApproval } from '../chat-runtime/pending-tool-approval'
 import { listPendingRuntimeUserInputSummaries } from '../chat-runtime/pending-user-input'
+import type { CreateRunResult } from '../chat-runtime/run/run-coordinator'
+import * as ChatRuntime from '../chat-runtime/runtime'
 import * as PullRequest from '../pull-request/service'
 import * as Session from '../session/service'
 import * as SessionAwait from '../session-await/service'
@@ -28,6 +30,7 @@ export interface WorkDetail {
   readiness: PullRequest.PullRequestReadiness
   pullRequest: PullRequest.SessionPullRequestView | null
   activity: WorkActivity
+  initialRun?: CreateRunResult
 }
 
 type SessionCreateInput = Parameters<typeof Session.create>[0]
@@ -38,7 +41,8 @@ export type CreateWorkInput = Omit<
 > & {
   workspaceId: string
   title: string
-  objective: string
+  goal?: string
+  objective?: string
   linkedIssueId?: string | null
   /**
    * Isolation base selection. Defaults to `source-head` (clean local HEAD).
@@ -202,12 +206,12 @@ export function getBySessionId(sessionId: string): WorkSummary | null {
 
 export async function create(input: CreateWorkInput): Promise<WorkDetail> {
   const title = input.title.trim()
-  const objective = input.objective.trim()
-  if (!title || !objective) {
+  const goal = (input.goal ?? input.objective ?? '').trim()
+  if (!title || !goal) {
     throw new AppError({
       code: 'invalid_work_input',
       status: 400,
-      message: 'Work title and objective are required',
+      message: 'Work title and goal are required',
     })
   }
 
@@ -228,6 +232,7 @@ export async function create(input: CreateWorkInput): Promise<WorkDetail> {
     const {
       baseStrategy: _baseStrategy,
       title: _title,
+      goal: _goal,
       objective: _objective,
       linkedIssueId: _linkedIssueId,
       workspaceId: _workspaceId,
@@ -256,7 +261,7 @@ export async function create(input: CreateWorkInput): Promise<WorkDetail> {
       tx.insert(works).values({
         id: workId,
         title,
-        objective,
+        objective: goal,
         linkedIssueId: input.linkedIssueId ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -270,6 +275,11 @@ export async function create(input: CreateWorkInput): Promise<WorkDetail> {
     })
     workPersisted = true
 
+    const initialRun = await ChatRuntime.createRun({
+      sessionId,
+      text: goal,
+    })
+
     const detail = await get(workId)
     if (!detail) {
       throw new AppError({
@@ -278,7 +288,7 @@ export async function create(input: CreateWorkInput): Promise<WorkDetail> {
         message: 'Work was not available after creation',
       })
     }
-    return detail
+    return { ...detail, initialRun }
   }
   catch (error) {
     const compensationErrors: string[] = []
