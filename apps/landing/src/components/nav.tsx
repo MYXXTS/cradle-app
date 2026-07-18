@@ -76,7 +76,10 @@ export function Nav() {
           </span>
         </a>
 
-        <NavLink href="#/changelog">Changelog</NavLink>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <NavLink href="#/blog">Blog</NavLink>
+          <NavLink href="#/changelog">Changelog</NavLink>
+        </div>
 
         <a
           href="https://github.com/wibus-wee/cradle-app/releases"

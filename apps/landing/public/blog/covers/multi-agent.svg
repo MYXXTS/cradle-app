@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#ffe9c2" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#ffe9c2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1000" height="600" fill="#0d0d10"/>
+  <rect width="1000" height="600" fill="url(#glow)"/>
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.05">
+    <path d="M0 150 H1000 M0 300 H1000 M0 450 H1000"/>
+    <path d="M250 0 V600 M500 0 V600 M750 0 V600"/>
+  </g>
+  <!-- four parallel lanes -->
+  <g stroke-width="1.5">
+    <line x1="200" y1="190" x2="800" y2="190" stroke="#f4f4f5" stroke-opacity="0.4"/>
+    <line x1="200" y1="263" x2="800" y2="263" stroke="#f4f4f5" stroke-opacity="0.28"/>
+    <line x1="200" y1="337" x2="800" y2="337" stroke="#f4f4f5" stroke-opacity="0.28"/>
+    <line x1="200" y1="410" x2="800" y2="410" stroke="#f4f4f5" stroke-opacity="0.28"/>
+  </g>
+  <!-- workers -->
+  <circle cx="560" cy="190" r="8" fill="#ffe9c2" fill-opacity="0.95"/>
+  <circle cx="420" cy="263" r="7" fill="#f4f4f5" fill-opacity="0.85"/>
+  <circle cx="640" cy="337" r="7" fill="#f4f4f5" fill-opacity="0.85"/>
+  <circle cx="330" cy="410" r="7" fill="#8a8f9c" fill-opacity="0.95"/>
+  <!-- trailing progress -->
+  <g stroke-width="3" stroke-linecap="round">
+    <line x1="200" y1="190" x2="548" y2="190" stroke="#ffe9c2" stroke-opacity="0.25"/>
+    <line x1="200" y1="263" x2="408" y2="263" stroke="#f4f4f5" stroke-opacity="0.18"/>
+    <line x1="200" y1="337" x2="628" y2="337" stroke="#f4f4f5" stroke-opacity="0.18"/>
+    <line x1="200" y1="410" x2="318" y2="410" stroke="#8a8f9c" stroke-opacity="0.3"/>
+  </g>
+  <!-- lane endpoints -->
+  <g fill="none" stroke="#f4f4f5" stroke-opacity="0.35" stroke-width="1.5">
+    <rect x="168" y="178" width="24" height="24" rx="7"/>
+    <rect x="168" y="251" width="24" height="24" rx="7"/>
+    <rect x="168" y="325" width="24" height="24" rx="7"/>
+    <rect x="168" y="398" width="24" height="24" rx="7"/>
+  </g>
+</svg>

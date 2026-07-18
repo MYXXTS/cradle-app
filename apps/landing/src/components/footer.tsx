@@ -22,6 +22,10 @@ export function Footer() {
         </span>
       </div>
       <span style={{ fontSize: 11, color: 'var(--border-strong)' }}>·</span>
+      <a href="#/blog" style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none' }}>
+        Blog
+      </a>
+      <span style={{ fontSize: 11, color: 'var(--border-strong)' }}>·</span>
       <a href="#/changelog" style={{ fontSize: 12, color: 'var(--text-muted)', textDecoration: 'none' }}>
         Changelog
       </a>

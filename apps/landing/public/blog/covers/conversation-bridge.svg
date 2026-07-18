@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600">
+  <defs>
+    <radialGradient id="glowL" cx="22%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#ffe9c2" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#ffe9c2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowR" cx="78%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#8a8f9c" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#8a8f9c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1000" height="600" fill="#0d0d10"/>
+  <rect width="1000" height="600" fill="url(#glowL)"/>
+  <rect width="1000" height="600" fill="url(#glowR)"/>
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.05">
+    <path d="M0 150 H1000 M0 300 H1000 M0 450 H1000"/>
+    <path d="M250 0 V600 M500 0 V600 M750 0 V600"/>
+  </g>
+  <!-- bridge arc between two endpoints -->
+  <path d="M220 360 C 360 180, 640 180, 780 360" fill="none" stroke="#f4f4f5" stroke-opacity="0.4" stroke-width="1.5"/>
+  <path d="M220 360 C 360 420, 640 420, 780 360" fill="none" stroke="#f4f4f5" stroke-opacity="0.12" stroke-width="1.5"/>
+  <!-- message packets travelling the arc -->
+  <circle cx="360" cy="271" r="4" fill="#ffe9c2" fill-opacity="0.85"/>
+  <circle cx="500" cy="238" r="4" fill="#f4f4f5" fill-opacity="0.7"/>
+  <circle cx="640" cy="271" r="4" fill="#8a8f9c" fill-opacity="0.9"/>
+  <!-- endpoints: desktop node / conversation node -->
+  <g>
+    <rect x="188" y="328" width="64" height="64" rx="14" fill="none" stroke="#f4f4f5" stroke-opacity="0.55" stroke-width="1.5"/>
+    <circle cx="220" cy="360" r="8" fill="#f4f4f5" fill-opacity="0.9"/>
+  </g>
+  <g>
+    <rect x="748" y="328" width="64" height="64" rx="14" fill="none" stroke="#f4f4f5" stroke-opacity="0.55" stroke-width="1.5"/>
+    <path d="M768 356 h32 M768 366 h20" stroke="#f4f4f5" stroke-opacity="0.9" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <line x1="140" y1="424" x2="860" y2="424" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1"/>
+</svg>

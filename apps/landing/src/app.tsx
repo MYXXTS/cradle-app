@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { BlogPage } from './components/blog'
+import { BlogPostPage } from './components/blog-post'
 import { ChangelogPage } from './components/changelog'
 import { CTASection } from './components/cta-section'
 import { DetailsSection } from './components/details'
@@ -12,44 +14,53 @@ import { HowItWorks } from './components/how-it-works'
 import { Nav } from './components/nav'
 import { ProductPreview } from './components/product-preview'
 
-type Route = 'home' | 'changelog'
+type Route = { name: 'home' } | { name: 'changelog' } | { name: 'blog' } | { name: 'blog-post', slug: string }
 
-function useHashRoute(): [Route, () => void] {
-  const read = (): Route =>
-    window.location.hash.replace(/^#\/?/, '') === 'changelog' ? 'changelog' : 'home'
-  const [route, setRoute] = useState<Route>(read)
+function parseRoute(): Route {
+  const path = window.location.hash.replace(/^#\/?/, '')
+  if (path === 'changelog') { return { name: 'changelog' } }
+  if (path === 'blog') { return { name: 'blog' } }
+  const postMatch = /^blog\/([\w-]+)$/.exec(path)
+  if (postMatch) { return { name: 'blog-post', slug: postMatch[1] } }
+  return { name: 'home' }
+}
+
+function useHashRoute(): Route {
+  const [route, setRoute] = useState<Route>(parseRoute)
 
   useEffect(() => {
     const onHash = () => {
-      setRoute(read())
+      setRoute(parseRoute())
       window.scrollTo({ top: 0 })
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  const goHome = () => {
-    if (window.location.hash) {
-      window.location.hash = ''
-    }
- else {
-      setRoute('home')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    }
-  }
-
-  return [route, goHome]
+  return route
 }
 
 export function App() {
-  const [route, goHome] = useHashRoute()
-  const routeContent = route === 'changelog'
+  const route = useHashRoute()
+  const routeContent = route.name === 'changelog'
     ? (
         <main>
-          <ChangelogPage onBack={goHome} />
+          <ChangelogPage />
         </main>
       )
-    : (
+    : route.name === 'blog'
+      ? (
+          <main>
+            <BlogPage />
+          </main>
+        )
+      : route.name === 'blog-post'
+        ? (
+            <main>
+              <BlogPostPage slug={route.slug} />
+            </main>
+          )
+        : (
         <main>
           <Hero />
           <ProductPreview />

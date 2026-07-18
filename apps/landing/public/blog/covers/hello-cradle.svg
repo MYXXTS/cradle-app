@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="62%" r="55%">
+      <stop offset="0%" stop-color="#ffe9c2" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#ffe9c2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f4f5" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#f4f4f5" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="600" fill="#0d0d10"/>
+  <rect width="1000" height="600" fill="url(#glow)"/>
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.05">
+    <path d="M0 150 H1000 M0 300 H1000 M0 450 H1000"/>
+    <path d="M250 0 V600 M500 0 V600 M750 0 V600"/>
+  </g>
+  <!-- cradle: nested hanging arcs -->
+  <g fill="none" stroke="url(#arc)" stroke-width="1.5">
+    <circle cx="500" cy="372" r="180" stroke-dasharray="565 566" stroke-dashoffset="283"/>
+    <circle cx="500" cy="372" r="132" stroke-dasharray="414 416" stroke-dashoffset="207" stroke-opacity="0.7"/>
+    <circle cx="500" cy="372" r="84" stroke-dasharray="264 265" stroke-dashoffset="132" stroke-opacity="0.45"/>
+  </g>
+  <!-- suspended weight -->
+  <line x1="500" y1="192" x2="500" y2="340" stroke="#f4f4f5" stroke-opacity="0.35" stroke-width="1.5"/>
+  <circle cx="500" cy="356" r="16" fill="#f4f4f5" fill-opacity="0.9"/>
+  <circle cx="500" cy="356" r="16" fill="none" stroke="#ffe9c2" stroke-opacity="0.5" stroke-width="6" stroke-linecap="round" stroke-dasharray="20 81"/>
+  <!-- resting dots on the baseline -->
+  <g fill="#f4f4f5" fill-opacity="0.25">
+    <circle cx="320" cy="372" r="3"/>
+    <circle cx="680" cy="372" r="3"/>
+  </g>
+  <line x1="240" y1="372" x2="760" y2="372" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1"/>
+</svg>

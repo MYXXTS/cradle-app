@@ -13,6 +13,15 @@ interface ChangelogEntry {
   languages: string[]
 }
 
+interface BlogEntry {
+  slug: string
+  date: string
+  title: Record<string, string>
+  description: Record<string, string>
+  cover?: string
+  languages: string[]
+}
+
 function parseFrontmatter(content: string): { meta: Record<string, string>, body: string } {
   const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(content)
   if (!match) { return { meta: {}, body: content } }
@@ -54,7 +63,7 @@ function changelogIndexPlugin(): Plugin {
           existing.languages.push(locale)
           existing.title[locale] = meta.title || ''
         }
- else {
+        else {
           versionMap.set(meta.version, {
             date: meta.date,
             languages: [locale],
@@ -76,8 +85,69 @@ function changelogIndexPlugin(): Plugin {
   }
 }
 
+function blogIndexPlugin(): Plugin {
+  const blogDir = resolve(__dirname, 'blog')
+  const outDir = resolve(__dirname, 'public', 'blog')
+
+  return {
+    name: 'blog-index',
+    buildStart() {
+      mkdirSync(outDir, { recursive: true })
+
+      let files: string[] = []
+      try {
+        files = readdirSync(blogDir).filter(f => f.endsWith('.md'))
+      }
+      catch {
+        writeFileSync(join(outDir, 'index.json'), '[]')
+        return
+      }
+
+      // Group files by slug: slug.zh.md / slug.en.md → slug
+      const postMap = new Map<string, { languages: string[], title: Record<string, string>, description: Record<string, string>, date: string, cover?: string }>()
+
+      for (const file of files) {
+        const content = readFileSync(join(blogDir, file), 'utf-8')
+        const { meta } = parseFrontmatter(content)
+        if (!meta.date || !meta.title) { continue }
+
+        // Extract slug + locale from filename: hello-cradle.zh.md → hello-cradle, zh
+        const nameMatch = /^(.+)\.(\w+)\.md$/.exec(file)
+        if (!nameMatch) { continue }
+        const slug = nameMatch[1]
+        const locale = nameMatch[2]
+
+        const existing = postMap.get(slug)
+        if (existing) {
+          existing.languages.push(locale)
+          existing.title[locale] = meta.title
+          existing.description[locale] = meta.description || ''
+          if (meta.cover) { existing.cover = meta.cover }
+        }
+        else {
+          postMap.set(slug, {
+            date: meta.date,
+            languages: [locale],
+            title: { [locale]: meta.title },
+            description: { [locale]: meta.description || '' },
+            cover: meta.cover || undefined,
+          })
+        }
+
+        // Copy .md file to public/blog/
+        cpSync(join(blogDir, file), join(outDir, file), { recursive: true })
+      }
+
+      const entries: BlogEntry[] = Array.from(postMap.entries(), ([slug, data]) => ({ slug, ...data }))
+        .sort((a, b) => b.date.localeCompare(a.date))
+
+      writeFileSync(join(outDir, 'index.json'), JSON.stringify(entries, null, 2))
+    },
+  }
+}
+
 export default defineConfig(({ command }) => ({
-  plugins: [react(), tailwindcss(), changelogIndexPlugin()],
+  plugins: [react(), tailwindcss(), changelogIndexPlugin(), blogIndexPlugin()],
   define: command === 'build'
 ? {
     'process.env.NODE_ENV': JSON.stringify('production'),
