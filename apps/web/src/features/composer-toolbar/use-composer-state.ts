@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { ModelDescriptor, RuntimeKind } from '~/features/agent-runtime/types'
+import { ACP_CHAT_RUNTIME_KIND } from '~/features/agent-runtime/types'
 import { useProviderTargetModelMap } from '~/features/agent-runtime/use-agent-models'
 import type { Agent } from '~/features/agent-runtime/use-agents'
 import { useAgents } from '~/features/agent-runtime/use-agents'
@@ -15,6 +16,9 @@ import {
   runtimeComposerUsesModelSelection,
   useRuntimeCatalog,
 } from '~/features/agent-runtime/use-runtime-catalog'
+import { useAcpDraftSession } from '~/features/agent-runtimes/use-acp-draft-session'
+import type { AcpInstalledAgent } from '~/features/agent-runtimes/use-acp-registry'
+import { useAcpAgents } from '~/features/agent-runtimes/use-acp-registry'
 import { useNewChatStore } from '~/store/new-chat'
 
 import { listSelectableComposerProfiles } from './composer-profile-selection'
@@ -59,6 +63,7 @@ export interface ComposerStateResult {
   providerBinding: RuntimeProviderBinding
   runtimeComposer: RuntimeCatalogComposer
   setAgentId: (id: string | null) => void
+  setAcpAgentId: (id: string) => void
   setProfileId: (id: string) => void
   setModelId: (id: string | null, profileId?: string | null) => void
   setThinkingEffort: (effort: ThinkingEffort) => void
@@ -67,6 +72,9 @@ export interface ComposerStateResult {
   resetManualSelection: () => void
   runtimeOptions: RuntimeKindOption[]
   agents: Agent[]
+  acpAgents: AcpInstalledAgent[]
+  acpModels: Array<{ id: string, label: string }>
+  acpDraftSessionId: string | null
   profiles: ProviderModelOption[]
   models: ModelDescriptor[]
   modelsByProfileId: ModelsByProfileId
@@ -75,9 +83,11 @@ export interface ComposerStateResult {
   requestProfileModels: (id: string, options?: { refresh?: boolean }) => void
   agentSelectionEnabled: boolean
   isLoadingAgents: boolean
+  isLoadingAcpAgents: boolean
   isLoadingModels: boolean
   isLoadingProfiles: boolean
   effectiveAgent: Agent | null
+  effectiveAcpAgent: AcpInstalledAgent | null
   effectiveProfile: ProviderModelOption | null
   effectiveModel: ModelDescriptor | null
 }
@@ -104,6 +114,8 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
   const setLastRuntimeKind = useNewChatStore(s => s.setLastRuntimeKind)
   const lastAgentId = useNewChatStore(s => s.lastAgentId)
   const setLastAgentId = useNewChatStore(s => s.setLastAgentId)
+  const lastAcpAgentId = useNewChatStore(s => s.lastAcpAgentId)
+  const setLastAcpAgentId = useNewChatStore(s => s.setLastAcpAgentId)
   const lastProfileId = useNewChatStore(s => s.lastAgentProfileId)
   const setLastProfileId = useNewChatStore(s => s.setLastAgentProfileId)
   const setLastModelForProfile = useNewChatStore(s => s.setLastModelForProfile)
@@ -117,6 +129,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
 
   // Data — remote execution uses the remote host catalog; local stays on /provider-targets.
   const { agents, isLoading: isLoadingAgents } = useAgents()
+  const { installedAgents, isLoading: isLoadingAcpAgents } = useAcpAgents()
   const {
     providerOptions: localBaseProviderOptions,
     isLoading: isLoadingLocalBaseProviders,
@@ -136,6 +149,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
 
   // Local non-persisted state
   const [manualAgentId, setManualAgentId] = useState<string | null | undefined>(undefined)
+  const [manualAcpAgentId, setManualAcpAgentId] = useState<string | null | undefined>(undefined)
   const [manualProfileId, setManualProfileId] = useState<string | null>(null)
   const [manualModelId, setManualModelId] = useState<string | null>(null)
   const [manualThinkingEffort, setManualThinkingEffort] = useState<ThinkingEffort | undefined>(undefined)
@@ -146,6 +160,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
 
   const resetManualSelection = useCallback(() => {
     setManualAgentId(undefined)
+    setManualAcpAgentId(undefined)
     setManualProfileId(null)
     setManualModelId(null)
     setManualThinkingEffort(undefined)
@@ -163,6 +178,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
   }, [context, resetKey, resetManualSelection])
   const canUseManualSelection = context !== 'chat' || manualSelectionResetKey === resetKey
   const effectiveManualAgentId = canUseManualSelection ? manualAgentId : null
+  const effectiveManualAcpAgentId = canUseManualSelection ? manualAcpAgentId : null
   const effectiveManualProfileId = canUseManualSelection ? manualProfileId : null
   const effectiveManualModelId = canUseManualSelection ? manualModelId : null
   const effectiveManualThinkingEffort = canUseManualSelection ? manualThinkingEffort : undefined
@@ -176,6 +192,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       label: runtime.label,
       description: runtime.description,
       icon: runtime.icon,
+      experimental: runtime.stability === 'experimental',
       degradations: runtime.degradations,
     })),
     [runtimes],
@@ -197,7 +214,10 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     [runtimeComposerByKind],
   )
   const directRuntimeOptions = useMemo(
-    () => runtimeOptions.filter(option => runtimeComposerUsesModelSelection(readRuntimeComposer(option.value))),
+    () => runtimeOptions.filter(option => (
+      runtimeComposerUsesModelSelection(readRuntimeComposer(option.value))
+      || option.value === ACP_CHAT_RUNTIME_KIND
+    )),
     [readRuntimeComposer, runtimeOptions],
   )
   const fallbackRuntimeKind = readFallbackRuntimeKind({ directRuntimeOptions, runtimeOptions })
@@ -247,6 +267,10 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     }
     return scopedSelectableAgents.find(agent => agent.id === candidateAgentId) ?? null
   }, [enableAgents, effectiveManualAgentId, lastAgentId, scopedSelectableAgents])
+  const acpAgents = useMemo(
+    () => installedAgents.filter(agent => agent.status === 'installed'),
+    [installedAgents],
+  )
   const targetMode = useMemo<ComposerTargetMode>(() => {
     if (context === 'chat') {
       return boundAgentId ? 'agent' : 'provider'
@@ -254,11 +278,27 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     if (!enableAgents) {
       return 'provider'
     }
+    if (
+      effectiveManualTargetMode === 'acp-agent'
+      || (effectiveManualTargetMode === undefined && lastRuntimeKind === ACP_CHAT_RUNTIME_KIND)
+    ) {
+      return 'acp-agent'
+    }
     return effectiveManualTargetMode ?? 'provider'
-  }, [boundAgentId, context, effectiveManualTargetMode, enableAgents])
+  }, [boundAgentId, context, effectiveManualTargetMode, enableAgents, lastRuntimeKind])
   const selectedNewChatAgent = targetMode === 'agent'
     ? candidateNewChatAgent ?? scopedSelectableAgents[0] ?? null
     : null
+  const selectedNewChatAcpAgent = targetMode === 'acp-agent'
+    ? acpAgents.find(agent => agent.id === (effectiveManualAcpAgentId ?? lastAcpAgentId))
+    ?? acpAgents[0]
+    ?? null
+    : null
+  const { draftSession: acpDraftSession, isLoading: isLoadingAcpDraftSession } = useAcpDraftSession({
+    agentId: selectedNewChatAcpAgent?.id ?? null,
+    workspaceId,
+    enabled: context === 'new-chat' && targetMode === 'acp-agent' && !usesRemoteCatalog,
+  })
 
   const boundAgent = useMemo(() => {
     if (context !== 'chat' || !boundAgentId) {
@@ -338,6 +378,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     }
     return null
   }, [runtimeKind, context, boundAgent, selectedNewChatAgent])
+  const acpAgentId = selectedNewChatAcpAgent?.id ?? null
 
   // Resolve provider and model before thinking so both preference scopes can restore.
   const profileId = useMemo(() => {
@@ -372,10 +413,17 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
   const successfulProfileIds = successfulProviderTargetIds
   const requestProfileModels = requestProviderTargetModels
   const models = profileId ? modelsByProfileId[profileId] ?? EMPTY_MODELS : EMPTY_MODELS
-  const isLoadingModels = profileId ? loadingProfileIds.has(profileId) : false
+  const isLoadingProviderModels = profileId ? loadingProfileIds.has(profileId) : false
 
   // Resolve effective model
   const modelId = useMemo(() => {
+    if (targetMode === 'acp-agent') {
+      const draftModelIds = new Set(acpDraftSession?.models.map(model => model.id) ?? [])
+      if (effectiveManualModelId && draftModelIds.has(effectiveManualModelId)) {
+        return effectiveManualModelId
+      }
+      return acpDraftSession?.selectedModelId ?? null
+    }
     return resolveComposerModelId({
       composerUsesModelSelection,
       context,
@@ -392,7 +440,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       profileId,
       lastModelByProfile,
     })
-  }, [composerUsesModelSelection, context, targetMode, selectedNewChatAgent, effectiveManualModelId, models, boundModelId, boundAgent, effectiveManualProfileId, boundProviderTargetId, profileId, lastModelByProfile])
+  }, [acpDraftSession, composerUsesModelSelection, context, targetMode, selectedNewChatAgent, effectiveManualModelId, models, boundModelId, boundAgent, effectiveManualProfileId, boundProviderTargetId, profileId, lastModelByProfile])
 
   const lastModelThinkingEffort = profileId && modelId
     ? readComposerThinkingEffort(lastThinkingByProviderModel[profileId]?.[modelId])
@@ -438,25 +486,28 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       // Keep the last choice while inventory is loading or the model id is an orphan
       // without a descriptor yet — only prune against capabilities once resolved.
       preservePreferredThinkingEffort: usesBoundSessionThinkingEffort
-        || isLoadingModels
+        || isLoadingProviderModels
         || !effectiveModel,
       runtimeComposer,
     })
-  }, [effectiveModel, thinkingEffort, runtimeComposer, usesBoundSessionThinkingEffort, isLoadingModels])
+  }, [effectiveModel, thinkingEffort, runtimeComposer, usesBoundSessionThinkingEffort, isLoadingProviderModels])
 
   const selection = useMemo((): ComposerSelection => ({
     agentId,
+    acpAgentId,
+    acpDraftSessionId: acpDraftSession?.sessionId ?? null,
     profileId,
     modelId,
     thinkingEffort: runtimeComposerSupportsThinking(runtimeComposer) ? effectiveThinkingEffort : null,
     runtimeKind,
     targetMode,
-  }), [agentId, profileId, modelId, effectiveThinkingEffort, runtimeComposer, runtimeKind, targetMode])
+  }), [acpAgentId, acpDraftSession, agentId, profileId, modelId, effectiveThinkingEffort, runtimeComposer, runtimeKind, targetMode])
 
   const clearSelectedAgent = () => {
     setManualSelectionResetKey(resetKey)
     setManualAgentId(null)
     setLastAgentId(null)
+    setManualAcpAgentId(null)
     setManualAgentRuntimeKind(null)
     setManualTargetMode('provider')
     if (runtimeComposerUsesCollapsedInput(runtimeComposer)) {
@@ -476,11 +527,30 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     }
     setManualSelectionResetKey(resetKey)
     setManualAgentId(agent.id)
+    setManualAcpAgentId(null)
     setManualTargetMode('agent')
     setLastAgentId(agent.id)
     setManualRuntimeKind(null)
     setManualAgentRuntimeKind(runtimeComposerUsesModelSelection(readRuntimeComposer(agent.runtimeKind)) ? null : agent.runtimeKind)
     setLastRuntimeKind(agent.runtimeKind)
+    setManualProfileId(null)
+    setManualModelId(null)
+    setManualThinkingEffort(undefined)
+  }
+
+  const setAcpAgentId = (id: string) => {
+    if (!acpAgents.some(agent => agent.id === id)) {
+      return
+    }
+    setManualSelectionResetKey(resetKey)
+    setManualAgentId(null)
+    setLastAgentId(null)
+    setManualAcpAgentId(id)
+    setLastAcpAgentId(id)
+    setManualTargetMode('acp-agent')
+    setManualAgentRuntimeKind(null)
+    setManualRuntimeKind(ACP_CHAT_RUNTIME_KIND)
+    setLastRuntimeKind(ACP_CHAT_RUNTIME_KIND)
     setManualProfileId(null)
     setManualModelId(null)
     setManualThinkingEffort(undefined)
@@ -495,6 +565,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       setManualAgentId(null)
       setLastAgentId(null)
     }
+    setManualAcpAgentId(null)
     setManualAgentRuntimeKind(null)
     setManualTargetMode('provider')
     setManualProfileId(id)
@@ -506,6 +577,13 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
   }
 
   const setModelId = (id: string | null, nextProfileId?: string | null) => {
+    if (targetMode === 'acp-agent') {
+      if (id && acpDraftSession?.models.some(model => model.id === id)) {
+        setManualSelectionResetKey(resetKey)
+        setManualModelId(id)
+      }
+      return
+    }
     const targetProfileId = nextProfileId ?? profileId
     if (!targetProfileId) {
       return
@@ -518,6 +596,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       setManualAgentId(null)
       setLastAgentId(null)
     }
+    setManualAcpAgentId(null)
     setManualAgentRuntimeKind(null)
     setManualTargetMode('provider')
     if (targetProfileId !== profileId) {
@@ -549,6 +628,18 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       return
     }
     setManualSelectionResetKey(resetKey)
+    if (kind === ACP_CHAT_RUNTIME_KIND) {
+      setManualAgentId(null)
+      setLastAgentId(null)
+      setManualTargetMode('acp-agent')
+      setManualAgentRuntimeKind(null)
+      setManualRuntimeKind(kind)
+      setLastRuntimeKind(kind)
+      setManualProfileId(null)
+      setManualModelId(null)
+      setManualThinkingEffort(undefined)
+      return
+    }
     const nextRuntimeComposer = readRuntimeComposer(kind)
     if (!runtimeComposerUsesModelSelection(nextRuntimeComposer)) {
       if (!enableAgents) {
@@ -559,6 +650,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
         setLastAgentId(null)
       }
       setManualTargetMode('agent')
+      setManualAcpAgentId(null)
       setManualAgentRuntimeKind(kind)
       setManualRuntimeKind(null)
       setLastRuntimeKind(kind)
@@ -569,6 +661,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       setLastAgentId(null)
     }
     setManualAgentRuntimeKind(null)
+    setManualAcpAgentId(null)
     setManualTargetMode('provider')
     setManualRuntimeKind(kind)
     setLastRuntimeKind(kind)
@@ -584,6 +677,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
       setManualAgentId(null)
       setLastAgentId(null)
       setManualAgentRuntimeKind(null)
+      setManualAcpAgentId(null)
       if (!runtimeComposerUsesModelSelection(runtimeComposer)) {
         setManualRuntimeKind(fallbackRuntimeKind)
         setLastRuntimeKind(fallbackRuntimeKind)
@@ -591,6 +685,9 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     }
     else {
       setManualAgentRuntimeKind(null)
+      if (mode === 'agent') {
+        setManualAcpAgentId(null)
+      }
     }
   }
 
@@ -599,6 +696,7 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     providerBinding,
     runtimeComposer,
     setAgentId,
+    setAcpAgentId,
     setProfileId,
     setModelId,
     setThinkingEffort,
@@ -607,6 +705,9 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     resetManualSelection,
     runtimeOptions,
     agents: scopedSelectableAgents,
+    acpAgents,
+    acpModels: acpDraftSession?.models ?? [],
+    acpDraftSessionId: acpDraftSession?.sessionId ?? null,
     profiles: selectableProfiles,
     models,
     modelsByProfileId,
@@ -615,9 +716,11 @@ export function useComposerState(config: ComposerStateConfig): ComposerStateResu
     requestProfileModels,
     agentSelectionEnabled: enableAgents,
     isLoadingAgents,
-    isLoadingModels,
+    isLoadingAcpAgents,
+    isLoadingModels: isLoadingProviderModels || isLoadingAcpDraftSession,
     isLoadingProfiles: isLoadingBaseProviders || isLoadingScopedProviders,
     effectiveAgent,
+    effectiveAcpAgent: selectedNewChatAcpAgent,
     effectiveProfile,
     effectiveModel,
   }
