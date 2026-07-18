@@ -24,6 +24,7 @@ export default defineConfig(
       '**/*.tsbuildinfo',
       '**/*.md',
       'packages/cli/**',
+      'packages/db/drizzle/**',
     ],
   },
   {
