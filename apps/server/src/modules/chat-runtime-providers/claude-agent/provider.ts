@@ -193,7 +193,6 @@ type ActiveClaudeQuery = {
   closed: boolean
   pumpRunning: boolean
   stderrSink: ClaudeStderrSink
-  allowDangerouslySkipPermissions: boolean
   ultracodeEnabled: boolean
 }
 
@@ -276,12 +275,6 @@ interface ClaudeSubagentProjectedEntry {
   turn: ProviderThreadTurn
   message: UIMessage
   rawMessages: ClaudeSubagentSessionMessage[]
-}
-
-function readActiveClaudeQueryPermissionMode(
-  permissionMode: ReturnType<typeof buildClaudeQueryOptions>['permissionMode'],
-): Options['permissionMode'] {
-  return permissionMode ?? 'bypassPermissions'
 }
 
 function closeClaudeQuery(activeQuery: Query): void {
@@ -541,23 +534,15 @@ export class ClaudeAgentProvider implements ChatRuntime {
       this.closeSessionQuery(sessionId, activeEntry)
       activeEntry = undefined
     }
-    const planModeActive
-      = readClaudeAgentPermissionMode(input.providerOptions?.runtimeSettings) === 'plan'
     const ultracodeEnabled = isClaudeAgentUltracodeEnabled(input.providerOptions?.thinkingEffort)
-    // Only recreate when the in-memory query was built with skip=true; new options still resume
-    // the same provider session so prompt cache and thread continuity are preserved.
-    if (activeEntry && planModeActive && (activeEntry.allowDangerouslySkipPermissions ?? true)) {
-      this.closeSessionQuery(sessionId, activeEntry)
-      activeEntry = undefined
-    }
-    const permissionBridgeState
-      = activeEntry?.permissionBridgeState
-        ?? createClaudeAgentPermissionBridgeState({
-        runtimeInput: input,
-        permissionMode: 'bypassPermissions',
-        runtimeSettings: input.providerOptions?.runtimeSettings,
-      })
-    let turnPermissionMode: Options['permissionMode'] = 'bypassPermissions'
+    const permissionBridgeState = activeEntry?.permissionBridgeState ?? createClaudeAgentPermissionBridgeState({
+      runtimeInput: input,
+      permissionMode: 'bypassPermissions',
+      runtimeSettings: input.providerOptions?.runtimeSettings,
+    })
+    const turnPermissionMode: Options['permissionMode'] = readClaudeAgentPermissionMode(
+      input.providerOptions?.runtimeSettings,
+    )
     // Reuse the long-lived query's stderr sink when the session already exists;
     // otherwise create one for the new query. The sink must outlive the
     // pump loop so it can enrich the surfaced error when the process exits.
@@ -572,22 +557,18 @@ export class ClaudeAgentProvider implements ChatRuntime {
         this.emitClaudeAgentToolApprovalRequest(sessionId, request),
       onStderr: stderrSink.onStderr,
     })
-    turnPermissionMode = readActiveClaudeQueryPermissionMode(queryOptions.permissionMode)
-
     if (!activeEntry) {
       this.activePermissionModesBySession.set(sessionId, turnPermissionMode)
       const inputStream = new ClaudeAgentInputStream()
       const activeQuery = query({ prompt: inputStream, options: queryOptions })
-      if (turnPermissionMode === 'plan') {
-        void activeQuery.setPermissionMode('plan').catch((error) => {
-          this.deps.logger?.warn?.(
-            'Claude Agent failed to sync SDK plan permission mode after query start',
-            {
-              error,
-              sessionId,
-              resumed: shouldResumeProviderSession,
-            },
-          )
+      if (turnPermissionMode !== 'bypassPermissions') {
+        void activeQuery.setPermissionMode(turnPermissionMode).catch((error) => {
+          this.deps.logger?.warn?.('Claude Agent failed to sync SDK permission mode after query start', {
+            error,
+            permissionMode: turnPermissionMode,
+            sessionId,
+            resumed: shouldResumeProviderSession,
+          })
         })
       }
       const taskLaunchesById: Map<string, ClaudeCrewLink> = new Map()
@@ -612,7 +593,6 @@ export class ClaudeAgentProvider implements ChatRuntime {
         closed: false,
         pumpRunning: true,
         stderrSink,
-        allowDangerouslySkipPermissions: queryOptions.allowDangerouslySkipPermissions ?? true,
         ultracodeEnabled,
       }
       this.activeQueries.set(sessionId, activeEntry)

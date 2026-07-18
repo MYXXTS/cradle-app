@@ -230,9 +230,10 @@ export function buildClaudeQueryOptions(input: {
   const queryOptions: Options = {
     abortController: input.abortController,
     cwd: runtimeContext.cwd,
-    permissionMode,
-    allowDangerouslySkipPermissions:
-      readClaudeAgentAllowDangerouslySkipPermissions(runtimeSettings),
+    // The SDK process must start in bypass mode so a later live switch back to it works reliably.
+    // streamTurn syncs the user's actual mode immediately after creating the query.
+    permissionMode: 'bypassPermissions',
+    allowDangerouslySkipPermissions: readClaudeAgentAllowDangerouslySkipPermissions(runtimeSettings),
     maxTurns: config.maxTurns,
     additionalDirectories: uniquePaths([
       ...runtimeContext.additionalDirectories,

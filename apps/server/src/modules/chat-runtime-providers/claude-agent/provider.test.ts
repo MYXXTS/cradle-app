@@ -629,6 +629,39 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     )
   })
 
+  it('starts restricted SDK modes from bypass permissions before syncing the desired mode', async () => {
+    const activeQuery = createAsyncQuery([
+      {
+        type: 'result',
+        session_id: 'claude-session-default-permissions',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ])
+    sdkMocks.query.mockReturnValue(activeQuery)
+
+    const provider = new ClaudeAgentProvider({
+      readSecret: () => 'sk-ant-test',
+    })
+    for await (const _chunk of provider.streamTurn({
+      runId: 'run-claude-agent-default-permissions',
+      runtimeSession: createRuntimeSession(),
+      profile: createProfile(),
+      message: createUserMessage('Require approval'),
+      workspaceId: 'workspace-1',
+      providerOptions: {
+        runtimeSettings: { permissionMode: 'default' },
+      },
+    })) {
+      // Drain stream.
+    }
+
+    expect(readQueryOptions(0)).toEqual(expect.objectContaining({
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+    }))
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('default')
+  })
+
   it('passes Volcengine Anthropic credentials through ANTHROPIC_AUTH_TOKEN', async () => {
     sdkMocks.query.mockReturnValue(
       createAsyncQuery([
@@ -1154,15 +1187,14 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
 
   it('leaves Claude disallowed tools empty and captures ExitPlanMode through Cradle', async () => {
     const requestToolApproval = vi.fn()
-    sdkMocks.query.mockReturnValue(
-      createAsyncQuery([
-        {
-          type: 'result',
-          session_id: 'claude-session-plan-permission',
-          usage: { input_tokens: 1, output_tokens: 1 },
-        },
-      ]),
-    )
+    const activeQuery = createAsyncQuery([
+      {
+        type: 'result',
+        session_id: 'claude-session-plan-permission',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ])
+    sdkMocks.query.mockReturnValue(activeQuery)
 
     const provider = new ClaudeAgentProvider({
       readSecret: () => 'sk-ant-test',
@@ -1182,13 +1214,12 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
     }
 
     const options = readQueryOptions(0)
-    expect(options).toEqual(
-      expect.objectContaining({
-        permissionMode: 'plan',
-        allowDangerouslySkipPermissions: false,
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
-      }),
-    )
+    expect(options).toEqual(expect.objectContaining({
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: false,
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
+    }))
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('plan')
     expect(options.disallowedTools).toEqual([])
     expect(options.disallowedTools).not.toContain('AskUserQuestion')
     expect(options.disallowedTools).not.toContain('EnterPlanMode')
@@ -1227,15 +1258,14 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
   })
 
   it('resumes the provider session in plan mode to preserve prompt cache continuity', async () => {
-    sdkMocks.query.mockReturnValue(
-      createAsyncQuery([
-        {
-          type: 'result',
-          session_id: 'claude-session-plan-resume',
-          usage: { input_tokens: 1, output_tokens: 1 },
-        },
-      ]),
-    )
+    const activeQuery = createAsyncQuery([
+      {
+        type: 'result',
+        session_id: 'claude-session-plan-resume',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ])
+    sdkMocks.query.mockReturnValue(activeQuery)
 
     const provider = new ClaudeAgentProvider({
       readSecret: () => 'sk-ant-test',
@@ -1253,13 +1283,12 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
       // Drain stream.
     }
 
-    expect(readQueryOptions(0)).toEqual(
-      expect.objectContaining({
-        resume: 'claude-session-1',
-        permissionMode: 'plan',
-        allowDangerouslySkipPermissions: false,
-      }),
-    )
+    expect(readQueryOptions(0)).toEqual(expect.objectContaining({
+      resume: 'claude-session-1',
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: false,
+    }))
+    expect(activeQuery.setPermissionMode).toHaveBeenCalledWith('plan')
   })
 
   it('routes AskUserQuestion through requestUserInput regardless of plan mode', async () => {
@@ -1573,12 +1602,10 @@ describe.sequential('claudeAgentProvider MCP integration', () => {
         // Drain stream.
       }
 
-      expect(readQueryOptions(0)).toEqual(
-        expect.objectContaining({
-          permissionMode: 'plan',
-          allowDangerouslySkipPermissions: false,
-        }),
-      )
+      expect(readQueryOptions(0)).toEqual(expect.objectContaining({
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: false,
+      }))
       const originalCanUseTool = readQueryOptions(0).canUseTool as CanUseTool
       expect(readActiveQuery().setPermissionMode).toHaveBeenCalledWith('plan')
 
