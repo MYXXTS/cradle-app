@@ -1,12 +1,21 @@
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 
+import { box, intro, log, outro, spinner } from '@clack/prompts'
 import { parseCradlePluginPackageJsonText } from '@cradle/plugin-sdk/manifest'
 import type { Command } from 'commander'
+import pc from 'picocolors'
 import { build, type InlineConfig, type Plugin, type Rollup } from 'vite'
 import { z } from 'zod'
 
 import { getCommandContext } from '../runtime/context'
+import {
+  formatDurationMs,
+  formatLayerLabel,
+  formatTimestamp,
+  printPluginDevBanner,
+  renderSessionSummary,
+} from './plugin-dev-ui'
 
 const layerNames = ['server', 'web', 'desktop'] as const
 type PluginLayer = typeof layerNames[number]
@@ -170,9 +179,10 @@ async function startLayerWatcher(
       const error = event.error instanceof Error ? event.error : new Error(String(event.error))
       if (!initialComplete) {
         initialComplete = true
-        rejectInitial(error)
+        rejectInitial(new Error(`${layerBuild.layer} build failed: ${error.message}`))
+        return
       }
-      console.error(`[plugin dev] ${layerBuild.layer} build failed: ${error.message}`)
+      log.error(`${formatLayerLabel(layerBuild.layer)} build failed: ${error.message}`)
     }
   })
 
@@ -218,38 +228,57 @@ async function runPluginDev(command: Command, options: PluginDevOptions): Promis
         template: '/plugins/dev-sessions/{id}/reload',
       })
       session = PluginDevSessionSchema.parse(result)
-      console.log(`${layerBuild.layer} rebuilt in ${Math.round(durationMs)}ms; reloaded revision ${session.revisions[layerBuild.layer]}`)
+      log.step(`${pc.dim(`[${formatTimestamp()}]`)} ${formatLayerLabel(layerBuild.layer)} rebuilt in ${pc.yellow(formatDurationMs(durationMs))} · revision ${pc.bold(String(session.revisions[layerBuild.layer]))}`)
     }).catch((error: unknown) => {
-      console.error(`[plugin dev] reload failed: ${error instanceof Error ? error.message : String(error)}`)
+      log.error(`${formatLayerLabel(layerBuild.layer)} reload failed: ${error instanceof Error ? error.message : String(error)}`)
     })
     await reloadQueue
   }
 
-  console.log(`Cradle plugin dev: ${parsed.cradle.displayName ?? parsed.name}`)
+  printPluginDevBanner()
+  intro(`${parsed.cradle.displayName ?? parsed.name} ${pc.dim(`v${parsed.version}`)}`)
   const watchers: LayerWatcher[] = []
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let resolveSignal!: () => void
   const stopped = new Promise<void>(resolvePromise => { resolveSignal = resolvePromise })
   const stop = (): void => resolveSignal()
 
+  const startup = spinner()
+  const startedAt = performance.now()
   try {
-    for (const layerBuild of builds) {
-      watchers.push(await startLayerWatcher(packageDir, layerBuild, onRebuild))
+    try {
+      startup.start(`Building ${builds.map(item => formatLayerLabel(item.layer)).join(', ')}`)
+      for (const layerBuild of builds) {
+        watchers.push(await startLayerWatcher(packageDir, layerBuild, onRebuild))
+      }
+      await Promise.all(watchers.map(watcher => watcher.initialBuild))
+      startup.message(`Connecting to Cradle at ${context.serverUrl}`)
+      session = PluginDevSessionSchema.parse(await context.request({
+        method: 'post',
+        path: {},
+        query: {},
+        body: {
+          packageDir,
+          entries: Object.fromEntries(builds.map(item => [item.layer, item.outputEntry])),
+        },
+        template: '/plugins/dev-sessions',
+      }))
+      startup.stop(`${pc.bold(pc.green('Ready'))} in ${pc.yellow(formatDurationMs(performance.now() - startedAt))}`)
+      box(
+        renderSessionSummary({
+          serverUrl: context.serverUrl,
+          layers: builds.map(item => ({ layer: item.layer, revision: session!.revisions[item.layer] })),
+          outputDir: relative(process.cwd(), resolve(packageDir, '.cradle/dev')),
+        }),
+        'Dev session',
+        { width: 'auto', formatBorder: pc.dim },
+      )
     }
-    await Promise.all(watchers.map(watcher => watcher.initialBuild))
-    console.log(`built ${builds.map(item => item.layer).join(', ')}`)
-    session = PluginDevSessionSchema.parse(await context.request({
-      method: 'post',
-      path: {},
-      query: {},
-      body: {
-        packageDir,
-        entries: Object.fromEntries(builds.map(item => [item.layer, item.outputEntry])),
-      },
-      template: '/plugins/dev-sessions',
-    }))
-    console.log(`connected to Cradle at ${context.serverUrl}`)
-    console.log(`activated ${session.pluginName}`)
+    catch (error) {
+      startup.error('Startup failed')
+      throw error
+    }
+    log.info('Watching for changes. Press Ctrl+C to stop.')
 
     heartbeat = setInterval(() => {
       if (!session) { return }
@@ -259,7 +288,7 @@ async function runPluginDev(command: Command, options: PluginDevOptions): Promis
         query: {},
         template: '/plugins/dev-sessions/{id}/heartbeat',
       }).catch((error: unknown) => {
-        console.error(`[plugin dev] heartbeat failed: ${error instanceof Error ? error.message : String(error)}`)
+        log.warn(`heartbeat failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }, 10_000)
     process.once('SIGINT', stop)
@@ -279,7 +308,7 @@ async function runPluginDev(command: Command, options: PluginDevOptions): Promis
         query: {},
         template: '/plugins/dev-sessions/{id}',
       }).catch(() => undefined)
-      console.log(`deactivated ${session.pluginName}`)
+      outro(`Deactivated ${pc.bold(session.pluginName)}`)
     }
   }
 }
@@ -290,7 +319,15 @@ export function registerPluginDevCommand(root: Command): void {
     .command('dev')
     .description('Build and temporarily load a plugin in the running Cradle Desktop app')
     .option('--package-dir <path>', 'Plugin package directory. Defaults to the current directory')
-    .action(async (options: PluginDevOptions, command: Command) => runPluginDev(command, options))
+    .action(async (options: PluginDevOptions, command: Command) => {
+      try {
+        await runPluginDev(command, options)
+      }
+      catch (error: unknown) {
+        log.error(error instanceof Error ? error.message : String(error))
+        process.exitCode = 1
+      }
+    })
 }
 
 export const pluginDevInternals = {
