@@ -34,6 +34,14 @@ adapter/SDK 对应的 `opencode` CLI 接成可选 managed runtime。两者是聚
 data root，保留 Electron userData 作为固定 bootstrap/cache 根；旧目录只有在新根
 健康启动后才归档为 `.bak-*`，不在同一事务内删除。
 
+2026-07-17 在 commit `2867b64` 上补充 Plan 059：可编程 JavaScript Session Await。
+源自 GitHub issue #35 的讨论收敛：v1 用受管 Node 子进程（V8 old-space 设置 +
+进程组超时终止）执行 Agent 编写的 inline JavaScript cell，明确不引入 QuickJS/WASM isolate、
+不做第二套权限系统；新增 `javascript-eval` 模块（standalone evaluate 路由）与
+session-await 的 `javascript` source，终态失败经 durable queue 恢复 Session
+（`resumeOnFailure` opt-in，仅 javascript 启用）。是聚焦的 `/improve plan`，
+不重启全仓审计。
+
 2026-07-18 在分支 `feat/enhance-work` 的 commit `038ca7d7` 上补充 Plan 060：把
 agent 交付工具 `work_submit` 改名为 git 语义的 `manage_pull_request`（Work 概念只保留在
 用户-facing 的 CLI/UI/路由），并新增「首个 PR 存在之前」的 branch rename 能力
@@ -110,6 +118,7 @@ Ordered by leverage (security/correctness first, structural refactors last).
 | 056  | Declare managed resources and add a unified Resources page | P1      | L      | 047        | DONE                                                                                  |
 | 057  | Manage OpenCode CLI as an optional built-in runtime       | P1       | L      | 047, 056   | DONE                                                                                  |
 | 058  | Add a configurable, crash-safe desktop server data directory | P1       | L      | —         | DONE (`cb781d4`; reviewed in disposable worktree)                                     |
+| 059  | Programmable JavaScript Session Awaits via worker-thread cells | P1       | L      | —         | DONE (`cc7c1e9`; reviewed in `tmp/worktree-plan-059`)                                 |
 | 060  | Rename agent tool to `manage_pull_request` + pre-PR branch rename | P2  | M      | branch `feat/enhance-work` | DONE (`dfe2fb88`..`a7aa8e93` on `feat/enhance-work`; advisor-reviewed)   |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale).

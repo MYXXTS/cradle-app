@@ -41,6 +41,7 @@ import { health } from './modules/health'
 import { imageOcr } from './modules/image-ocr'
 import { issue } from './modules/issue'
 import { issueAgent } from './modules/issue-agent'
+import { javascriptEval } from './modules/javascript-eval'
 import { kanban } from './modules/kanban'
 import { linkPreview } from './modules/link-preview'
 import { createManagedResourcesModule } from './modules/managed-resources'
@@ -211,6 +212,7 @@ export async function createServerContractApp(options: CreateServerContractAppOp
   app.use(pullRequestFeed)
   app.use(sessionGroup)
   app.use(sessionAwait)
+  app.use(javascriptEval)
   app.use(issue)
   app.use(imageOcr)
   app.use(kanban)

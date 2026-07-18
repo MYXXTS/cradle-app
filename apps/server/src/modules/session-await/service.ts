@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { awaitBypassRules, sessionAwaits, sessions, workspaces } from '@cradle/db'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { AppError } from '../../errors/app-error'
@@ -26,6 +26,11 @@ import {
 } from './sources/cradle-issue-status'
 import { GitHubCIFilterJsonSchema, validateGitHubCITarget } from './sources/github-ci'
 import { GitHubReviewFilterJsonSchema, validateGitHubReviewTarget } from './sources/github-review'
+import {
+  JAVASCRIPT_AWAIT_SOURCE,
+  JavaScriptAwaitFilterJsonSchema,
+  validateJavaScriptAwaitFilter,
+} from './sources/javascript'
 import type {
   RegisterAwaitInput,
   RetryAwaitDeliveryInput,
@@ -43,6 +48,7 @@ const SupportedAwaitSourceSchema = z.enum([
   'timer',
   CRADLE_ISSUE_AGENT_AWAIT_SOURCE,
   CRADLE_ISSUE_STATUS_AWAIT_SOURCE,
+  JAVASCRIPT_AWAIT_SOURCE,
 ])
 const NonBlankResumeTextSchema = z
   .string()
@@ -137,6 +143,9 @@ async function validateGitHubAwaitSource(source: string, filterJson: string): Pr
 
 async function validateAwaitSource(source: string, filterJson: string): Promise<void> {
   await validateGitHubAwaitSource(source, filterJson)
+  if (source === JAVASCRIPT_AWAIT_SOURCE) {
+    await validateJavaScriptAwaitFilter(filterJson)
+  }
 }
 
 function normalizeAwaitFilter(input: {
@@ -186,6 +195,16 @@ export async function register(rawInput: RegisterAwaitInput): Promise<SessionAwa
   }
  else if (input.source === 'github-review') {
     GitHubReviewFilterJsonSchema.parse(input.filterJson)
+  }
+ else if (input.source === JAVASCRIPT_AWAIT_SOURCE) {
+    const filter = JavaScriptAwaitFilterJsonSchema.safeParse(input.filterJson)
+    if (!filter.success) {
+      throw new AppError({
+        code: 'session_await_program_invalid',
+        status: 400,
+        message: `JavaScript await filter is invalid: ${filter.error.message}`,
+      })
+    }
   }
  else {
     SessionAwaitFilterJsonSchema.parse(input.filterJson)
@@ -377,18 +396,45 @@ export async function retryDelivery(
   return updated
 }
 
-export function markFailed(awaitId: string, errorText: string): void {
+export function markFailed(awaitId: string, errorText: string, incrementErrorCount = false): SessionAwait | null {
   const now = Math.floor(Date.now() / 1000)
-  db()
+  return db()
     .update(sessionAwaits)
     .set({
       status: 'failed',
       failureKind: 'source',
       lastErrorText: errorText,
       lastCheckedAt: now,
+      ...(incrementErrorCount
+        ? { consecutiveErrorCount: sql`${sessionAwaits.consecutiveErrorCount} + 1` }
+        : {}),
     })
     .where(and(eq(sessionAwaits.id, awaitId), eq(sessionAwaits.status, 'pending')))
-    .run()
+    .returning()
+    .get() ?? null
+}
+
+// Wakes the chat session when a source adapter opts into resumeOnFailure and the
+// await reaches a terminal source failure. Best-effort: a delivery failure is
+// recorded on the row but never retried (unlike success delivery).
+export async function resumeFailedAwait(row: SessionAwait, errorText: string): Promise<void> {
+  const text = `Session await (${row.source}) failed: ${errorText}\n\nDecide how to proceed: fix the condition and register a new await, or continue without it.`
+  try {
+    await enqueueResume(row, text)
+  }
+  catch (err) {
+    db()
+      .update(sessionAwaits)
+      .set({
+        lastErrorText: `${row.lastErrorText ?? errorText} (failure resume delivery failed: ${readDeliveryErrorText(err)})`,
+      })
+      .where(and(
+        eq(sessionAwaits.id, row.id),
+        eq(sessionAwaits.status, 'failed'),
+        eq(sessionAwaits.failureKind, 'source'),
+      ))
+      .run()
+  }
 }
 
 export function updateLastChecked(awaitId: string, errorText?: string): void {
@@ -400,7 +446,25 @@ export function updateLastChecked(awaitId: string, errorText?: string): void {
       lastCheckedAt: now,
       lastErrorText: input.errorText,
     })
-    .where(eq(sessionAwaits.id, awaitId))
+    .where(and(eq(sessionAwaits.id, awaitId), eq(sessionAwaits.status, 'pending')))
+    .run()
+}
+
+// Used by sources that opt into tracksConsecutiveErrors (javascript). Keeps the
+// shared updateLastChecked path free of counter side effects for other sources.
+export function recordTrackedEvaluationCheck(awaitId: string, errorText?: string): void {
+  const input = LastCheckedInputSchema.parse({ errorText })
+  const now = Math.floor(Date.now() / 1000)
+  db()
+    .update(sessionAwaits)
+    .set({
+      lastCheckedAt: now,
+      lastErrorText: input.errorText,
+      consecutiveErrorCount: input.errorText === null
+        ? 0
+        : sql`${sessionAwaits.consecutiveErrorCount} + 1`,
+    })
+    .where(and(eq(sessionAwaits.id, awaitId), eq(sessionAwaits.status, 'pending')))
     .run()
 }
 

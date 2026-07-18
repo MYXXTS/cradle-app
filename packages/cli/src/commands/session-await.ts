@@ -5,6 +5,7 @@ import { getCommandContext } from '../runtime/context'
 import { printResult } from '../runtime/output'
 import type { CliOutputFormat, CommandContext } from '../runtime/types'
 import { resolveWorkspaceReference } from '../runtime/workspace-context'
+import { readJavaScriptProgramSource } from './javascript-program'
 
 const OutputFormatSchema = z.enum(['agent', 'auto', 'json', 'pretty', 'table', 'ndjson'])
 
@@ -54,6 +55,11 @@ interface IssueStatusAwaitOptions extends AwaitCommandOptions {
   category?: string[]
   statusId?: string[]
   statusName?: string[]
+}
+
+interface JavascriptAwaitOptions extends AwaitCommandOptions {
+  program?: string
+  programFile?: string
 }
 
 interface RetryDeliveryOptions {
@@ -289,6 +295,26 @@ export function registerSessionAwaitCommand(root: Command): void {
           ...(statusIds && statusIds.length > 0 ? { statusIds } : {}),
           ...(statusNames && statusNames.length > 0 ? { statusNames } : {}),
         }),
+      }, options)
+    })
+
+  awaitCommand
+    .command('javascript')
+    .description('Wait on a JavaScript cell that is re-evaluated until it completes')
+    .option('--program <source>', 'Inline JavaScript cell (a bare async function or an ES module with a default export)')
+    .option('--program-file <path>', 'Read the JavaScript cell source from a file')
+    .option('--chat-session-id <id>', 'Chat session ID. Defaults to CRADLE_CHAT_SESSION_ID')
+    .option('--workspace <name-or-id>', 'Workspace name or id. Defaults to the workspace for your current directory, then CRADLE_WORKSPACE_ID.')
+    .option('--reason <text>', 'Visible wait reason')
+    .option('--expires-at <unixSeconds>', 'Unix timestamp when this await expires')
+    .option('--format <format>', 'Output format: agent, auto, json, pretty, table, ndjson', 'auto')
+    .option('--json [fields]', 'Print JSON, optionally selecting comma-separated fields')
+    .action(async (options: JavascriptAwaitOptions, command: Command) => {
+      const program = readJavaScriptProgramSource(options)
+      await createAwait(command, {
+        ...(await buildCommonCreateBody(getCommandContext(command), options)),
+        source: 'javascript',
+        filterJson: JSON.stringify({ program }),
       }, options)
     })
 

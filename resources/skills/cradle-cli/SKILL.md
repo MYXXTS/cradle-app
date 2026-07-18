@@ -229,11 +229,56 @@ cradle session await-trigger <awaitId> --resume-text "CI passed"
 cradle session await retry <awaitId>
 ```
 
+### JavaScript awaits (programmable conditions)
+
+When no typed source fits, express the wait condition as a bare async JavaScript function that returns `false` while pending or `{ resumeText, payload? }` once complete. The cell runs with the await workspace as its real cwd and can execute commands through `tools.exec` (argv arrays only, no shell):
+
+```js
+// await-ci.js — wait for the "CI" workflow run on a commit
+async ({ tools }) => {
+  const repo = 'owner/repo'
+  const sha = 'abc123def'
+  const workflowName = 'CI'
+
+  const result = await tools.exec({
+    argv: ['gh', 'run', 'list', '--repo', repo, '--commit', sha, '--json', 'databaseId,workflowName,status,conclusion'],
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`gh run list failed: ${result.stderr.trim()}`)
+  }
+
+  const run = JSON.parse(result.stdout).find(candidate => candidate.workflowName === workflowName)
+  if (!run || run.status !== 'completed') {
+    return false // still pending
+  }
+  return {
+    resumeText: `Workflow "${workflowName}" completed on ${sha} with conclusion "${run.conclusion}". Decide how to proceed.`,
+    payload: { databaseId: run.databaseId, conclusion: run.conclusion },
+  }
+}
+```
+
+Dry-run the cell once before registering it (prints `{ ok, result }` or the error):
+
+```bash
+cradle javascript evaluate --program-file ./await-ci.js
+```
+
+Then register it as an await. Cradle re-evaluates the cell as a **short check** on each due poll (do not sleep or loop inside the cell — return `false` and let Cradle wait). The session resumes when the cell returns `{ resumeText }`; a thrown cell is retried, and five consecutive evaluation errors fail the await (the session is resumed with the failure context either way):
+
+```bash
+cradle session await javascript \
+  --program-file ./await-ci.js \
+  --reason "Waiting for the CI workflow on abc123def"
+```
+
+Prefer inline programs for short conditions: `--program 'async ({ tools, cwd }) => false'`. Complete ES modules with `export default` are accepted for advanced file-based cells. Registration checks syntax without running top-level code. Keep cell logic deterministic and self-contained: cells cannot import npm packages, only `node:` builtins.
+
 **Key rules for await usage**:
 - Omit session ids for current-session awaits; Cradle-managed shells inject `CRADLE_CHAT_SESSION_ID` / `CRADLE_WORKSPACE_ID` as ambient defaults. Pass an explicit id only when targeting another session.
 - After registering an await, end your turn. Cradle will resume the session with the trigger payload as a new user message.
 - Prefer the task-shaped `cradle session await ...` commands. The raw generated `cradle session await-create` command is still available when you need to pass a custom source/filter payload directly.
-- Supported task-shaped sources: `github-ci` (`--pr`, `--sha`, or `--run-id`), `github-review` (`--mode approved|changes-requested|reviewed`), and `manual`.
+- Supported task-shaped sources: `github-ci` (`--pr`, `--sha`, or `--run-id`), `github-review` (`--mode approved|changes-requested|reviewed`), `javascript` (`--program` or `--program-file`), and `manual`.
 - Supported raw await sources include `github-ci`, `github-review`, `manual`, and `timer`. Use raw `await-create --source timer --fire-at <unixSeconds> --filter-json '{}'` for durable timed pauses.
 - Your session history is preserved — when resumed, you have full context of what you were doing.
 
