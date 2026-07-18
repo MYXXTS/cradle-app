@@ -100,22 +100,24 @@ async function resolveTarget(filter: GitHubReviewFilter): Promise<ResolvedReview
 }
 
 function buildTerminalResult(awaitId: string, target: ResolvedReviewTarget): CheckResult | null {
+  // headSha mismatch means the await is stale (new push happened).
+  // Skip it — registerWorkAwaits will cancel it and register a fresh one.
+  if (target.currentHeadSha !== target.headSha) {
+    return null
+  }
+
   const outcome = target.merged
     ? 'merged'
     : target.prState === 'closed'
       ? 'closed'
-      : target.currentHeadSha !== target.headSha
-        ? 'superseded'
-        : null
+      : null
   if (!outcome) {
     return null
   }
 
   const resumeText = outcome === 'merged'
     ? `GitHub PR #${target.prNumber} was merged before the review await matched.`
-    : outcome === 'closed'
-      ? `GitHub PR #${target.prNumber} was closed before the review await matched.`
-      : `GitHub PR #${target.prNumber} moved to a new head commit before the review await matched.`
+    : `GitHub PR #${target.prNumber} was closed before the review await matched.`
 
   return {
     awaitId,

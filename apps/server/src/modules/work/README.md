@@ -17,7 +17,7 @@ Session, Worktree, Pull Request, Chat Runtime, and Await read models.
   WIP.
 - Work stores facts only. Activity labels are derived and no Work status machine
   exists.
-- Preparing a handoff never pushes or calls GitHub.
+- Preparing a handoff saves metadata locally. When an open Draft PR already exists, prepare also pushes the branch and updates the PR automatically.
 - The builtin `cradle` MCP server exposes `work_prepare` as the required
   Agent-facing finalization tool; the tool delegates to this module's prepare
   API and does not own Work persistence.
@@ -27,7 +27,7 @@ Session, Worktree, Pull Request, Chat Runtime, and Await read models.
   resident `cradle-cli` skill. The objective already enters the transcript as
   the initial user message, while pull-request, Await, and Worktree state remain
   available through their owning modules, delivered events, and on-demand reads.
-- Creating or updating a Draft PR requires an explicit submit request.
+- Creating a Draft PR for the first time requires an explicit submit request. Subsequent updates happen automatically on prepare.
 - Mark Ready and merge remain user-controlled outside this module.
 
 ## Ownership boundaries

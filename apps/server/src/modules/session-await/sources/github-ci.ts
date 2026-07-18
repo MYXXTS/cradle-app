@@ -217,22 +217,24 @@ function buildTerminalResult(awaitId: string, target: ResolvedCITarget): CheckRe
     return null
   }
 
+  // headSha mismatch means the await is stale (new push happened).
+  // Skip it — registerWorkAwaits will cancel it and register a fresh one.
+  if (target.currentHeadSha !== target.ref) {
+    return null
+  }
+
   const outcome = target.merged
     ? 'merged'
     : target.prState === 'closed'
       ? 'closed'
-      : target.currentHeadSha !== target.ref
-        ? 'superseded'
-        : null
+      : null
   if (!outcome) {
     return null
   }
 
   const resumeText = outcome === 'merged'
     ? `GitHub PR #${target.prNumber} was merged before the CI await matched.`
-    : outcome === 'closed'
-      ? `GitHub PR #${target.prNumber} was closed before the CI await matched.`
-      : `GitHub PR #${target.prNumber} moved to a new head commit before the CI await matched.`
+    : `GitHub PR #${target.prNumber} was closed before the CI await matched.`
 
   return {
     awaitId,

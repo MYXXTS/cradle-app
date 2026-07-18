@@ -381,13 +381,37 @@ export async function prepare(input: {
   const title = requireHandoffValue(input.title, 'title')
   const summary = requireHandoffValue(input.summary, 'summary')
   const testPlan = requireHandoffValue(input.testPlan, 'testPlan')
-  const timestamp = nextTimestampAfter(work.preparedAt, work.lastSubmittedAt)
+  const body = `## Summary\n${summary}\n\n## Test plan\n${testPlan}`
+
+  const existing = await PullRequest.getPullRequest(primaryThread.id)
+  const hasOpenPR = existing !== null && existing.state === 'open' && !existing.merged
+
+  if (hasOpenPR) {
+    const updated = await PullRequest.updatePullRequest({
+      sessionId: primaryThread.id,
+      title,
+      body,
+    })
+    const pr = {
+      owner: updated.owner,
+      repo: updated.repo,
+      number: updated.number,
+      headSha: requirePullRequestHeadSha(updated),
+    }
+    await registerWorkAwaits(work.id, primaryThread.id, primaryThread.workspaceId!, pr)
+  }
+
+  const preparedAt = nextTimestampAfter(work.preparedAt, work.lastSubmittedAt)
+  const lastSubmittedAt = hasOpenPR
+    ? nextTimestampAfter(preparedAt, work.lastSubmittedAt)
+    : work.lastSubmittedAt
   db().update(works).set({
     handoffTitle: title,
     handoffSummary: summary,
     handoffTestPlan: testPlan,
-    preparedAt: timestamp,
-    updatedAt: timestamp,
+    preparedAt,
+    lastSubmittedAt,
+    updatedAt: preparedAt,
   }).where(eq(works.id, work.id)).run()
   return (await get(work.id))!
 }

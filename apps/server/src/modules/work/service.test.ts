@@ -245,6 +245,45 @@ describe('work delivery control', () => {
     expect(updatePullRequest).not.toHaveBeenCalled()
   })
 
+  it('auto-updates the existing open pull request on prepare', async () => {
+    seedWork()
+    const { pullRequest } = mockHealthyDetailReads()
+    pullRequest.mockResolvedValue(OPEN_PULL_REQUEST)
+    db().update(works).set({
+      handoffTitle: 'Draft title',
+      handoffSummary: 'Implemented the flow.',
+      handoffTestPlan: 'Run focused tests.',
+      preparedAt: 10,
+      lastSubmittedAt: 5,
+    }).run()
+    const createPullRequest = vi.spyOn(PullRequest, 'createDraftPullRequest')
+    const updatePullRequest = vi.spyOn(PullRequest, 'updatePullRequest').mockResolvedValue({
+      ...OPEN_PULL_REQUEST,
+      title: 'Updated title',
+      updatedAt: 20,
+    })
+    const registerSpy = mockSessionAwaitRegister()
+
+    const detail = await Work.prepare({
+      id: WORK_ID,
+      title: 'Updated title',
+      summary: 'Updated summary.',
+      testPlan: 'Updated tests.',
+    })
+
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(updatePullRequest).toHaveBeenCalledTimes(1)
+    expect(updatePullRequest).toHaveBeenCalledWith({
+      sessionId: SESSION_ID,
+      title: 'Updated title',
+      body: '## Summary\nUpdated summary.\n\n## Test plan\nUpdated tests.',
+    })
+    expect(registerSpy).toHaveBeenCalledTimes(2)
+    expect(detail.work.handoffTitle).toBe('Updated title')
+    expect(detail.work.lastSubmittedAt).not.toBeNull()
+    expect(detail.work.lastSubmittedAt).toBeGreaterThan(detail.work.preparedAt!)
+  })
+
   it('keeps delivery timestamps ordered across same-second prepare and submit actions', async () => {
     seedWork()
     const { pullRequest } = mockHealthyDetailReads()
