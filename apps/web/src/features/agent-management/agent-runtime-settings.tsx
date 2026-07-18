@@ -128,12 +128,15 @@ const ProviderRow = ({
     const subtitle = modelLabel
       ? `${PROVIDER_KIND_LABELS[providerKind]} · ${modelLabel}`
       : PROVIDER_KIND_LABELS[providerKind]
+    const alwaysOn = !manual && entry.record.status === 'unsupported'
     const statusLabel = manual
       ? (entry.profile.enabled ? null : t('runtime.provider.status.off'))
       : (entry.record.status === 'active' && entry.record.runtimeTargetEnabled
           ? null
           : entry.record.status === 'active'
             ? t('runtime.provider.status.off')
+            : entry.record.status === 'unsupported'
+              ? t('runtime.provider.status.always')
             : entry.record.status)
     const testId = manual
       ? `agent-profile-row-${entry.profile.id}`
@@ -148,7 +151,7 @@ const ProviderRow = ({
           active
             ? 'bg-foreground/[0.045] text-foreground'
             : 'hover:bg-foreground/[0.035] active:bg-foreground/6',
-          statusLabel && !active && 'opacity-60',
+          statusLabel && !active && !alwaysOn && 'opacity-60',
         )}
       >
         <Checkbox
@@ -182,7 +185,14 @@ const ProviderRow = ({
                 {title}
               </span>
               {statusLabel && (
-                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full px-1.5 py-0.5 text-[9px]',
+                    alwaysOn
+                      ? 'bg-success/10 text-success'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
                   {statusLabel}
                 </span>
               )}

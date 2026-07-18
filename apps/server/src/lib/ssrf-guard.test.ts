@@ -32,6 +32,8 @@ function createProviderRequest(baseUrl: string): ProviderRequest {
 describe('ssrf guard', () => {
   afterEach(() => {
     delete process.env.CRADLE_ALLOW_PRIVATE_PROVIDER_HOSTS
+    delete process.env.CRADLE_DESKTOP_PID
+    delete process.env.CRADLE_HOST
     vi.restoreAllMocks()
     usePublicAddressLookup()
   })
@@ -104,6 +106,36 @@ describe('ssrf guard', () => {
     }
 
     await expect(provider.listModels(createProviderRequest('http://127.0.0.1:11434/v1'), {
+      readSecret: () => 'local-secret',
+    })).resolves.toEqual([
+      {
+        id: 'local-model',
+        label: 'local-model',
+        providerKind: 'openai-compatible',
+        capabilities: {},
+      },
+    ])
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows loopback provider hosts for the local Desktop server', async () => {
+    process.env.CRADLE_DESKTOP_PID = 'desktop-process'
+    process.env.CRADLE_HOST = '127.0.0.1'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      expect(new Request(input).url).toBe('http://127.0.0.1:8317/v1/models')
+      expect(init?.headers).toMatchObject({ Authorization: 'Bearer local-secret' })
+      expect(init?.redirect).toBe('manual')
+      return new Response(JSON.stringify({ data: [{ id: 'local-model' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const provider = new ProviderCatalog().get('openai-compatible')
+    if (!provider) {
+      throw new Error('OpenAI-compatible provider is not registered')
+    }
+
+    await expect(provider.listModels(createProviderRequest('http://127.0.0.1:8317/v1'), {
       readSecret: () => 'local-secret',
     })).resolves.toEqual([
       {

@@ -197,6 +197,7 @@
   "runtime.noSelection.description": "Pick a provider on the left to view its configuration, or add a new one to get started.",
   "runtime.noSelection.title": "No provider selected",
   "runtime.provider.status.off": "Off",
+  "runtime.provider.status.always": "Always",
   "runtime.search.placeholder": "Search providers",
   "runtime.selection.clear": "Clear",
   "runtime.selection.clearSelection": "Clear selection",

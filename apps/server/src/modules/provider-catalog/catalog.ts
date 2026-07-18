@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { isLoopbackBindHost } from '../../config/server-config'
 import { AppError } from '../../errors/app-error'
 import { guardedFetch } from '../../lib/ssrf-guard'
 import {
@@ -37,6 +38,8 @@ const TRAILING_SLASH_RE = /\/$/
 const VERSIONED_API_PATH_RE = /\/v\d+\/?$/i
 const ANTHROPIC_VERSION = '2023-06-01'
 const PRIVATE_PROVIDER_HOSTS_ENV = 'CRADLE_ALLOW_PRIVATE_PROVIDER_HOSTS'
+const DESKTOP_PROCESS_ENV = 'CRADLE_DESKTOP_PID'
+const DESKTOP_LOCAL_PROVIDER_HOSTS = ['127.0.0.1', 'localhost', '::1'] as const
 const OpenAICompatibleModelsResponseSchema = z.object({
   data: z
     .array(
@@ -271,12 +274,25 @@ function modelRequestOptions(baseUrl: string, headers?: HeadersInit): ModelsRequ
 }
 
 function readPrivateProviderHostAllowlist(): Set<string> {
-  return new Set(
+  const allowlist = new Set(
     (process.env[PRIVATE_PROVIDER_HOSTS_ENV] ?? '')
       .split(/[,\s]+/)
       .map(host => host.trim().toLowerCase().replace(/^\[|\]$/g, ''))
       .filter(Boolean),
   )
+
+  // The Desktop app owns a local-only server by default and intentionally
+  // manages local provider processes such as CLIProxyAPI. Permit only the
+  // loopback hosts in that process; standalone/network-bound servers keep the
+  // explicit opt-in requirement for private provider endpoints.
+  if (process.env[DESKTOP_PROCESS_ENV]?.trim()
+    && isLoopbackBindHost(process.env.CRADLE_HOST ?? '127.0.0.1')) {
+    for (const host of DESKTOP_LOCAL_PROVIDER_HOSTS) {
+      allowlist.add(host)
+    }
+  }
+
+  return allowlist
 }
 
 async function fetchModelsPayload(

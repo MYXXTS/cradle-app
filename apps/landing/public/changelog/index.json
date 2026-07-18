@@ -1,5 +1,41 @@
 [
   {
+    "version": "dev-20260718.1",
+    "date": "2026-07-18",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Ultra Reasoning and More Resilient Runtimes",
+      "zh": "Ultra 推理与更稳健的运行时"
+    }
+  },
+  {
+    "version": "dev-20260717.1",
+    "date": "2026-07-17",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Calmer Database Upgrades and Startup",
+      "zh": "更安心的数据库升级与启动体验"
+    }
+  },
+  {
+    "version": "dev-20260716.1",
+    "date": "2026-07-16",
+    "languages": [
+      "en",
+      "zh"
+    ],
+    "title": {
+      "en": "Cradle Work: Let Agents Finish the Job",
+      "zh": "Cradle Work：让 Agent 真正完成一件事"
+    }
+  },
+  {
     "version": "dev-20260706.1",
     "date": "2026-07-06",
     "languages": [
