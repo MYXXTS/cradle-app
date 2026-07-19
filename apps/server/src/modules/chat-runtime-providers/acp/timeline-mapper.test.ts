@@ -32,9 +32,9 @@ describe('acp chunk mapper', () => {
       ...mapper.flush(),
     ]
 
-    // tool_call without rawInput only opens the tool; completion arrives via
-    // tool_call_update.rawOutput as tool-output-available (no synthetic
-    // tool-input-delta — that path was removed so output is not mislabeled).
+    // tool_call without rawInput only emits tool-input-start; input deltas /
+    // tool-input-available appear only when rawInput is present on the call
+    // or a later tool_call_update.
     expect(chunks.map(chunk => chunk.type)).toEqual([
       'text-start',
       'text-delta',
