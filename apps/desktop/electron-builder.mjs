@@ -122,6 +122,7 @@ async function afterPack(context) {
 const config = {
   appId: 'com.cradle.app',
   productName: 'Cradle',
+  executableName: 'Cradle',
 
   afterPack,
 
