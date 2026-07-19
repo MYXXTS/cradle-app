@@ -1,24 +1,36 @@
 /**
  * Blog post — single article view.
  *
- * Content column (max 680px) with a sticky table-of-contents rail on the
- * right, generated from the post's `##` headings. Fetches
- * /blog/<slug>.<lang>.md at runtime, falling back across available languages.
+ * Three-column editorial layout: a meta rail on the left (back link, copy
+ * link), the article in a 640px center column with a full byline under the
+ * title, and a sticky scroll-spy table of contents on the right. A prev/next
+ * pager closes the article at the bottom.
+ *
+ * Fetches /blog/index.json + /blog/<slug>.<lang>.md at runtime.
  */
 
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Link2 } from 'lucide-react'
 import { marked } from 'marked'
 import { motion } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { formatDate, parseFrontmatter, pickLocale } from '../lib/content'
+import { formatDate, parseFrontmatter, pickLocale, resolveLocale } from '../lib/content'
 import type { BlogIndexEntry } from './blog'
+
+interface PostNav {
+  slug: string
+  title: string
+}
 
 interface Post {
   title: string
   date: string
   cover?: string
+  author?: string
+  tags: string[]
   body: string
+  newer?: PostNav
+  older?: PostNav
 }
 
 function useBlogPost(slug: string) {
@@ -34,7 +46,8 @@ function useBlogPost(slug: string) {
         const indexRes = await fetch('/blog/index.json')
         if (!indexRes.ok) { throw new Error('Failed to fetch blog index') }
         const index = await indexRes.json() as BlogIndexEntry[]
-        const entry = index.find(e => e.slug === slug)
+        const i = index.findIndex(e => e.slug === slug)
+        const entry = index[i]
         if (!entry) {
           if (!cancelled) {
             setNotFound(true)
@@ -42,6 +55,12 @@ function useBlogPost(slug: string) {
           }
           return
         }
+
+        const locale = resolveLocale()
+        const nav = (e?: BlogIndexEntry): PostNav | undefined => e && ({
+          slug: e.slug,
+          title: e.title[locale] || e.title.zh || Object.values(e.title)[0] || '',
+        })
 
         const lang = pickLocale(entry.languages)
         const res = await fetch(`/blog/${slug}.${lang}.md`)
@@ -53,7 +72,11 @@ function useBlogPost(slug: string) {
             title: entry.title[lang] || Object.values(entry.title)[0] || '',
             date: entry.date,
             cover: entry.cover,
+            author: entry.author,
+            tags: entry.tags ?? [],
             body,
+            newer: nav(index[i - 1]),
+            older: nav(index[i + 1]),
           })
           setLoading(false)
         }
@@ -93,6 +116,26 @@ function renderBody(body: string): { html: string, toc: TocItem[] } {
 }
 
 function Toc({ items }: { items: TocItem[] }) {
+  const [active, setActive] = useState('')
+
+  useEffect(() => {
+    if (items.length === 0) { return }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (visible[0]) { setActive(visible[0].target.id) }
+      },
+      { rootMargin: '-15% 0px -70% 0px', threshold: 0 },
+    )
+    for (const item of items) {
+      const el = document.getElementById(item.id)
+      if (el) { observer.observe(el) }
+    }
+    return () => observer.disconnect()
+  }, [items])
+
   if (items.length === 0) { return null }
   return (
     <nav className="blog-toc" style={{ position: 'sticky', top: 120, alignSelf: 'start' }}>
@@ -109,31 +152,134 @@ function Toc({ items }: { items: TocItem[] }) {
         On this page
       </div>
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {items.map(item => (
-          <li key={item.id}>
-            <a
-              href={`#${item.id}`}
-              onClick={(e) => {
-                e.preventDefault()
-                document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }}
-              style={{
-                display: 'block',
-                padding: '5px 0',
-                fontSize: 12.5,
-                lineHeight: 1.5,
-                color: 'var(--text-muted)',
-                textDecoration: 'none',
-                transition: 'color 0.15s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
-            >
-              {item.text}
-            </a>
-          </li>
-        ))}
+        {items.map((item) => {
+          const isActive = item.id === active
+          return (
+            <li key={item.id}>
+              <a
+                href={`#${item.id}`}
+                onClick={(e) => {
+                  e.preventDefault()
+                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                style={{
+                  display: 'block',
+                  padding: '5px 0 5px 12px',
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: isActive ? 'var(--text)' : 'var(--text-muted)',
+                  borderLeft: `1px solid ${isActive ? 'var(--text)' : 'var(--border)'}`,
+                  textDecoration: 'none',
+                  transition: 'color 0.15s, border-color 0.15s',
+                }}
+              >
+                {item.text}
+              </a>
+            </li>
+          )
+        })}
       </ol>
+    </nav>
+  )
+}
+
+/* ─── Copy link button ────────────────────────────────────────── */
+
+function CopyLink() {
+  const [copied, setCopied] = useState(false)
+  const Icon = copied ? Check : Link2
+  return (
+    <button
+      onClick={() => {
+        void navigator.clipboard?.writeText(window.location.href).then(() => {
+          setCopied(true)
+          setTimeout(setCopied, 1600, false)
+        })
+      }}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        color: copied ? 'var(--text)' : 'var(--text-muted)',
+        fontSize: 12,
+        fontFamily: 'var(--font-mono)',
+        transition: 'color 0.2s',
+      }}
+      onMouseEnter={e => (e.currentTarget.style.color = 'var(--text)')}
+      onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = 'var(--text-muted)' } }}
+    >
+      <Icon style={{ width: 12, height: 12 }} />
+      {copied ? 'copied' : 'copy link'}
+    </button>
+  )
+}
+
+/* ─── Prev / next pager ───────────────────────────────────────── */
+
+function Pager({ post }: { post: Post }) {
+  if (!post.newer && !post.older) { return null }
+  const cell = (nav: PostNav | undefined, dir: 'newer' | 'older') => {
+    if (!nav) { return <span /> }
+    const isNewer = dir === 'newer'
+    return (
+      <a
+        href={`#/blog/${nav.slug}`}
+        style={{
+          display: 'block',
+          textDecoration: 'none',
+          textAlign: isNewer ? 'left' : 'right',
+          padding: '20px 0',
+        }}
+      >
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            marginBottom: 8,
+          }}
+        >
+          {isNewer && <ArrowLeft style={{ width: 11, height: 11 }} />}
+          {isNewer ? 'Newer' : 'Older'}
+          {!isNewer && <ArrowRight style={{ width: 11, height: 11 }} />}
+        </span>
+        <span
+          style={{
+            display: 'block',
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: '-0.015em',
+            lineHeight: 1.4,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          {nav.title}
+        </span>
+      </a>
+    )
+  }
+  return (
+    <nav
+      className="blog-pager"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 32,
+        marginTop: 72,
+        borderTop: '1px solid var(--border-subtle)',
+      }}
+    >
+      {cell(post.newer, 'newer')}
+      {cell(post.older, 'older')}
     </nav>
   )
 }
@@ -175,7 +321,7 @@ export function BlogPostPage({ slug }: { slug: string }) {
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              marginBottom: 28,
+              marginBottom: 20,
               color: 'var(--text-muted)',
               fontSize: 12,
               fontFamily: 'var(--font-mono)',
@@ -188,34 +334,9 @@ export function BlogPostPage({ slug }: { slug: string }) {
             <ArrowLeft style={{ width: 12, height: 12 }} />
             all posts
           </a>
-          {post && (
-            <>
-              <time
-                dateTime={post.date}
-                style={{
-                  display: 'block',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                  marginBottom: 6,
-                }}
-              >
-                {formatDate(post.date)}
-              </time>
-              <span
-                style={{
-                  display: 'block',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                {minutes}
-                {' '}
-                min read
-              </span>
-            </>
-          )}
+          <div>
+            <CopyLink />
+          </div>
         </motion.aside>
 
         <motion.div
@@ -238,18 +359,56 @@ export function BlogPostPage({ slug }: { slug: string }) {
                 )
               : (
                   <article>
-                    <header style={{ marginBottom: 40 }}>
+                    <header style={{ marginBottom: 48 }}>
                       <h1
                         style={{
-                          fontSize: 'clamp(1.7rem, 4.5vw, 2.4rem)',
+                          fontSize: 'clamp(1.9rem, 4.5vw, 2.7rem)',
                           fontWeight: 650,
-                          lineHeight: 1.15,
-                          letterSpacing: '-0.03em',
+                          lineHeight: 1.12,
+                          letterSpacing: '-0.035em',
                           color: 'var(--text)',
+                          marginBottom: 20,
                         }}
                       >
                         {post.title}
                       </h1>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          flexWrap: 'wrap',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 12,
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        {post.author && <span style={{ color: 'var(--text-secondary)' }}>{post.author}</span>}
+                        {post.author && <span>·</span>}
+                        <time dateTime={post.date}>{formatDate(post.date)}</time>
+                        <span>·</span>
+                        <span>
+                          {minutes}
+                          {' '}
+                          min read
+                        </span>
+                        {post.tags.map(t => (
+                          <span
+                            key={t}
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 500,
+                              letterSpacing: '0.08em',
+                              textTransform: 'uppercase',
+                              border: '1px solid var(--border)',
+                              borderRadius: 999,
+                              padding: '3px 9px',
+                            }}
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
                     </header>
                     {post.cover && (
                       <img
@@ -261,13 +420,13 @@ export function BlogPostPage({ slug }: { slug: string }) {
                           width: '100%',
                           aspectRatio: '2 / 1',
                           objectFit: 'cover',
-                          borderRadius: 12,
-                          border: '1px solid var(--border)',
-                          marginBottom: 40,
+                          borderRadius: 14,
+                          marginBottom: 48,
                         }}
                       />
                     )}
                     <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
+                    <Pager post={post} />
                   </article>
                 )}
         </motion.div>

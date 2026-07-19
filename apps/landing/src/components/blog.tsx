@@ -1,14 +1,14 @@
 /**
  * Blog — post index.
  *
- * A quiet reading list: each row is a link to `#/blog/<slug>` — date, title,
- * and description on the left, the post's cover thumbnail on the right.
- * Hover brightens the title and nudges the arrow — nothing more.
+ * Editorial layout in the spirit of anthropic.com/news: a large featured
+ * story (big cover left, title block right) followed by a three-column grid
+ * of quiet cards — cover, title, date, nothing boxed, nothing bordered.
+ * Hover is a slow cover zoom and a slight title brightening.
  *
  * Data is loaded at runtime from /blog/index.json.
  */
 
-import { ArrowUpRight } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 
@@ -20,6 +20,8 @@ export interface BlogIndexEntry {
   title: Record<string, string>
   description: Record<string, string>
   cover?: string
+  author?: string
+  tags?: string[]
   languages: string[]
 }
 
@@ -29,6 +31,8 @@ export interface BlogPostMeta {
   title: string
   description: string
   cover?: string
+  author?: string
+  tags: string[]
   languages: string[]
 }
 
@@ -51,6 +55,8 @@ export function useBlogIndex() {
           title: entry.title[locale] || entry.title.zh || Object.values(entry.title)[0] || '',
           description: entry.description[locale] || entry.description.zh || Object.values(entry.description)[0] || '',
           cover: entry.cover,
+          author: entry.author,
+          tags: entry.tags ?? [],
           languages: entry.languages,
         }))
         if (!cancelled) {
@@ -71,113 +77,215 @@ export function useBlogIndex() {
   return { posts, loading }
 }
 
-function PostRow({ post, index }: { post: BlogPostMeta, index: number }) {
+/* ─── Cover with slow zoom on hover ───────────────────────────── */
+
+function Cover({ src, hovered, ratio, radius }: { src: string, hovered: boolean, ratio: string, radius: number }) {
+  return (
+    <span
+      style={{
+        display: 'block',
+        overflow: 'hidden',
+        borderRadius: radius,
+        background: 'var(--bg-subtle)',
+        aspectRatio: ratio,
+      }}
+    >
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: hovered ? 'scale(1.03)' : 'none',
+          transition: 'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      />
+    </span>
+  )
+}
+
+/* ─── Tag label ───────────────────────────────────────────────── */
+
+function Tag({ label }: { label: string }) {
+  return (
+    <span
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10.5,
+        fontWeight: 500,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'var(--text-muted)',
+        border: '1px solid var(--border)',
+        borderRadius: 999,
+        padding: '3px 9px',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+/* ─── Tag filter bar ──────────────────────────────────────────── */
+
+function TagFilter({ tags, active, onChange }: { tags: string[], active: string | null, onChange: (t: string | null) => void }) {
+  const options: (string | null)[] = [null, ...tags]
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 56 }}>
+      {options.map((t) => {
+        const isActive = t === active
+        return (
+          <button
+            key={t ?? 'all'}
+            onClick={() => onChange(t)}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11.5,
+              letterSpacing: '0.04em',
+              color: isActive ? 'var(--text)' : 'var(--text-muted)',
+              background: isActive ? 'var(--fill-hover)' : 'transparent',
+              border: `1px solid ${isActive ? 'var(--border-strong)' : 'var(--border)'}`,
+              borderRadius: 999,
+              padding: '5px 13px',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            {t ?? 'All'}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ─── Featured story ──────────────────────────────────────────── */
+
+function Featured({ post }: { post: BlogPostMeta }) {
   const [hovered, setHovered] = useState(false)
   return (
     <motion.a
       href={`#/blog/${post.slug}`}
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-8% 0px' }}
-      transition={{ duration: 0.4, delay: index * 0.04, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="blog-post-row"
+      className="blog-featured"
       style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 200px',
-        gap: '12px 36px',
+        gridTemplateColumns: '7fr 5fr',
+        gap: 48,
         alignItems: 'center',
-        padding: '28px 0',
-        borderTop: '1px solid var(--border-subtle)',
         textDecoration: 'none',
+        marginBottom: 88,
       }}
     >
+      {post.cover && <Cover src={post.cover} hovered={hovered} ratio="16 / 10" radius={14} />}
       <span style={{ display: 'block', minWidth: 0 }}>
-        <span
-          style={{
-            display: 'block',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 12,
-            color: 'var(--text-muted)',
-            marginBottom: 8,
-          }}
-        >
-          {formatDate(post.date)}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          {post.tags[0] && <Tag label={post.tags[0]} />}
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>
+            {formatDate(post.date)}
+          </span>
         </span>
         <span
           style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-            fontSize: 17,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            color: hovered ? 'var(--text)' : 'color-mix(in srgb, var(--text), var(--text-secondary) 15%)',
-            marginBottom: 6,
-            transition: 'color 0.15s',
+            display: 'block',
+            fontSize: 'clamp(1.5rem, 2.6vw, 2rem)',
+            fontWeight: 650,
+            lineHeight: 1.2,
+            letterSpacing: '-0.03em',
+            color: hovered ? 'var(--text)' : 'color-mix(in srgb, var(--text), var(--text-secondary) 10%)',
+            marginBottom: 16,
+            transition: 'color 0.2s',
           }}
         >
           {post.title}
-          <ArrowUpRight
-            style={{
-              width: 13,
-              height: 13,
-              flexShrink: 0,
-              alignSelf: 'center',
-              color: hovered ? 'var(--text)' : 'var(--text-muted)',
-              transform: hovered ? 'translate(2px, -2px)' : 'none',
-              transition: 'transform 0.2s ease, color 0.15s',
-            }}
-          />
         </span>
         {post.description && (
           <span
             style={{
               display: 'block',
-              fontSize: 14,
-              lineHeight: 1.65,
+              fontSize: 15,
+              lineHeight: 1.7,
               color: 'var(--text-muted)',
-              maxWidth: 480,
             }}
           >
             {post.description}
           </span>
         )}
       </span>
-      {post.cover && (
-        <img
-          src={post.cover}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          style={{
-            display: 'block',
-            width: '100%',
-            aspectRatio: '5 / 3',
-            objectFit: 'cover',
-            borderRadius: 8,
-            border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border)'}`,
-            background: 'var(--bg-subtle)',
-            transition: 'border-color 0.2s',
-          }}
-        />
-      )}
     </motion.a>
   )
 }
 
+/* ─── Grid card ───────────────────────────────────────────────── */
+
+function Card({ post, index }: { post: BlogPostMeta, index: number }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <motion.a
+      href={`#/blog/${post.slug}`}
+      initial={{ opacity: 0, y: 12 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-6% 0px' }}
+      transition={{ duration: 0.45, delay: (index % 3) * 0.06, ease: [0.22, 1, 0.36, 1] }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: 'block', textDecoration: 'none' }}
+    >
+      {post.cover && (
+        <span style={{ display: 'block', marginBottom: 20 }}>
+          <Cover src={post.cover} hovered={hovered} ratio="16 / 10" radius={10} />
+        </span>
+      )}
+      <span
+        style={{
+          display: 'block',
+          fontSize: 15.5,
+          fontWeight: 600,
+          lineHeight: 1.4,
+          letterSpacing: '-0.015em',
+          color: hovered ? 'var(--text)' : 'color-mix(in srgb, var(--text), var(--text-secondary) 10%)',
+          marginBottom: 8,
+          transition: 'color 0.2s',
+        }}
+      >
+        {post.title}
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {post.tags[0] && <Tag label={post.tags[0]} />}
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>
+          {formatDate(post.date)}
+        </span>
+      </span>
+    </motion.a>
+  )
+}
+
+/* ─── Page ─────────────────────────────────────────────────────── */
+
 export function BlogPage() {
   const { posts, loading } = useBlogIndex()
+  const [tag, setTag] = useState<string | null>(null)
+
+  const allTags = [...new Set(posts.flatMap(p => p.tags))]
+  const filtered = tag ? posts.filter(p => p.tags.includes(tag)) : posts
+  const [featured, ...rest] = filtered
 
   return (
     <main>
       <section
         style={{
-          padding: 'clamp(120px, 18dvh, 180px) 24px clamp(40px, 6dvh, 64px)',
+          padding: 'clamp(120px, 16dvh, 168px) 24px clamp(56px, 8dvh, 88px)',
         }}
       >
-        <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -190,19 +298,19 @@ export function BlogPage() {
                 letterSpacing: '0.14em',
                 textTransform: 'uppercase',
                 color: 'var(--text-muted)',
-                marginBottom: 14,
+                marginBottom: 16,
               }}
             >
               Blog
             </div>
             <h1
               style={{
-                fontSize: 'clamp(2rem, 5vw, 3rem)',
+                fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
                 fontWeight: 650,
                 lineHeight: 1.05,
                 letterSpacing: '-0.035em',
                 color: 'var(--text)',
-                marginBottom: 14,
+                marginBottom: 16,
               }}
             >
               Notes from the workshop
@@ -212,7 +320,7 @@ export function BlogPage() {
                 fontSize: 15,
                 lineHeight: 1.7,
                 color: 'var(--text-secondary)',
-                maxWidth: 420,
+                maxWidth: 460,
               }}
             >
               Longer-form writing about what we’re building and why.
@@ -222,36 +330,35 @@ export function BlogPage() {
       </section>
 
       <section style={{ padding: '0 24px 120px' }}>
-        <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
           {loading
             ? (
-                <div
-                  style={{
-                    padding: '48px 0',
-                    borderTop: '1px solid var(--border-subtle)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 13,
-                    color: 'var(--text-muted)',
-                  }}
-                >
+                <div style={{ padding: '48px 0', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>
                   Loading posts…
                 </div>
               )
             : posts.length === 0
               ? (
-                  <div
-                    style={{
-                      padding: '48px 0',
-                      borderTop: '1px solid var(--border-subtle)',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 13,
-                      color: 'var(--text-muted)',
-                    }}
-                  >
+                  <div style={{ padding: '48px 0', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)' }}>
                     No posts yet.
                   </div>
                 )
-              : posts.map((p, i) => <PostRow key={p.slug} post={p} index={i} />)}
+              : (
+                  <>
+                    <TagFilter tags={allTags} active={tag} onChange={setTag} />
+                    {featured && <Featured post={featured} />}
+                    <div
+                      className="blog-grid"
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '56px 40px',
+                      }}
+                    >
+                      {rest.map((p, i) => <Card key={p.slug} post={p} index={i} />)}
+                    </div>
+                  </>
+                )}
         </div>
       </section>
     </main>
